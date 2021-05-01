@@ -1,4 +1,4 @@
-use crate::error::deserialisation as de;
+use crate::deserialise::Error;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Opcode {
@@ -76,7 +76,7 @@ pub enum Opcode {
 }
 
 impl Opcode {
-    pub fn from_str(input: &str) -> Result<Self, de::Error> {
+    pub fn from_str(input: &str) -> Result<Self, Error> {
         Ok(match input {
             "COPY" => Self::Copy,
             "LOAD" => Self::Load,
@@ -149,7 +149,7 @@ impl Opcode {
             "INSERT" => Self::Insert,
             "EXTRACT" => Self::Extract,
             "POPCOUNT" => Self::PopCount,
-            _ => return de::Invariant { reason: "invalid opcode name" }.fail(),
+            _ => return Err(Error::Invariant("invalid opcode name")),
         })
     }
 }

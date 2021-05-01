@@ -11,7 +11,7 @@ pub enum Error {
     #[error("cannot deserialise dependency `{}`: {}", path.display(), error)]
     DeserialiseDepends {
         path: PathBuf,
-        error: Box<Self>,
+        error: Box<crate::error::Error>,
     },
     #[error("invariant not satisfied: {0}")]
     Invariant(&'static str),

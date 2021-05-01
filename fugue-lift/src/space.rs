@@ -1,10 +1,10 @@
+use crate::bits::calculate_mask;
+use crate::deserialise::parse::XmlExt;
+use crate::deserialise::Error;
+
 use std::fmt;
 use std::mem;
 use std::ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, Deref, DerefMut, Not};
-
-use crate::bits::calculate_mask;
-use crate::error::deserialisation as de;
-use crate::parse::XmlExt;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum SpaceKind {
@@ -57,7 +57,7 @@ impl fmt::Debug for SpaceProperty {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         if !self.is_set() {
             write!(f, "SpaceProperty::default()")?;
-            return Ok(())
+            return Ok(());
         }
 
         let pr = [
@@ -217,9 +217,7 @@ impl Deref for AddressSpace {
 
     fn deref(&self) -> &Self::Target {
         match self {
-            Self::Constant(space)
-            | Self::Space(space)
-            | Self::Unique(space) => space,
+            Self::Constant(space) | Self::Space(space) | Self::Unique(space) => space,
         }
     }
 }
@@ -227,20 +225,26 @@ impl Deref for AddressSpace {
 impl DerefMut for AddressSpace {
     fn deref_mut(&mut self) -> &mut Self::Target {
         match self {
-            Self::Constant(space)
-            | Self::Space(space)
-            | Self::Unique(space) => space,
+            Self::Constant(space) | Self::Space(space) | Self::Unique(space) => space,
         }
     }
 }
 
 impl AddressSpace {
     pub fn is_constant(&self) -> bool {
-        if let Self::Constant(..) = self { true } else { false }
+        if let Self::Constant(..) = self {
+            true
+        } else {
+            false
+        }
     }
 
     pub fn is_unique(&self) -> bool {
-        if let Self::Unique(..) = self { true } else { false }
+        if let Self::Unique(..) = self {
+            true
+        } else {
+            false
+        }
     }
 
     pub fn is_register(&self) -> bool {
@@ -332,7 +336,7 @@ impl AddressSpace {
             + (self.word_size as u64 - 1);
     }
 
-    pub fn from_xml(input: xml::Node) -> Result<Self, de::Error> {
+    pub fn from_xml(input: xml::Node) -> Result<Self, Error> {
         let name = input.attribute_string("name")?;
         let index = input.attribute_int("index")?;
         let address_size = input.attribute_int("size")?;
@@ -349,42 +353,36 @@ impl AddressSpace {
             properties |= property::HasPhysical;
         }
 
-        let highest = calculate_mask(address_size)
-            * (word_size as u64)
-            + (word_size as u64 - 1);
+        let highest = calculate_mask(address_size) * (word_size as u64) + (word_size as u64 - 1);
 
         match input.tag_name().name() {
             /* These are not used in any .sla distributed with Ghidra:
             "space_base"
             "space_overlay"
             */
-            "space_unique" => {
-                Ok(Self::Unique(Space {
-                    kind: SpaceKind::Internal,
-                    properties,
-                    name,
-                    highest,
-                    address_size,
-                    word_size,
-                    index,
-                    delay,
-                    deadcode_delay,
-                }))
-            },
-            "space" | "space_other" => {
-                Ok(Self::Space(Space {
-                    kind: SpaceKind::Processor,
-                    properties,
-                    name,
-                    highest,
-                    address_size,
-                    word_size,
-                    index,
-                    delay,
-                    deadcode_delay,
-                }))
-            },
-            tag => de::TagUnexpected { name: tag.to_owned() }.fail(),
+            "space_unique" => Ok(Self::Unique(Space {
+                kind: SpaceKind::Internal,
+                properties,
+                name,
+                highest,
+                address_size,
+                word_size,
+                index,
+                delay,
+                deadcode_delay,
+            })),
+            "space" | "space_other" => Ok(Self::Space(Space {
+                kind: SpaceKind::Processor,
+                properties,
+                name,
+                highest,
+                address_size,
+                word_size,
+                index,
+                delay,
+                deadcode_delay,
+            })),
+            tag => Err(Error::TagUnexpected(tag.to_owned())),
         }
     }
 }

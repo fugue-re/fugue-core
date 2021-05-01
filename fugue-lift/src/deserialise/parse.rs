@@ -114,7 +114,7 @@ impl FromStrRadix for usize {
 impl XmlExt for xml::Node<'_, '_> {
     fn attribute_endian(&self, name: &'static str) -> Result<Endian, Error> {
         let n = self.attribute(name)
-            .map_err(|error| AttributeExpected { name })?;
+            .ok_or_else(|| Error::AttributeExpected(name))?;
         match n {
             "big" | "BIG" | "be" | "BE" => Ok(Endian::Big),
             "little" | "LITTLE" | "le" | "LE" => Ok(Endian::Little),

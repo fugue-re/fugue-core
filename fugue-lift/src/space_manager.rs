@@ -1,10 +1,8 @@
 use std::fmt::Debug;
 
 use crate::address::Address;
+use crate::deserialise::Error;
 use crate::space::AddressSpace;
-
-use crate::error::deserialisation as de;
-use snafu::OptionExt;
 
 #[derive(Debug, Clone)]
 pub struct SpaceManager {
@@ -45,19 +43,21 @@ impl SpaceManager {
         self.spaces.get(self.unique_space)
     }
 
-    pub fn from_xml(input: xml::Node) -> Result<Self, de::Error> {
+    pub fn from_xml(input: xml::Node) -> Result<Self, Error> {
         if input.tag_name().name() != "spaces" {
-            return de::TagUnexpected { name: input.tag_name().name().to_owned() }.fail()
+            return Err(Error::TagUnexpected(input.tag_name().name().to_owned()));
         }
 
         let mut spaces = vec![AddressSpace::constant("const", 0)];
         let mut default_space = 0;
         let mut unique_space = 0;
 
-        let default_name = input.attribute("defaultspace")
-            .with_context(|| de::AttributeExpected { name: "defaultspace" })?;
+        let default_name = input
+            .attribute("defaultspace")
+            .ok_or_else(|| Error::AttributeExpected("defaultspace"))?;
 
-        for (index, child) in input.children()
+        for (index, child) in input
+            .children()
             .filter(xml::Node::is_element)
             .enumerate()
             .map(|(i, c)| (i + 1, c))
@@ -65,7 +65,7 @@ impl SpaceManager {
             let space = AddressSpace::from_xml(child)?;
 
             if space.index() != index {
-                return de::Invariant { reason: "space index mismatch" }.fail()
+                return Err(Error::Invariant("space index mismatch"));
             }
 
             if space.name() == default_name {
@@ -80,7 +80,7 @@ impl SpaceManager {
         }
 
         if unique_space == 0 {
-            return de::Invariant { reason: "unique space not defined" }.fail()
+            return Err(Error::Invariant("unique space not defined"));
         }
 
         Ok(Self {

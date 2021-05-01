@@ -1,6 +1,6 @@
 use crate::bits;
-use crate::error::deserialisation as de;
-use crate::parse::XmlExt;
+use crate::deserialise::error::Error;
+use crate::deserialise::parse::XmlExt;
 
 use std::num::FpCategory;
 use std::mem::size_of;
@@ -19,7 +19,7 @@ pub struct FloatFormat {
 }
 
 impl FloatFormat {
-    pub fn float4() -> Self {
+    pub const fn float4() -> Self {
         FloatFormat {
             size: 4,
             sign_pos: 31,
@@ -33,7 +33,7 @@ impl FloatFormat {
         }
     }
 
-    pub fn float8() -> Self {
+    pub const fn float8() -> Self {
         FloatFormat {
             size: 8,
             sign_pos: 63,
@@ -334,7 +334,7 @@ impl FloatFormat {
         self.size
     }
 
-    pub fn from_xml(input: xml::Node) -> Result<Self, de::Error> {
+    pub fn from_xml(input: xml::Node) -> Result<Self, Error> {
         let size = input.attribute_int("size")?;
         let sign_pos = input.attribute_int("signpos")?;
         let frac_pos = input.attribute_int("fracpos")?;

@@ -6,10 +6,10 @@ pub enum Endian {
 
 impl Endian {
     pub fn is_big(&self) -> bool {
-        *self == Self::Big
+        matches!(self, Self::Big)
     }
 
     pub fn is_little(&self) -> bool {
-        *self == Self::Little
+        matches!(self, Self::Little)
     }
 }

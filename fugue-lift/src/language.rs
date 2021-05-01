@@ -1,16 +1,18 @@
-use crate::endian::Endian;
-use crate::error::deserialisation as de;
-use crate::error::{self, Error};
-use crate::parse::XmlExt;
-use crate::processor::Specification as PSpec;
-use crate::Translator;
+use crate::deserialise::parse::XmlExt;
+use crate::deserialise::Error as DeserialiseError;
 
-use std::collections::BTreeMap;
+use crate::endian::Endian;
+
+use crate::error::Error;
+
+use crate::processor::Specification as PSpec;
+//use crate::Translator;
+
+use fnv::FnvHashMap as Map;
+
 use std::fs::File;
 use std::io::Read;
 use std::path::{Path, PathBuf};
-
-use snafu::{OptionExt, ResultExt};
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Processor {
@@ -52,7 +54,7 @@ impl<'a> From<&'a str> for Variant {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Language {
     processor: Processor,
     endian: Endian,
@@ -65,22 +67,21 @@ pub struct Language {
 }
 
 impl Language {
-    pub fn from_xml<P: AsRef<Path>>(root: P, input: xml::Node) -> Result<Self, de::Error> {
+    pub fn from_xml<P: AsRef<Path>>(root: P, input: xml::Node) -> Result<Self, DeserialiseError> {
         if input.tag_name().name() != "language" {
-            return de::TagUnexpected {
-                name: input.tag_name().name().to_owned(),
-            }
-            .fail()
+            return Err(DeserialiseError::TagUnexpected(
+                input.tag_name().name().to_owned(),
+            ));
         }
 
         let mut path = root.as_ref().to_path_buf();
         let pspec_path = input.attribute_string("processorspec")?;
         path.push(pspec_path);
 
-        let processor_spec = PSpec::from_file(&path)
-            .map_err(|e| Box::new(e))
-            .with_context(|| de::DeserialiseDepends {
+        let processor_spec =
+            PSpec::from_file(&path).map_err(|e| DeserialiseError::DeserialiseDepends {
                 path: path.to_owned(),
+                error: Box::new(e),
             })?;
 
         Ok(Self {
@@ -103,41 +104,59 @@ pub struct LanguageBuilder<'a> {
 }
 
 impl<'a> LanguageBuilder<'a> {
+    /*
     pub fn build(&self) -> Result<Translator, Error> {
         let mut path = self.root.to_path_buf();
         path.push(&self.language.sla_file);
-        let mut translator = Translator::from_file(self.language.processor_spec.program_counter(), path)?;
+        let mut translator =
+            Translator::from_file(self.language.processor_spec.program_counter(), path)?;
         for (name, val) in self.language.processor_spec.context_set() {
-            translator.context_mut().set_variable_default(name.as_ref(), val);
+            translator
+                .context_mut()
+                .set_variable_default(name.as_ref(), val);
         }
         Ok(translator)
     }
+    */
 }
 
 #[derive(Debug, Clone)]
 pub struct LanguageDB {
-    db: BTreeMap<(Processor, Endian, usize, Variant), Language>,
+    db: Map<(Processor, Endian, usize, Variant), Language>,
     root: PathBuf,
 }
 
 impl LanguageDB {
-    pub fn lookup_default<'a, P: Into<Processor>>(&'a self, processor: P, endian: Endian, size: usize) -> Option<LanguageBuilder<'a>> {
-        self.db.get(&(processor.into(), endian, size, Variant::Default))
+    pub fn lookup_default<'a, P: Into<Processor>>(
+        &'a self,
+        processor: P,
+        endian: Endian,
+        size: usize,
+    ) -> Option<LanguageBuilder<'a>> {
+        self.db
+            .get(&(processor.into(), endian, size, Variant::Default))
             .map(|language| LanguageBuilder {
                 language,
                 root: &self.root,
             })
     }
 
-    pub fn lookup<'a, P: Into<Processor>, V: Into<Variant>>(&'a self, processor: P, endian: Endian, size: usize, variant: V) -> Option<LanguageBuilder<'a>> {
-        self.db.get(&(processor.into(), endian, size, variant.into()))
+    pub fn lookup<'a, P: Into<Processor>, V: Into<Variant>>(
+        &'a self,
+        processor: P,
+        endian: Endian,
+        size: usize,
+        variant: V,
+    ) -> Option<LanguageBuilder<'a>> {
+        self.db
+            .get(&(processor.into(), endian, size, variant.into()))
             .map(|language| LanguageBuilder {
                 language,
                 root: &self.root,
             })
     }
 
-    pub fn iter<'a>(&'a self) -> impl Iterator<Item=LanguageBuilder<'a>> {
+    pub fn iter<'a>(&'a self) -> impl Iterator<Item = LanguageBuilder<'a>> {
         self.db.iter().map(move |(_, language)| LanguageBuilder {
             language,
             root: &self.root,
@@ -148,56 +167,72 @@ impl LanguageDB {
         self.db.len()
     }
 
-    pub fn from_xml<P: AsRef<Path>>(root: P, input: xml::Node) -> Result<Self, de::Error> {
+    pub fn from_xml<P: AsRef<Path>>(root: P, input: xml::Node) -> Result<Self, DeserialiseError> {
         if input.tag_name().name() != "language_definitions" {
-            return de::TagUnexpected {
-                name: input.tag_name().name().to_owned(),
-            }
-            .fail()
+            return Err(DeserialiseError::TagUnexpected(
+                input.tag_name().name().to_owned(),
+            ));
         }
 
         let root = root.as_ref().to_path_buf();
 
-        Ok(Self{
-            db: input.children()
+        Ok(Self {
+            db: input
+                .children()
                 .filter(xml::Node::is_element)
                 .filter(|t| t.tag_name().name() == "language")
                 .map(|t| {
                     let ldef = Language::from_xml(&root, t)?;
-                    Ok(((ldef.processor.clone(), ldef.endian, ldef.size, ldef.variant.clone()), ldef))
+                    Ok((
+                        (
+                            ldef.processor.clone(),
+                            ldef.endian,
+                            ldef.size,
+                            ldef.variant.clone(),
+                        ),
+                        ldef,
+                    ))
                 })
-                .collect::<Result<_, _>>()?,
-           root,
+                .collect::<Result<_, DeserialiseError>>()?,
+            root,
         })
     }
 
     pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, Error> {
         let path = path.as_ref();
-        let mut file = File::open(path).with_context(|| error::ParseFile {
+        let mut file = File::open(path).map_err(|error| Error::ParseFile {
             path: path.to_owned(),
+            error,
         })?;
 
         let mut input = String::new();
-        file.read_to_string(&mut input).with_context(|| error::ParseFile {
-            path: path.to_owned(),
-        })?;
-
-        let root = path.parent()
-            .with_context(|| de::Invariant {
-                reason: "cannot obtain parent directory of language defintions",
-            })
-            .with_context(|| error::DeserialiseFile {
+        file.read_to_string(&mut input)
+            .map_err(|error| Error::ParseFile {
                 path: path.to_owned(),
+                error,
             })?;
 
-        Self::from_str(root, &input).with_context(|| error::DeserialiseFile {
+        let root = path
+            .parent()
+            .ok_or_else(|| {
+                DeserialiseError::Invariant("cannot obtain parent directory of language defintions")
+            })
+            .map_err(|error| Error::DeserialiseFile {
+                path: path.to_owned(),
+                error,
+            })?;
+
+        Self::from_str(root, &input).map_err(|error| Error::DeserialiseFile {
             path: path.to_owned(),
+            error,
         })
     }
 
-    pub fn from_str<P: AsRef<Path>, S: AsRef<str>>(root: P, input: S) -> Result<Self, de::Error> {
-        let document = xml::Document::parse(input.as_ref())
-            .map_err(|source| de::Error::Xml { source })?;
+    pub fn from_str<P: AsRef<Path>, S: AsRef<str>>(
+        root: P,
+        input: S,
+    ) -> Result<Self, DeserialiseError> {
+        let document = xml::Document::parse(input.as_ref()).map_err(DeserialiseError::Xml)?;
 
         Self::from_xml(root, document.root_element())
     }
