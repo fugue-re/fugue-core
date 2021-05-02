@@ -32,11 +32,16 @@ use crate::varnodedata::VarnodeData;
 pub struct TranslatorImpl {
     alignment: usize,
     big_endian: bool,
+
+    unique_base: u64,
     unique_mask: u64,
+
+    maximum_delay: usize,
+    section_count: usize,
+
     float_formats: Vec<FloatFormat>,
     manager: Box<SpaceManager>,
-    //maximum_delay: usize,
-    //section_count: usize,
+
     #[borrows(manager)]
     #[covariant]
     pub symbol_table: Box<SymbolTable<'this>>,
@@ -49,8 +54,6 @@ pub struct TranslatorImpl {
     #[covariant]
     pub global_scope: &'this SymbolScope,
 
-    //unique_base: u64,
-    //context_db: ContextDatabase,
     #[borrows(manager)]
     #[covariant]
     pub registers: Map<(u64, usize), &'this str>,
@@ -260,11 +263,11 @@ impl Translator {
 
         let alignment = input.attribute_int("align")?;
         let big_endian = input.attribute_bool("bigendian")?;
-        // let unique_base = input.attribute_int("uniqbase")?;
+        let unique_base = input.attribute_int("uniqbase")?;
 
-        //let maximum_delay = input.attribute_int_opt("maxdelay", 0)?;
+        let maximum_delay = input.attribute_int_opt("maxdelay", 0)?;
         let unique_mask = input.attribute_int_opt("uniqmask", 0)?;
-        //let section_count = input.attribute_int_opt("numsections", 0)?;
+        let section_count = input.attribute_int_opt("numsections", 0)?;
 
         let mut children = input.children().filter(xml::Node::is_element).peekable();
 
@@ -287,7 +290,10 @@ impl Translator {
         let mut slf = Self(TranslatorImpl::try_new(
             alignment,
             big_endian,
+            unique_base,
             unique_mask,
+            maximum_delay,
+            section_count,
             float_formats,
             Box::new(manager),
             //maximum_delay,
