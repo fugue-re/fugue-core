@@ -159,7 +159,8 @@ impl XmlExt for xml::Node<'_, '_> {
     ) -> Result<T, Error> {
         let s = self.attribute(name)
             .ok_or_else(|| Error::AttributeExpected(name))?;
-        if s.starts_with("0x") || s.starts_with("0X") {
+        let b = s.as_bytes();
+        if b.len() > 2 && b[0] == b'0' && (b[1] == b'X' || b[1] == b'x') {
             T::from_str_base(&s[2..], 16)
         } else {
             T::from_str_base(s, 10)

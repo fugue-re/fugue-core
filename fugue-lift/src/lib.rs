@@ -21,5 +21,5 @@ pub mod space_manager;
 pub mod translator;
 pub mod varnodedata;
 
-//pub use translator::Translator;
-//pub use language::LanguageDB;
+pub use translator::Translator;
+pub use language::LanguageDB;

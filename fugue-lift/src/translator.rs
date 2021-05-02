@@ -37,9 +37,6 @@ pub struct TranslatorImpl {
     manager: Box<SpaceManager>,
     //maximum_delay: usize,
     //section_count: usize,
-    #[covariant]
-    pub registers: Map<(u64, usize), String>,
-
     #[borrows(manager)]
     #[covariant]
     pub symbol_table: Box<SymbolTable<'this>>,
@@ -56,13 +53,19 @@ pub struct TranslatorImpl {
     //context_db: ContextDatabase,
     #[borrows(manager)]
     #[covariant]
-    pub registers_by_name: Map<String, VarnodeData<'this>>,
+    pub registers: Map<(u64, usize), &'this str>,
+
+    #[borrows(manager)]
+    #[covariant]
+    pub registers_by_name: Map<&'this str, VarnodeData<'this>>,
 
     #[borrows(manager)]
     #[covariant]
     pub program_counter: VarnodeData<'this>,
 
-    pub user_ops: Vec<String>,
+    #[borrows(manager)]
+    #[covariant]
+    pub user_ops: Vec<&'this str>,
 }
 
 #[derive(Clone)]
@@ -110,7 +113,7 @@ impl Translator {
         self.0.borrow_manager()
     }
 
-    pub fn registers(&self) -> &Map<(u64, usize), String> {
+    pub fn registers(&self) -> &Map<(u64, usize), &str> {
         self.0.borrow_registers()
     }
 
@@ -123,7 +126,7 @@ impl Translator {
         self.0.borrow_symbol_table()
     }
 
-    pub fn user_ops(&self) -> &[String] {
+    pub fn user_ops(&self) -> &[&str] {
         self.0.borrow_user_ops()
     }
 
@@ -180,14 +183,14 @@ impl Translator {
                         ..
                     }) => {
                         if registers
-                            .insert((*offset, *size), name.to_owned())
+                            .insert((*offset, *size), name)
                             .is_some()
                         {
                             // duplicate
                             return Err(DeserialiseError::Invariant("duplicate varnode"));
                         }
                         register_names.insert(
-                            name.to_owned(),
+                            name,
                             VarnodeData::new(register_space, *offset, *size),
                         );
 
@@ -225,9 +228,9 @@ impl Translator {
                         index, ref name, ..
                     }) => {
                         if user_ops.len() <= *index {
-                            user_ops.resize_with(index + 1, String::new);
+                            user_ops.resize_with(index + 1, || "");
                         }
-                        user_ops[*index].clone_from(name);
+                        user_ops[*index] = name;
                     }
                     _ => (),
                 }
@@ -289,7 +292,6 @@ impl Translator {
             Box::new(manager),
             //maximum_delay,
             //section_count,
-            Map::default(),
             |manager| {
                 SymbolTable::from_xml(
                     &manager,
@@ -315,13 +317,14 @@ impl Translator {
             },
             //context_db: ContextDatabase::new(),
             |_| Ok(Map::default()),
+            |_| Ok(Map::default()),
             |manager| {
                 let register_space = manager
                     .register_space()
                     .ok_or_else(|| DeserialiseError::Invariant("missing register space"))?;
                 Ok(VarnodeData::new(register_space, 0, 0))
             },
-            Vec::new(),
+            |_| Ok(Vec::new()),
         )?);
 
         slf.build_xrefs(program_counter)?;

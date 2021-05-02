@@ -6,7 +6,7 @@ use crate::endian::Endian;
 use crate::error::Error;
 
 use crate::processor::Specification as PSpec;
-//use crate::Translator;
+use crate::Translator;
 
 use fnv::FnvHashMap as Map;
 
@@ -104,20 +104,20 @@ pub struct LanguageBuilder<'a> {
 }
 
 impl<'a> LanguageBuilder<'a> {
-    /*
     pub fn build(&self) -> Result<Translator, Error> {
         let mut path = self.root.to_path_buf();
         path.push(&self.language.sla_file);
         let mut translator =
             Translator::from_file(self.language.processor_spec.program_counter(), path)?;
+        /*
         for (name, val) in self.language.processor_spec.context_set() {
             translator
                 .context_mut()
                 .set_variable_default(name.as_ref(), val);
         }
+        */
         Ok(translator)
     }
-    */
 }
 
 #[derive(Debug, Clone)]
@@ -242,7 +242,6 @@ impl LanguageDB {
 mod test {
     use super::*;
 
-    /*
     #[test]
     fn test_language_def_arm() -> Result<(), Error> {
         let ldef = LanguageDB::from_file("./data/arm/ARM.ldefs")?;
@@ -297,5 +296,4 @@ mod test {
         }
         Ok(())
     }
-    */
 }

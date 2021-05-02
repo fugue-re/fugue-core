@@ -2,3 +2,6 @@
 members = [
   "fugue-lift",
 ]
+
+[profile.bench]
+debug = true
