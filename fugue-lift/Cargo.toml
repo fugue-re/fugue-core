@@ -7,5 +7,6 @@ edition = "2018"
 [dependencies]
 fnv = "1"
 itertools = "0.10"
+ouroboros = "0.9"
 thiserror = "1"
 xml = { version = "0.14", package = "roxmltree" }

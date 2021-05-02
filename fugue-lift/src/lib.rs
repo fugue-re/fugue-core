@@ -18,7 +18,7 @@ pub mod space;
 pub mod space_manager;
 //pub mod subtable;
 //pub mod symbol_table;
-//pub mod translator;
+pub mod translator;
 pub mod varnodedata;
 
 //pub use translator::Translator;

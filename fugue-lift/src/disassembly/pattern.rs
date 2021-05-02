@@ -1,10 +1,10 @@
 use crate::bits;
-use crate::disassembly::ParserWalker;
-use crate::symbol_table::{Symbol, SymbolTable};
-use crate::error::deserialisation as de;
-use crate::error::disassembly as di;
-use crate::parse::XmlExt;
-use snafu::OptionExt;
+//use crate::disassembly::ParserWalker;
+use crate::deserialise::Error as DeserialiseError;
+use crate::deserialise::parse::XmlExt;
+use crate::disassembly::symbol::{Symbol, SymbolTable};
+//use crate::error::disassembly as di;
+
 use std::mem::size_of;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -75,6 +75,7 @@ impl PatternExpression {
         }
     }
 
+    /*
     pub fn value<'a, 'b>(&self, walker: &mut ParserWalker<'a, 'b>, symbols: &'a SymbolTable) -> Result<i64, di::Error> {
         Ok(match self {
             Self::TokenField {
@@ -222,8 +223,9 @@ impl PatternExpression {
             Self::Not(ref operand) => !operand.value(walker, symbols)?,
         })
     }
+    */
 
-    pub fn from_xml(input: xml::Node) -> Result<Self, de::Error> {
+    pub fn from_xml(input: xml::Node) -> Result<Self, DeserialiseError> {
         Ok(match input.tag_name().name() {
             "tokenfield" => Self::TokenField {
                 big_endian: input.attribute_bool("bigendian")?,
@@ -255,80 +257,80 @@ impl PatternExpression {
             "plus_exp" => {
                 let mut children = input.children().filter(xml::Node::is_element);
                 Self::Plus(
-                    Box::new(Self::from_xml(children.next().context(de::Invariant { reason: "missing lhs of binary expression" })?)?),
-                    Box::new(Self::from_xml(children.next().context(de::Invariant { reason: "missing rhs of binary expression" })?)?),
+                    Box::new(Self::from_xml(children.next().ok_or_else(|| DeserialiseError::Invariant("missing lhs of binary expression"))?)?),
+                    Box::new(Self::from_xml(children.next().ok_or_else(|| DeserialiseError::Invariant("missing rhs of binary expression"))?)?),
                 )
             },
             "sub_exp" => {
                 let mut children = input.children().filter(xml::Node::is_element);
                 Self::Sub(
-                    Box::new(Self::from_xml(children.next().context(de::Invariant { reason: "missing lhs of binary expression" })?)?),
-                    Box::new(Self::from_xml(children.next().context(de::Invariant { reason: "missing rhs of binary expression" })?)?),
+                    Box::new(Self::from_xml(children.next().ok_or_else(|| DeserialiseError::Invariant("missing lhs of binary expression"))?)?),
+                    Box::new(Self::from_xml(children.next().ok_or_else(|| DeserialiseError::Invariant("missing rhs of binary expression"))?)?),
                 )
             },
             "mult_exp" => {
                 let mut children = input.children().filter(xml::Node::is_element);
                 Self::Mult(
-                    Box::new(Self::from_xml(children.next().context(de::Invariant { reason: "missing lhs of binary expression" })?)?),
-                    Box::new(Self::from_xml(children.next().context(de::Invariant { reason: "missing rhs of binary expression" })?)?),
+                    Box::new(Self::from_xml(children.next().ok_or_else(|| DeserialiseError::Invariant("missing lhs of binary expression"))?)?),
+                    Box::new(Self::from_xml(children.next().ok_or_else(|| DeserialiseError::Invariant("missing rhs of binary expression"))?)?),
                 )
             },
             "lshift_exp" => {
                 let mut children = input.children().filter(xml::Node::is_element);
                 Self::LeftShift(
-                    Box::new(Self::from_xml(children.next().context(de::Invariant { reason: "missing lhs of binary expression" })?)?),
-                    Box::new(Self::from_xml(children.next().context(de::Invariant { reason: "missing rhs of binary expression" })?)?),
+                    Box::new(Self::from_xml(children.next().ok_or_else(|| DeserialiseError::Invariant("missing lhs of binary expression"))?)?),
+                    Box::new(Self::from_xml(children.next().ok_or_else(|| DeserialiseError::Invariant("missing rhs of binary expression"))?)?),
                 )
             },
             "rshift_exp" => {
                 let mut children = input.children().filter(xml::Node::is_element);
                 Self::RightShift(
-                    Box::new(Self::from_xml(children.next().context(de::Invariant { reason: "missing lhs of binary expression" })?)?),
-                    Box::new(Self::from_xml(children.next().context(de::Invariant { reason: "missing rhs of binary expression" })?)?),
+                    Box::new(Self::from_xml(children.next().ok_or_else(|| DeserialiseError::Invariant("missing lhs of binary expression"))?)?),
+                    Box::new(Self::from_xml(children.next().ok_or_else(|| DeserialiseError::Invariant("missing rhs of binary expression"))?)?),
                 )
             },
             "and_exp" => {
                 let mut children = input.children().filter(xml::Node::is_element);
                 Self::And(
-                    Box::new(Self::from_xml(children.next().context(de::Invariant { reason: "missing lhs of binary expression" })?)?),
-                    Box::new(Self::from_xml(children.next().context(de::Invariant { reason: "missing rhs of binary expression" })?)?),
+                    Box::new(Self::from_xml(children.next().ok_or_else(|| DeserialiseError::Invariant("missing lhs of binary expression"))?)?),
+                    Box::new(Self::from_xml(children.next().ok_or_else(|| DeserialiseError::Invariant("missing rhs of binary expression"))?)?),
                 )
             },
             "or_exp" => {
                 let mut children = input.children().filter(xml::Node::is_element);
                 Self::Or(
-                    Box::new(Self::from_xml(children.next().context(de::Invariant { reason: "missing lhs of binary expression" })?)?),
-                    Box::new(Self::from_xml(children.next().context(de::Invariant { reason: "missing rhs of binary expression" })?)?),
+                    Box::new(Self::from_xml(children.next().ok_or_else(|| DeserialiseError::Invariant("missing lhs of binary expression"))?)?),
+                    Box::new(Self::from_xml(children.next().ok_or_else(|| DeserialiseError::Invariant("missing rhs of binary expression"))?)?),
                 )
             },
             "xor_exp" => {
                 let mut children = input.children().filter(xml::Node::is_element);
                 Self::Xor(
-                    Box::new(Self::from_xml(children.next().context(de::Invariant { reason: "missing lhs of binary expression" })?)?),
-                    Box::new(Self::from_xml(children.next().context(de::Invariant { reason: "missing rhs of binary expression" })?)?),
+                    Box::new(Self::from_xml(children.next().ok_or_else(|| DeserialiseError::Invariant("missing lhs of binary expression"))?)?),
+                    Box::new(Self::from_xml(children.next().ok_or_else(|| DeserialiseError::Invariant("missing rhs of binary expression"))?)?),
                 )
             },
             "div_exp" => {
                 let mut children = input.children().filter(xml::Node::is_element);
                 Self::Div(
-                    Box::new(Self::from_xml(children.next().context(de::Invariant { reason: "missing lhs of binary expression" })?)?),
-                    Box::new(Self::from_xml(children.next().context(de::Invariant { reason: "missing rhs of binary expression" })?)?),
+                    Box::new(Self::from_xml(children.next().ok_or_else(|| DeserialiseError::Invariant("missing lhs of binary expression"))?)?),
+                    Box::new(Self::from_xml(children.next().ok_or_else(|| DeserialiseError::Invariant("missing rhs of binary expression"))?)?),
                 )
             },
             "minus_exp" => {
                 let mut children = input.children().filter(xml::Node::is_element);
                 Self::Minus(
-                    Box::new(Self::from_xml(children.next().context(de::Invariant { reason: "missing operand of unary expression" })?)?),
+                    Box::new(Self::from_xml(children.next().ok_or_else(|| DeserialiseError::Invariant("missing operand of unary expression"))?)?),
                 )
             },
             "not_exp" => {
                 let mut children = input.children().filter(xml::Node::is_element);
                 Self::Not(
-                    Box::new(Self::from_xml(children.next().context(de::Invariant { reason: "missing operand of unary expression" })?)?),
+                    Box::new(Self::from_xml(children.next().ok_or_else(|| DeserialiseError::Invariant("missing operand of unary expression"))?)?),
                 )
             },
             name => {
-                return de::TagUnexpected { name: name.to_owned() }.fail()
+                return Err(DeserialiseError::TagUnexpected(name.to_owned()))
             },
         })
     }

@@ -9,6 +9,7 @@ pub struct SpaceManager {
     spaces: Vec<AddressSpace>,
     constant_space: usize,
     default_space: usize,
+    register_space: usize,
     unique_space: usize,
 }
 
@@ -39,6 +40,10 @@ impl SpaceManager {
         self.spaces.get(self.default_space)
     }
 
+    pub fn register_space(&self) -> Option<&AddressSpace> {
+        self.spaces.get(self.register_space)
+    }
+
     pub fn unique_space(&self) -> Option<&AddressSpace> {
         self.spaces.get(self.unique_space)
     }
@@ -50,6 +55,7 @@ impl SpaceManager {
 
         let mut spaces = vec![AddressSpace::constant("const", 0)];
         let mut default_space = 0;
+        let mut register_space = 0;
         let mut unique_space = 0;
 
         let default_name = input
@@ -72,6 +78,10 @@ impl SpaceManager {
                 default_space = index;
             }
 
+            if space.name() == "register" {
+                register_space = index;
+            }
+
             if space.name() == "unique" {
                 unique_space = index;
             }
@@ -87,6 +97,7 @@ impl SpaceManager {
             spaces,
             constant_space: 0,
             default_space,
+            register_space,
             unique_space,
         })
     }

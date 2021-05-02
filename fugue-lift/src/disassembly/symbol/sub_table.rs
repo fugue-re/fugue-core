@@ -1,15 +1,17 @@
-use crate::construct::ConstructTpl;
-use crate::disassembly::ParserWalker;
-use crate::error::deserialisation as de;
-use crate::error::disassembly as di;
-use crate::pattern::PatternExpression;
-use crate::parse::XmlExt;
-use crate::symbol_table::{Symbol, SymbolTable};
+use crate::deserialise::Error as DeserialiseError;
+use crate::deserialise::parse::XmlExt;
+
+use crate::disassembly::construct::ConstructTpl;
+use crate::disassembly::pattern::PatternExpression;
+
+//use crate::disassembly::ParserWalker;
+//use crate::error::deserialisation as de;
+//use crate::error::disassembly as di;
+use crate::disassembly::symbol::{Symbol, SymbolTable};
 
 use std::convert::TryFrom;
 use std::fmt;
 use std::mem::size_of;
-use snafu::OptionExt;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Context {
@@ -28,6 +30,7 @@ pub enum Context {
 }
 
 impl Context {
+    /*
     pub fn apply<'a, 'b>(&self, walker: &mut ParserWalker<'a, 'b>, symbols: &'a SymbolTable) -> Result<(), di::Error> {
         match self {
             Self::Operator { num, shift, mask, pattern_value } => {
@@ -42,8 +45,9 @@ impl Context {
         }
         Ok(())
     }
+    */
 
-    pub fn from_xml(input: xml::Node) -> Result<Self, de::Error> {
+    pub fn from_xml(input: xml::Node) -> Result<Self, DeserialiseError> {
         Ok(match input.tag_name().name() {
             "context_op" => Self::Operator {
                 num: input.attribute_int("i")?,
@@ -53,7 +57,7 @@ impl Context {
                     .filter(xml::Node::is_element)
                     .next()
                     .map(PatternExpression::from_xml)
-                    .with_context(|| de::Invariant { reason: "missing pattern for context_op" })??,
+                    .ok_or_else(|| DeserialiseError::Invariant("missing pattern for context_op"))??,
             },
             "commit" => Self::Commit {
                 symbol_id: input.attribute_int("id")?,
@@ -61,7 +65,7 @@ impl Context {
                 mask: input.attribute_int("mask")?,
                 flow: input.attribute_bool("flow")?,
             },
-            name => return de::TagUnexpected { name: name.to_owned() }.fail(),
+            name => return Err(DeserialiseError::TagUnexpected(name.to_owned()))
         })
     }
 }
@@ -81,17 +85,20 @@ pub struct Constructor {
 }
 
 impl Constructor {
+    /*
     pub fn apply_context<'a, 'b>(&self, walker: &mut ParserWalker<'a, 'b>, symbols: &'a SymbolTable) -> Result<(), di::Error> {
         for context in &self.context {
             context.apply(walker, symbols)?;
         }
         Ok(())
     }
+    */
 
     pub fn minimum_length(&self) -> usize {
         self.min_length
     }
 
+    /*
     pub fn format<'a, 'b>(&self, fmt: &mut fmt::Formatter, walker: &mut ParserWalker<'a, 'b>, symbols: &'a SymbolTable) -> Result<(), fmt::Error> {
         for p in &self.print_pieces {
             if p.as_bytes()[0] == b'\n' {
@@ -156,6 +163,7 @@ impl Constructor {
         }
         Ok(())
     }
+    */
 
     pub fn operand(&self, index: usize) -> usize {
         self.operands[index]
@@ -173,7 +181,7 @@ impl Constructor {
         self.named_template.get(index).and_then(|v| v.as_ref())
     }
 
-    pub fn from_xml(input: xml::Node) -> Result<Self, de::Error> {
+    pub fn from_xml(input: xml::Node) -> Result<Self, DeserialiseError> {
         let mut operands = Vec::new();
         let mut print_pieces = Vec::new();
         let mut context = Vec::new();
@@ -203,14 +211,14 @@ impl Constructor {
                         }
 
                         if named_template[section_id].is_some() {
-                            return de::Invariant { reason: "duplicate named section" }.fail()
+                            return Err(DeserialiseError::Invariant("duplicate named section"))
                         }
 
                         named_template[section_id] = Some(cur);
                     } else if template.is_none() {
                         template = Some(cur);
                     } else {
-                        return de::Invariant { reason: "duplicate main section" }.fail()
+                        return Err(DeserialiseError::Invariant("duplicate main section"))
                     }
                 }
             }
@@ -251,7 +259,7 @@ pub struct DecisionNode {
 }
 
 impl DecisionNode {
-    pub fn from_xml(input: xml::Node) -> Result<Self, de::Error> {
+    pub fn from_xml(input: xml::Node) -> Result<Self, DeserialiseError> {
         let inputs = input.children().filter(xml::Node::is_element);
         let mut patterns = Vec::new();
         let mut children = Vec::new();
@@ -263,7 +271,7 @@ impl DecisionNode {
                         input.children()
                             .filter(xml::Node::is_element)
                             .next()
-                            .with_context(|| de::Invariant { reason: "no pattern for disjoint pattern"})?
+                            .ok_or_else(|| DeserialiseError::Invariant("no pattern for disjoint pattern"))?
                     )?;
                     patterns.push(DecisionPair { id, pattern });
                 },
@@ -283,6 +291,7 @@ impl DecisionNode {
         })
     }
 
+    /*
     pub fn resolve<'a>(&self, walker: &mut ParserWalker, ctors: &'a [Constructor]) -> Result<&'a Constructor, di::Error> {
         if self.size == 0 {
             for pattern in self.patterns.iter() {
@@ -301,6 +310,7 @@ impl DecisionNode {
             self.children[val as usize].resolve(walker, ctors)
         }
     }
+    */
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -310,9 +320,11 @@ pub struct DecisionPair {
 }
 
 impl DecisionPair {
+    /*
     pub fn is_match(&self, walker: &ParserWalker) -> Result<bool, di::Error> {
         self.pattern.is_match(walker)
     }
+    */
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -326,6 +338,7 @@ pub enum DisjointPattern {
 }
 
 impl DisjointPattern {
+    /*
     pub fn is_match(&self, walker: &ParserWalker) -> Result<bool, di::Error> {
         Ok(match self {
             Self::Instruction(ref pat) => pat.is_match(walker)?,
@@ -336,8 +349,9 @@ impl DisjointPattern {
             } => instruction.is_match(walker)? && context.is_match(walker),
         })
     }
+    */
 
-    pub fn from_xml(input: xml::Node) -> Result<Self, de::Error> {
+    pub fn from_xml(input: xml::Node) -> Result<Self, DeserialiseError> {
         Ok(match input.tag_name().name() {
             "instruct_pat" => Self::Instruction(InstructionPattern::from_xml(input)?),
             "context_pat" => Self::Context(ContextPattern::from_xml(input)?),
@@ -347,12 +361,12 @@ impl DisjointPattern {
                     context: ContextPattern::from_xml(
                         children
                             .next()
-                            .with_context(|| de::Invariant { reason: "missing context pattern" })?
+                            .ok_or_else(|| DeserialiseError::Invariant("missing context pattern"))?
                     )?,
                     instruction: InstructionPattern::from_xml(
                         children
                             .next()
-                            .with_context(|| de::Invariant { reason: "missing instruction pattern" })?
+                            .ok_or_else(|| DeserialiseError::Invariant("missing instruction pattern"))?
                     )?,
                 }
             }
@@ -366,20 +380,22 @@ pub struct InstructionPattern {
 }
 
 impl InstructionPattern {
-    pub fn from_xml(input: xml::Node) -> Result<Self, de::Error> {
+    pub fn from_xml(input: xml::Node) -> Result<Self, DeserialiseError> {
         Ok(Self {
             mask_value: PatternBlock::from_xml(
                 input.children()
                     .filter(xml::Node::is_element)
                     .next()
-                    .with_context(|| de::Invariant { reason: "missing pattern block" })?
+                    .ok_or_else(|| DeserialiseError::Invariant("missing pattern block"))?
             )?,
         })
     }
 
+    /*
     pub fn is_match(&self, walker: &ParserWalker) -> Result<bool, di::Error> {
         self.mask_value.is_instruction_match(walker)
     }
+    */
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -388,20 +404,22 @@ pub struct ContextPattern {
 }
 
 impl ContextPattern {
-    pub fn from_xml(input: xml::Node) -> Result<Self, de::Error> {
+    pub fn from_xml(input: xml::Node) -> Result<Self, DeserialiseError> {
         Ok(Self {
             mask_value: PatternBlock::from_xml(
                 input.children()
                     .filter(xml::Node::is_element)
                     .next()
-                    .with_context(|| de::Invariant { reason: "missing pattern block" })?
+                    .ok_or_else(|| DeserialiseError::Invariant("missing pattern block"))?
             )?,
         })
     }
 
+    /*
     pub fn is_match(&self, walker: &ParserWalker) -> bool {
         self.mask_value.is_context_match(walker)
     }
+    */
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -433,6 +451,7 @@ impl PatternBlock {
         self.non_zero_size == Self::ALWAYS_FALSE
     }
 
+    /*
     pub fn is_context_match(&self, walker: &ParserWalker) -> bool {
         match self.non_zero_size {
             Self::ALWAYS_FALSE => false,
@@ -468,6 +487,7 @@ impl PatternBlock {
             }
         })
     }
+    */
 
     pub fn shift(&mut self, shift: isize) {
         let noffset = isize::try_from(self.offset).expect("PatternBlock shift offset") + shift;
@@ -548,7 +568,7 @@ impl PatternBlock {
         self.non_zero_size = Some(non_zero_size);
     }
 
-    pub fn from_xml(input: xml::Node) -> Result<Self, de::Error> {
+    pub fn from_xml(input: xml::Node) -> Result<Self, DeserialiseError> {
         let mut masks = Vec::new();
         let mut values = Vec::new();
 

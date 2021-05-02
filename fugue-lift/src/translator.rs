@@ -1,73 +1,102 @@
-use itertools::Itertools;
-use snafu::{OptionExt, ResultExt};
-use std::collections::BTreeMap as Map;
-use std::collections::HashMap;
 use std::fs::File;
 use std::io::Read;
 use std::path::Path;
 use std::sync::Arc;
 
+use fnv::FnvHashMap as Map;
+use itertools::Itertools;
+
 use crate::address::Address;
-use crate::context::ContextDatabase;
-use crate::disassembly::{InstructionFormatter, ParserContext, ParserState, ParserWalker};
-use crate::error::deserialisation as de;
-use crate::error::disassembly as di;
-use crate::error::{self, Error};
+//use crate::context::ContextDatabase;
+//use crate::disassembly::{InstructionFormatter, ParserContext, ParserState, ParserWalker};
+
+use crate::deserialise::parse::XmlExt;
+use crate::deserialise::Error as DeserialiseError;
+
+use crate::disassembly::symbol::{FixedHandle, Symbol, SymbolScope, SymbolTable};
+use crate::disassembly::Error as DisassemblyError;
+use crate::disassembly::PatternExpression;
+
+use crate::error::Error;
+
 use crate::float_format::FloatFormat;
-use crate::parse::XmlExt;
-use crate::pattern::PatternExpression;
-use crate::pcode::{PCode, PCodeBuilder};
+
+//use crate::pcode::{PCode, PCodeBuilder};
 use crate::space::AddressSpace;
 use crate::space_manager::SpaceManager;
-use crate::symbol_table::{FixedHandle, Symbol, SymbolTable};
+
 use crate::varnodedata::VarnodeData;
 
+#[ouroboros::self_referencing(chain_hack)]
 #[derive(Clone)]
-pub struct Translator {
+pub struct TranslatorImpl {
     alignment: usize,
     big_endian: bool,
+    unique_mask: u64,
     float_formats: Vec<FloatFormat>,
-    manager: SpaceManager,
+    manager: Box<SpaceManager>,
     //maximum_delay: usize,
     //section_count: usize,
-    root: usize,
-    symbol_table: SymbolTable,
+    #[covariant]
+    pub registers: Map<(u64, usize), String>,
 
-    unique_mask: u64,
+    #[borrows(manager)]
+    #[covariant]
+    pub symbol_table: Box<SymbolTable<'this>>,
+
+    #[borrows(symbol_table)]
+    #[covariant]
+    pub root: &'this Symbol<'this>,
+
+    #[borrows(symbol_table)]
+    #[covariant]
+    pub global_scope: &'this SymbolScope,
+
     //unique_base: u64,
-    context_db: ContextDatabase,
+    //context_db: ContextDatabase,
+    #[borrows(manager)]
+    #[covariant]
+    pub registers_by_name: Map<String, VarnodeData<'this>>,
 
-    registers: HashMap<(u64, usize), String>,
-    registers_by_name: HashMap<String, VarnodeData>,
-    program_counter: VarnodeData,
-    user_ops: Vec<String>,
+    #[borrows(manager)]
+    #[covariant]
+    pub program_counter: VarnodeData<'this>,
+
+    pub user_ops: Vec<String>,
 }
+
+#[derive(Clone)]
+#[repr(transparent)]
+pub struct Translator(TranslatorImpl);
 
 impl Translator {
     pub fn is_big_endian(&self) -> bool {
-        self.big_endian
+        *self.0.borrow_big_endian()
     }
 
     pub fn is_little_endian(&self) -> bool {
-        self.big_endian
+        !*self.0.borrow_big_endian()
     }
 
     pub fn alignment(&self) -> usize {
-        self.alignment
+        *self.0.borrow_alignment()
     }
 
     pub fn unique_mask(&self) -> u64 {
-        self.unique_mask
+        *self.0.borrow_unique_mask()
     }
 
     pub fn float_formats(&self) -> &[FloatFormat] {
-        self.float_formats.as_ref()
+        self.0.borrow_float_formats()
     }
 
     pub fn float_format(&self, size: usize) -> Option<&FloatFormat> {
-        self.float_formats.iter().find(|ff| ff.size() == size)
+        self.0.borrow_float_formats()
+            .iter()
+            .find(|ff| ff.size() == size)
     }
 
+    /*
     pub fn context(&self) -> &ContextDatabase {
         &self.context_db
     }
@@ -75,149 +104,155 @@ impl Translator {
     pub fn context_mut(&mut self) -> &mut ContextDatabase {
         &mut self.context_db
     }
+    */
 
     pub fn manager(&self) -> &SpaceManager {
-        &self.manager
+        self.0.borrow_manager()
     }
 
-    pub fn manager_mut(&mut self) -> &mut SpaceManager {
-        &mut self.manager
-    }
-
-    pub fn registers(&self) -> &HashMap<(u64, usize), String> {
-        &self.registers
+    pub fn registers(&self) -> &Map<(u64, usize), String> {
+        self.0.borrow_registers()
     }
 
     pub fn register_by_name<S: AsRef<str>>(&self, name: S) -> Option<&VarnodeData> {
-        self.registers_by_name.get(name.as_ref())
+        self.0.borrow_registers_by_name()
+            .get(name.as_ref())
     }
 
     pub fn symbol_table(&self) -> &SymbolTable {
-        &self.symbol_table
+        self.0.borrow_symbol_table()
     }
 
     pub fn user_ops(&self) -> &[String] {
-        &self.user_ops
+        self.0.borrow_user_ops()
     }
 
-    pub fn from_file<PC: AsRef<str>, P: AsRef<Path>>(program_counter: PC, path: P) -> Result<Self, Error> {
+    pub fn from_file<PC: AsRef<str>, P: AsRef<Path>>(
+        program_counter: PC,
+        path: P,
+    ) -> Result<Self, Error> {
         let path = path.as_ref();
-        let mut file = File::open(path).with_context(|| error::ParseFile {
+        let mut file = File::open(path).map_err(|error| Error::ParseFile {
             path: path.to_owned(),
+            error,
         })?;
 
         let mut input = String::new();
-        file.read_to_string(&mut input).with_context(|| error::ParseFile {
-            path: path.to_owned(),
-        })?;
+        file.read_to_string(&mut input)
+            .map_err(|error| Error::ParseFile {
+                path: path.to_owned(),
+                error,
+            })?;
 
-        Self::from_str(program_counter, &input).with_context(|| error::DeserialiseFile {
+        Self::from_str(program_counter, &input).map_err(|error| Error::DeserialiseFile {
             path: path.to_owned(),
+            error,
         })
     }
 
-    pub fn from_str<PC: AsRef<str>, S: AsRef<str>>(program_counter: PC, input: S) -> Result<Self, de::Error> {
-        let document = xml::Document::parse(input.as_ref())
-            .map_err(|source| de::Error::Xml { source })?;
+    pub fn from_str<PC: AsRef<str>, S: AsRef<str>>(
+        program_counter: PC,
+        input: S,
+    ) -> Result<Self, DeserialiseError> {
+        let document = xml::Document::parse(input.as_ref()).map_err(DeserialiseError::Xml)?;
 
         Self::from_xml(program_counter, document.root_element())
     }
 
-    pub fn build_xrefs<PC: AsRef<str>>(&mut self, program_counter: PC, register_space: Arc<AddressSpace>) -> Result<(), de::Error> {
-        let global_scope = self.symbol_table.global_scope().with_context(|| de::Invariant {
-            reason: "missing global scope",
-        })?;
-        let varnode_xrefs = &mut self.registers;
-        let user_ops = &mut self.user_ops;
-        let pc_name = program_counter.as_ref();
-        let mut pc_set = false;
+    fn build_xrefs<PC: AsRef<str>>(&mut self, program_counter: PC) -> Result<(), DeserialiseError> {
+        self.0.with_mut(|mut slf| {
+            let registers = &mut slf.registers;
+            let register_names = &mut slf.registers_by_name;
 
-        for sym_id in global_scope.iter() {
-            match self.symbol_table.symbol(*sym_id) {
-                None => {
-                    return de::Invariant {
-                        reason: "invalid symbol",
-                    }
-                    .fail()
-                }
-                Some(Symbol::Varnode {
-                    ref name,
-                    ref offset,
-                    ref size,
-                    ..
-                }) => {
-                    if varnode_xrefs
-                        .insert((*offset, *size), name.to_owned())
-                        .is_some()
-                    {
-                        // duplicate
-                        return de::Invariant {
-                            reason: "duplicate varnode",
+            let user_ops = &mut slf.user_ops;
+            let mut pc = None;
+
+            let pc_name = program_counter.as_ref();
+            let register_space = slf.manager.register_space().unwrap();
+
+            for sym_id in slf.global_scope.iter() {
+                match slf.symbol_table.symbol(*sym_id) {
+                    None => return Err(DeserialiseError::Invariant("invalid symbol")),
+                    Some(Symbol::Varnode {
+                        ref name,
+                        ref offset,
+                        ref size,
+                        ..
+                    }) => {
+                        if registers
+                            .insert((*offset, *size), name.to_owned())
+                            .is_some()
+                        {
+                            // duplicate
+                            return Err(DeserialiseError::Invariant("duplicate varnode"));
                         }
-                        .fail();
-                    }
-                    self.registers_by_name.insert(
-                        name.to_owned(),
-                        VarnodeData::new(register_space.clone(), *offset, *size)
-                    );
+                        register_names.insert(
+                            name.to_owned(),
+                            VarnodeData::new(register_space, *offset, *size),
+                        );
 
-                    if pc_name == name {
-                        if pc_set {
+                        if pc_name == name {
+                            if pc.is_some() {
+                                return Err(DeserialiseError::Invariant(
+                                    "duplicate definition of program counter",
+                                ));
+                            }
+                            pc = Some((*offset, *size));
+                        }
+                    }
+                    /*
+                    Some(Symbol::Context {
+                        ref name,
+                        ref pattern_value,
+                        ..
+                    }) => {
+                        if let PatternExpression::ContextField {
+                            bit_start, bit_end, ..
+                        } = pattern_value
+                        {
+                            self.context_db
+                                .register_variable(&**name, *bit_start, *bit_end)
+                                .expect("context variable is not duplicate");
+                        } else {
                             return de::Invariant {
-                                reason: "duplicate definition of program counter",
-                            }.fail()
+                                reason: "context symbol does not have context pattern",
+                            }
+                            .fail();
                         }
-                        self.program_counter.offset = *offset;
-                        self.program_counter.size = *size;
-                        pc_set = true;
                     }
-                }
-                Some(Symbol::Context {
-                    ref name,
-                    ref pattern_value,
-                    ..
-                }) => {
-                    if let PatternExpression::ContextField {
-                        bit_start, bit_end, ..
-                    } = pattern_value
-                    {
-                        self.context_db
-                            .register_variable(&**name, *bit_start, *bit_end)
-                            .expect("context variable is not duplicate");
-                    } else {
-                        return de::Invariant {
-                            reason: "context symbol does not have context pattern",
+                    */
+                    Some(Symbol::UserOp {
+                        index, ref name, ..
+                    }) => {
+                        if user_ops.len() <= *index {
+                            user_ops.resize_with(index + 1, String::new);
                         }
-                        .fail();
+                        user_ops[*index].clone_from(name);
                     }
+                    _ => (),
                 }
-                Some(Symbol::UserOp {
-                    index, ref name, ..
-                }) => {
-                    if user_ops.len() <= *index {
-                        user_ops.resize_with(index + 1, Default::default);
-                    }
-                    user_ops[*index].clone_from(name);
-                }
-                _ => (),
             }
-        }
 
-        if !pc_set {
-            de::Invariant {
-                reason: "program counter not defined as a register",
-            }.fail()
-        } else {
-            Ok(())
-        }
+            if let Some((pc_offset, pc_size)) = pc {
+                slf.program_counter.offset = pc_offset;
+                slf.program_counter.size = pc_size;
+                Ok(())
+            } else {
+                Err(DeserialiseError::Invariant(
+                    "program counter not defined as a register",
+                ))
+            }
+        })
     }
 
-    pub fn from_xml<PC: AsRef<str>>(program_counter: PC, input: xml::Node) -> Result<Self, de::Error> {
+    pub fn from_xml<PC: AsRef<str>>(
+        program_counter: PC,
+        input: xml::Node,
+    ) -> Result<Self, DeserialiseError> {
         if input.tag_name().name() != "sleigh" {
-            return de::TagUnexpected {
-                name: input.tag_name().name().to_owned(),
-            }
-            .fail();
+            return Err(DeserialiseError::TagUnexpected(
+                input.tag_name().name().to_owned(),
+            ));
         }
 
         let alignment = input.attribute_int("align")?;
@@ -240,57 +275,96 @@ impl Translator {
             float_formats.push(FloatFormat::float8());
         }
 
-        let manager = SpaceManager::from_xml(children.next().with_context(|| de::Invariant {
-            reason: "spaces not defined",
-        })?)?;
+        let manager = SpaceManager::from_xml(
+            children
+                .next()
+                .ok_or_else(|| DeserialiseError::Invariant("spaces not defined"))?,
+        )?;
 
+        let mut slf = Self(TranslatorImpl::try_new(
+            alignment,
+            big_endian,
+            unique_mask,
+            float_formats,
+            Box::new(manager),
+            //maximum_delay,
+            //section_count,
+            Map::default(),
+            |manager| {
+                SymbolTable::from_xml(
+                    &manager,
+                    children
+                        .next()
+                        .ok_or_else(|| DeserialiseError::Invariant("symbol table not defined"))?,
+                )
+                .map(Box::new)
+            },
+            |symbol_table| {
+                symbol_table
+                    .global_scope()
+                    .ok_or_else(|| DeserialiseError::Invariant("global scope not defined"))?
+                    .find("instruction", &symbol_table)
+                    .ok_or_else(|| {
+                        DeserialiseError::Invariant("instruction root symbol not defined")
+                    })
+            },
+            |symbol_table| {
+                symbol_table
+                    .global_scope()
+                    .ok_or_else(|| DeserialiseError::Invariant("global scope not defined"))
+            },
+            //context_db: ContextDatabase::new(),
+            |_| Ok(Map::default()),
+            |manager| {
+                let register_space = manager
+                    .register_space()
+                    .ok_or_else(|| DeserialiseError::Invariant("missing register space"))?;
+                Ok(VarnodeData::new(register_space, 0, 0))
+            },
+            Vec::new(),
+        )?);
+
+        slf.build_xrefs(program_counter)?;
+
+        Ok(slf)
+
+        /*
         let symbol_table = SymbolTable::from_xml(
             &manager,
-            children.next().with_context(|| de::Invariant {
-                reason: "symbol table not defined",
-            })?,
+            children.next().ok_or_else(|| DeserialiseError::Invariant(
+                "symbol table not defined"
+            ))?,
         )?;
 
         let root = symbol_table
             .global_scope()
-            .with_context(|| de::Invariant {
-                reason: "global scope not defined",
-            })?
+            .ok_or_else(|| DeserialiseError::Invariant(
+                "global scope not defined"
+            ))?
             .find("instruction", &symbol_table)
-            .with_context(|| de::Invariant {
-                reason: "instruction root symbol not defined",
-            })?;
+            .ok_or_else(|| DeserialiseError::Invariant(
+                "instruction root symbol not defined"
+            ))?;
+        */
 
+        /*
         let register_space = manager
             .space_by_name("register")
-            .with_context(|| de::Invariant {
-                reason: "missing register space",
-            })?;
-        let program_counter_vnd = VarnodeData::new(register_space.clone(), 0, 0);
+            .ok_or_else(|| DeserialiseError::Invariant(
+                "missing register space"
+            ))?;
+        let program_counter_vnd = VarnodeData::new(register_space, 0, 0);
+        */
 
-        let mut slf = Self {
-            alignment,
-            big_endian,
-            float_formats,
-            manager,
-            //maximum_delay,
-            //section_count,
-            symbol_table,
-            root,
-            //unique_base,
-            unique_mask,
-            context_db: ContextDatabase::new(),
-            registers: HashMap::new(),
-            registers_by_name: HashMap::new(),
-            program_counter: program_counter_vnd,
-            user_ops: Vec::new(),
-        };
+        /*
+         */
 
-        slf.build_xrefs(program_counter, register_space)?;
+        //slf.build_xrefs(program_counter, register_space)?;
 
-        Ok(slf)
+        //Ok(slf)
     }
 
+    /*
     pub fn format_instruction(&self, address: u64, bytes: &[u8]) -> Result<(String, String, usize), Error> {
         let default_space = self.manager.default_space().with_context(|| di::InvalidSpace)?;
         let address = Address::new(default_space, address);
@@ -498,8 +572,10 @@ impl Translator {
 
         Ok(())
     }
+    */
 }
 
+/*
 #[cfg(test)]
 mod test {
     use super::{Error, Translator};
@@ -685,3 +761,4 @@ mod test {
         Ok(())
     }
 }
+*/

@@ -1,13 +1,12 @@
-use crate::disassembly::ParserWalker;
+//use crate::disassembly::ParserWalker;
+use crate::deserialise::Error as DeserialiseError;
+use crate::deserialise::parse::XmlExt;
+
 use crate::space::AddressSpace;
 use crate::space_manager::SpaceManager;
-use crate::symbol_table::FixedHandle;
-use crate::error::deserialisation as de;
-use crate::error::disassembly as di;
+//use crate::symbol_table::FixedHandle;
+//use crate::error::disassembly as di;
 use crate::opcode::Opcode;
-use crate::parse::XmlExt;
-use snafu::OptionExt;
-use std::sync::Arc;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum HandleKind {
@@ -60,6 +59,7 @@ impl ConstTpl {
         matches!(self, Self::Relative { .. })
     }
 
+    /*
     pub fn fix<'a, 'b>(&self, walker: &mut ParserWalker<'a, 'b>, manager: &'a SpaceManager) -> Result<u64, di::Error> {
         Ok(match self {
             Self::Start => walker.address().offset(),
@@ -170,18 +170,19 @@ impl ConstTpl {
             _ => return di::InconsistentState.fail()
         })
     }
+    */
 
-    pub fn from_xml(input: xml::Node) -> Result<Self, de::Error> {
-        Ok(match input.attribute("type").with_context(|| de::AttributeExpected { name: "type" })? {
+    pub fn from_xml(input: xml::Node) -> Result<Self, DeserialiseError> {
+        Ok(match input.attribute("type").ok_or_else(|| DeserialiseError::AttributeExpected("type"))? {
             "real" => Self::Real(input.attribute_int("val")?),
             "handle" => Self::Handle(
                 input.attribute_int("val")?,
-                match input.attribute("s").with_context(|| de::AttributeExpected { name: "s" })? {
+                match input.attribute("s").ok_or_else(|| DeserialiseError::AttributeExpected("s"))? {
                     "space" => HandleKind::Space,
                     "offset" => HandleKind::Offset,
                     "size" => HandleKind::Size,
                     "offset_plus" => HandleKind::OffsetPlus(input.attribute_int("plus")?),
-                    _ => return de::Invariant { reason: "invalid handle kind" }.fail(),
+                    _ => return Err(DeserialiseError::Invariant("invalid handle kind")),
                 },
             ),
             "start" => Self::Start,
@@ -194,7 +195,7 @@ impl ConstTpl {
             "flowref_size" => Self::FlowRefSize,
             "flowdest" => Self::FlowDest,
             "flowdest_size" => Self::FlowDestSize,
-            _ => return de::Invariant { reason: "invalid ConstTpl type" }.fail(),
+            _ => return Err(DeserialiseError::Invariant("invalid ConstTpl type"))
         })
     }
 }
@@ -211,6 +212,7 @@ pub struct HandleTpl {
 }
 
 impl HandleTpl {
+    /*
     pub fn fix<'a, 'b>(&'a self, walker: &mut ParserWalker<'a, 'b>, manager: &'a SpaceManager) -> Result<FixedHandle, di::Error> {
         if self.ptr_space.is_real() {
             let mut handle = FixedHandle::new(self.space.space(walker, manager)?);
@@ -237,20 +239,21 @@ impl HandleTpl {
             Ok(handle)
         }
     }
+    */
 
-    pub fn from_xml(input: xml::Node) -> Result<Self, de::Error> {
+    pub fn from_xml(input: xml::Node) -> Result<Self, DeserialiseError> {
         let mut children = input.children()
             .filter(xml::Node::is_element)
             .map(ConstTpl::from_xml);
 
         Ok(Self {
-            space: children.next().with_context(|| de::Invariant { reason: "space missing for HandleTpl" })??,
-            size: children.next().with_context(|| de::Invariant { reason: "size missing for HandleTpl" })??,
-            ptr_space: children.next().with_context(|| de::Invariant { reason: "ptr_space missing for HandleTpl" })??,
-            ptr_offset: children.next().with_context(|| de::Invariant { reason: "ptr_offset missing for HandleTpl" })??,
-            ptr_size: children.next().with_context(|| de::Invariant { reason: "ptr_size missing for HandleTpl" })??,
-            tmp_space: children.next().with_context(|| de::Invariant { reason: "tmp_space missing for HandleTpl" })??,
-            tmp_offset: children.next().with_context(|| de::Invariant { reason: "tmp_offset missing for HandleTpl" })??,
+            space: children.next().ok_or_else(|| DeserialiseError::Invariant("space missing for HandleTpl"))??,
+            size: children.next().ok_or_else(|| DeserialiseError::Invariant("size missing for HandleTpl"))??,
+            ptr_space: children.next().ok_or_else(|| DeserialiseError::Invariant("ptr_space missing for HandleTpl"))??,
+            ptr_offset: children.next().ok_or_else(|| DeserialiseError::Invariant("ptr_offset missing for HandleTpl"))??,
+            ptr_size: children.next().ok_or_else(|| DeserialiseError::Invariant("ptr_size missing for HandleTpl"))??,
+            tmp_space: children.next().ok_or_else(|| DeserialiseError::Invariant("tmp_space missing for HandleTpl"))??,
+            tmp_offset: children.next().ok_or_else(|| DeserialiseError::Invariant("tmp_offset missing for HandleTpl"))??,
         })
     }
 }
@@ -263,6 +266,7 @@ pub struct VarnodeTpl {
 }
 
 impl VarnodeTpl {
+    /*
     pub fn is_dynamic(&self, walker: &mut ParserWalker) -> Result<bool, di::Error> {
         if let ConstTpl::Handle(index, _) = self.offset {
             Ok(walker.handle(index)?
@@ -273,6 +277,7 @@ impl VarnodeTpl {
             Ok(false)
         }
     }
+    */
 
     pub fn is_relative(&self) -> bool {
         self.offset.is_relative()
@@ -290,15 +295,15 @@ impl VarnodeTpl {
         &self.size
     }
 
-    pub fn from_xml(input: xml::Node) -> Result<Self, de::Error> {
+    pub fn from_xml(input: xml::Node) -> Result<Self, DeserialiseError> {
         let mut children = input.children()
             .filter(xml::Node::is_element)
             .map(ConstTpl::from_xml);
 
         Ok(Self {
-            space: children.next().with_context(|| de::Invariant { reason: "space missing for VarnodeTpl" })??,
-            offset: children.next().with_context(|| de::Invariant { reason: "offset missing for VarnodeTpl" })??,
-            size: children.next().with_context(|| de::Invariant { reason: "size missing for VarnodeTpl" })??,
+            space: children.next().ok_or_else(|| DeserialiseError::Invariant("space missing for VarnodeTpl"))??,
+            offset: children.next().ok_or_else(|| DeserialiseError::Invariant("offset missing for VarnodeTpl"))??,
+            size: children.next().ok_or_else(|| DeserialiseError::Invariant("size missing for VarnodeTpl"))??,
         })
     }
 }
@@ -327,21 +332,21 @@ impl OpTpl {
         self.inputs.len()
     }
 
-    pub fn from_xml(input: xml::Node) -> Result<Self, de::Error> {
+    pub fn from_xml(input: xml::Node) -> Result<Self, DeserialiseError> {
         let opcode = input.attribute("code")
             .map(Opcode::from_str)
-            .with_context(|| de::AttributeExpected { name: "code" })??;
+            .ok_or_else(|| DeserialiseError::AttributeExpected("code"))??;
 
         let mut children = input.children()
             .filter(xml::Node::is_element);
 
         let output = children.next()
             .map(|input| if input.tag_name().name() == "null" {
-                Ok(None)
+                None
             } else {
-                Ok(Some(VarnodeTpl::from_xml(input)?))
-            })
-            .with_context(|| de::Invariant { reason: "output missing for OpTpl" })??;
+                Some(VarnodeTpl::from_xml(input))
+            }.transpose())
+            .ok_or_else(|| DeserialiseError::Invariant("output missing for OpTpl"))??;
 
         let inputs = children.map(VarnodeTpl::from_xml)
             .collect::<Result<Vec<VarnodeTpl>, _>>()?;
@@ -384,7 +389,7 @@ impl ConstructTpl {
         self.result.as_ref()
     }
 
-    pub fn from_xml(input: xml::Node) -> Result<Self, de::Error> {
+    pub fn from_xml(input: xml::Node) -> Result<Self, DeserialiseError> {
         let delay_slot = input.attribute_int_opt("delay", 0)?;
         let labels = input.attribute_int_opt("labels", 0)?;
         let section_id = input.attribute_int_opt::<i64>("section", -1)
@@ -393,11 +398,11 @@ impl ConstructTpl {
 
         let result = children.next()
             .map(|input| if input.tag_name().name() == "null" {
-                Ok(None)
+                None
             } else {
-                Ok(Some(HandleTpl::from_xml(input)?))
-            })
-            .with_context(|| de::Invariant { reason: "result missing for ConstructTpl" })??;
+                Some(HandleTpl::from_xml(input))
+            }.transpose())
+            .ok_or_else(|| DeserialiseError::Invariant("result missing for ConstructTpl"))??;
 
         let operations = children
             .map(OpTpl::from_xml)
