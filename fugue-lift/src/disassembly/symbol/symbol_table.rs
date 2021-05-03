@@ -1,11 +1,8 @@
-//use crate::disassembly::ParserWalker;
 use crate::deserialise::parse::XmlExt;
 use crate::deserialise::Error as DeserialiseError;
 
 use crate::disassembly::{Error, ParserWalker};
 use crate::disassembly::symbol::{Constructor, Symbol, SymbolBuilder, SymbolKind, SymbolScope};
-
-//use crate::error::disassembly as di;
 
 use crate::space_manager::SpaceManager;
 

@@ -2,7 +2,7 @@ use std::fmt;
 
 use crate::address::Address;
 use crate::space::AddressSpace;
-//use crate::Translator;
+use crate::Translator;
 
 #[derive(Debug, Clone, PartialEq, Eq, Ord, PartialOrd, Hash)]
 pub struct VarnodeData<'a> {
@@ -11,7 +11,6 @@ pub struct VarnodeData<'a> {
     pub(crate) size: usize,
 }
 
-/*
 pub struct VarnodeDataFormatter<'a> {
     varnode: &'a VarnodeData<'a>,
     translator: &'a Translator,
@@ -55,14 +54,11 @@ impl<'a> fmt::Display for VarnodeDataFormatter<'a> {
         )
     }
 }
-*/
 
 impl<'a> VarnodeData<'a> {
-    /*
     pub fn display(&'a self, translator: &'a Translator) -> VarnodeDataFormatter<'a> {
         VarnodeDataFormatter::new(self, translator)
     }
-    */
 
     pub fn new(space: &'a AddressSpace, offset: u64, size: usize) -> Self {
         Self {

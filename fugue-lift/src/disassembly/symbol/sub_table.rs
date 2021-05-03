@@ -4,10 +4,6 @@ use crate::deserialise::parse::XmlExt;
 use crate::disassembly::{Error, ParserWalker};
 use crate::disassembly::construct::ConstructTpl;
 use crate::disassembly::pattern::PatternExpression;
-
-//use crate::disassembly::ParserWalker;
-//use crate::error::deserialisation as de;
-//use crate::error::disassembly as di;
 use crate::disassembly::symbol::{Symbol, SymbolTable};
 
 use std::convert::TryFrom;
@@ -95,8 +91,7 @@ impl Constructor {
         self.min_length
     }
 
-    /*
-    pub fn format<'a, 'b>(&self, fmt: &mut fmt::Formatter, walker: &mut ParserWalker<'a, 'b>, symbols: &'a SymbolTable) -> Result<(), fmt::Error> {
+    pub fn format<'a, 'b, 'c>(&'b self, fmt: &mut fmt::Formatter, walker: &mut ParserWalker<'a, 'b, 'c>, symbols: &'b SymbolTable<'a>) -> Result<(), fmt::Error> {
         for p in &self.print_pieces {
             if p.as_bytes()[0] == b'\n' {
                 let index = (p.as_bytes()[1] - b'A') as usize;
@@ -108,7 +103,7 @@ impl Constructor {
         Ok(())
     }
 
-    pub fn format_mnemonic<'a, 'b>(&self, fmt: &mut fmt::Formatter, walker: &mut ParserWalker<'a, 'b>, symbols: &'a SymbolTable) -> Result<(), fmt::Error> {
+    pub fn format_mnemonic<'a, 'b, 'c>(&'b self, fmt: &mut fmt::Formatter, walker: &mut ParserWalker<'a, 'b, 'c>, symbols: &'b SymbolTable<'a>) -> Result<(), fmt::Error> {
         if let Some(index) = self.flow_through_index {
             match symbols.symbol(self.operands[index]).expect("symbol").defining_symbol(symbols).expect("state is consistent") {
                 None | Some(Symbol::Subtable { .. }) => (),
@@ -134,7 +129,7 @@ impl Constructor {
         Ok(())
     }
 
-    pub fn format_body<'a, 'b>(&self, fmt: &mut fmt::Formatter, walker: &mut ParserWalker<'a, 'b>, symbols: &'a SymbolTable) -> Result<(), fmt::Error> {
+    pub fn format_body<'a, 'b, 'c>(&'b self, fmt: &mut fmt::Formatter, walker: &mut ParserWalker<'a, 'b, 'c>, symbols: &'b SymbolTable<'a>) -> Result<(), fmt::Error> {
         if let Some(index) = self.flow_through_index {
             match symbols.symbol(self.operands[index]).expect("symbol").defining_symbol(symbols).expect("state is consistent") {
                 None | Some(Symbol::Subtable { .. }) => (),
@@ -160,7 +155,6 @@ impl Constructor {
         }
         Ok(())
     }
-    */
 
     pub fn operand(&self, index: usize) -> usize {
         self.operands[index]

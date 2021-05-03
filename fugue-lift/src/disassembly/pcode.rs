@@ -21,7 +21,6 @@ pub struct PCode<'a> {
     pub length: usize,
 }
 
-/*
 pub struct PCodeFormatter<'a> {
     pcode: &'a PCode<'a>,
     translator: &'a Translator,
@@ -51,14 +50,11 @@ impl<'a> fmt::Display for PCodeFormatter<'a> {
         }
     }
 }
-*/
 
 impl<'a> PCode<'a> {
-    /*
     pub fn display(&'a self, translator: &'a Translator) -> PCodeFormatter<'a> {
         PCodeFormatter::new(self, translator)
     }
-    */
 
     pub fn nop(address: Address<'a>, length: usize) -> Self {
         Self {
@@ -108,14 +104,13 @@ pub struct PCodeData<'a> {
     pub inputs: Vec<VarnodeData<'a>>,
 }
 
-/*
 pub struct PCodeDataFormatter<'a> {
-    pcode: &'a PCodeData,
+    pcode: &'a PCodeData<'a>,
     translator: &'a Translator,
 }
 
 impl<'a> PCodeDataFormatter<'a> {
-    fn new(pcode: &'a PCodeData, translator: &'a Translator) -> Self {
+    fn new(pcode: &'a PCodeData<'a>, translator: &'a Translator) -> Self {
         Self {
             pcode,
             translator,
@@ -140,15 +135,12 @@ impl<'a> fmt::Display for PCodeDataFormatter<'a> {
         Ok(())
     }
 }
-*/
 
-/*
-impl PCodeData {
-    pub fn display<'a>(&'a self, translator: &'a Translator) -> PCodeDataFormatter<'a> {
+impl<'a> PCodeData<'a> {
+    pub fn display(&'a self, translator: &'a Translator) -> PCodeDataFormatter<'a> {
         PCodeDataFormatter::new(self, translator)
     }
 }
-*/
 
 pub struct PCodeBuilder<'a, 'b, 'c> {
     const_space: &'a AddressSpace,

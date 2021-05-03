@@ -1,3 +1,4 @@
+use std::borrow::Borrow;
 use std::fs::File;
 use std::io::Read;
 use std::path::Path;
@@ -14,16 +15,15 @@ use crate::disassembly::ContextDatabase;
 use crate::disassembly::Error as DisassemblyError;
 use crate::disassembly::PatternExpression;
 use crate::disassembly::{ParserContext, ParserState, ParserWalker, PCode, PCodeBuilder};
-use crate::disassembly::symbol::{FixedHandle, Symbol, SymbolScope, SymbolTable};
 use crate::disassembly::VarnodeData;
+use crate::disassembly::symbol::{FixedHandle, Symbol, SymbolScope, SymbolTable};
+use crate::disassembly::walker::InstructionFormatter;
 
 use crate::error::Error;
 
 use crate::float_format::FloatFormat;
 
-use crate::space::AddressSpace;
 use crate::space_manager::SpaceManager;
-
 
 #[ouroboros::self_referencing(chain_hack)]
 #[derive(Clone)]
@@ -106,6 +106,10 @@ impl Translator {
 
     pub fn context_database(&self) -> ContextDatabase {
         self.0.borrow_context_db().clone()
+    }
+
+    pub fn set_variable_default<S: Borrow<str>>(&mut self, name: S, value: u32) {
+        self.0.with_context_db_mut(|db| db.set_variable_default(name, value));
     }
 
     pub fn manager(&self) -> &SpaceManager {
@@ -329,21 +333,20 @@ impl Translator {
         Ok(slf)
     }
 
-    /*
     pub fn format_instruction(&self, address: u64, bytes: &[u8]) -> Result<(String, String, usize), Error> {
-        let default_space = self.manager.default_space().ok_or_else(|| Error::InvalidSpace)?;
+        let default_space = self.manager().default_space().ok_or_else(|| DisassemblyError::InvalidSpace)?;
         let address = Address::new(default_space, address);
 
-        let mut context = ParserContext::new(self, address, bytes);
+        let mut context = ParserContext::new(&self.context_database(), address, bytes);
         let mut walker = ParserWalker::new(&mut context);
 
-        Translator::resolve(&mut walker, self.root, &self.symbol_table)?;
+        Translator::resolve(&mut walker, self.0.borrow_root().id(), self.0.borrow_symbol_table())?;
         walker.base_state();
 
         let length = walker.length();
-        let ctor = walker.constructor()?.ok_or_else(|| Error::InvalidConstructor)?;
+        let ctor = walker.constructor()?.ok_or_else(|| DisassemblyError::InvalidConstructor)?;
 
-        let fmt = InstructionFormatter::new(walker, &self.symbol_table, ctor);
+        let fmt = InstructionFormatter::new(walker, self.0.borrow_symbol_table(), ctor);
 
         let mnemonic = format!("{}", fmt.mnemonic());
         let operands = format!("{}", fmt.operands());
@@ -351,10 +354,8 @@ impl Translator {
         Ok((mnemonic, operands, length))
     }
 
-    */
-
-    pub fn instruction<'a>(&'a mut self, address: u64, bytes: &[u8]) -> Result<PCode<'a>, Error> {
-        self.0.with_mut::<'a>(|mut slf| {
+    pub fn instruction<'a>(&'a self, db: &mut ContextDatabase<'a>, address: u64, bytes: &[u8]) -> Result<PCode<'a>, Error> {
+        self.0.with::<'a>(|slf| {
             if *slf.alignment != 1 {
                 if address % *slf.alignment as u64 != 0 {
                     return Err(DisassemblyError::IncorrectAlignment {
@@ -368,14 +369,14 @@ impl Translator {
             let default_space = slf.manager.default_space()
                 .ok_or_else(|| DisassemblyError::InvalidSpace)?;
             let address = Address::new(default_space, address);
-            let mut context = ParserContext::new(&slf.context_db, address.clone(), bytes);
+            let mut context = ParserContext::new(db, address.clone(), bytes);
             let mut walker = ParserWalker::new(&mut context);
 
             Translator::resolve(&mut walker, slf.root.id(), &slf.symbol_table)?;
             Translator::resolve_handles(&mut walker, &slf.manager, &slf.symbol_table)?;
 
             walker.base_state();
-            walker.apply_commits(&mut slf.context_db, &slf.manager, &slf.symbol_table)?;
+            walker.apply_commits(db, &slf.manager, &slf.symbol_table)?;
 
             let mut fall_offset = walker.length();
 
@@ -386,14 +387,14 @@ impl Translator {
                 let mut byte_count = 0;
                 loop {
                     let mut dcontext =
-                        ParserContext::new(&slf.context_db, address.clone() + fall_offset, &bytes[fall_offset..]);
+                        ParserContext::new(db, address.clone() + fall_offset, &bytes[fall_offset..]);
                     let mut dwalker = ParserWalker::new(&mut dcontext);
 
                     Translator::resolve(&mut dwalker, slf.root.id(), &slf.symbol_table)?;
                     Translator::resolve_handles(&mut dwalker, &slf.manager, &slf.symbol_table)?;
 
                     dwalker.base_state();
-                    dwalker.apply_commits(&mut slf.context_db, &slf.manager, &slf.symbol_table)?;
+                    dwalker.apply_commits(db, &slf.manager, &slf.symbol_table)?;
 
                     let length = dwalker.length();
 
@@ -544,7 +545,6 @@ impl Translator {
     }
 }
 
-/*
 #[cfg(test)]
 mod test {
     use super::{Error, Translator};
@@ -567,8 +567,8 @@ mod test {
     fn test_insn_nop_x86() -> Result<(), Error> {
         let mut translator = Translator::from_file("EIP", "./data/x86.sla")?;
 
-        translator.context_mut().set_variable_default("addrsize", 1);
-        translator.context_mut().set_variable_default("opsize", 1);
+        translator.set_variable_default("addrsize", 1);
+        translator.set_variable_default("opsize", 1);
 
         let output = translator.format_instruction(0x1000, &[0x90]).expect("ok");
         assert_eq!(output.0.trim(), "NOP");
@@ -623,8 +623,8 @@ mod test {
     fn test_pcode_nop_x86() -> Result<(), Error> {
         let mut translator = Translator::from_file("EIP", "./data/x86.sla")?;
 
-        translator.context_mut().set_variable_default("addrsize", 1);
-        translator.context_mut().set_variable_default("opsize", 1);
+        translator.set_variable_default("addrsize", 1);
+        translator.set_variable_default("opsize", 1);
 
         let output = translator.instruction(0x1000, &[0x90]).expect("ok");
         println!("{}", output.display(&translator));
@@ -656,10 +656,8 @@ mod test {
         //    00406184 20 00 bd 27     _addiu     sp,sp,0x20
         let mut translator = Translator::from_file("pc", "./data/mips32le.sla")?;
 
-        translator.context_mut().set_variable_default("RELP", 1);
-        translator
-            .context_mut()
-            .set_variable_default("PAIR_INSTRUCTION_FLAG", 0);
+        translator.set_variable_default("RELP", 1);
+        translator.set_variable_default("PAIR_INSTRUCTION_FLAG", 0);
 
         /*
         let code = [
@@ -694,6 +692,7 @@ mod test {
 
         let start = 0x406080u64;
         let mut offset = 0;
+        let mut db = translator.context_database();
 
         while offset < more_code.len() {
             let address = start + (offset as u64);
@@ -706,7 +705,7 @@ mod test {
             let mut orig_len = output.1;
             */
             let output = translator
-                .instruction(address, &more_code[offset..])
+                .instruction(&mut db, address, &more_code[offset..])
                 .expect("ok");
             /*
             let mut delays = output.delay_slots();
@@ -730,4 +729,3 @@ mod test {
         Ok(())
     }
 }
-*/

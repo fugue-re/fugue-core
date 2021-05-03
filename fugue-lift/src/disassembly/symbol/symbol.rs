@@ -7,6 +7,8 @@ use crate::disassembly::Error;
 use crate::space::AddressSpace;
 use crate::space_manager::SpaceManager;
 
+use std::fmt;
+
 #[derive(Debug, Clone)]
 pub struct FixedHandle<'a> {
     pub space: &'a AddressSpace,
@@ -366,8 +368,7 @@ impl<'a> Symbol<'a> {
         })
     }
 
-    /*
-    pub fn format<'b>(&self, fmt: &mut fmt::Formatter, walker: &mut ParserWalker<'a, 'b>, symbols: &'a SymbolTable) -> Result<(), fmt::Error> {
+    pub fn format<'b, 'c>(&'b self, fmt: &mut fmt::Formatter, walker: &mut ParserWalker<'a, 'b, 'c>, symbols: &'b SymbolTable<'a>) -> Result<(), fmt::Error> {
         match self {
             Self::Operand { subsym_id, handle_index, def_expr, .. } => {
                 walker.push_operand(*handle_index).expect("push operand");
@@ -443,7 +444,6 @@ impl<'a> Symbol<'a> {
             s => panic!("`{:?}` should never be used in a formatting context", s),
         }
     }
-    */
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

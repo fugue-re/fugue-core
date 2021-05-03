@@ -109,13 +109,10 @@ impl<'a> LanguageBuilder<'a> {
         path.push(&self.language.sla_file);
         let mut translator =
             Translator::from_file(self.language.processor_spec.program_counter(), path)?;
-        /*
         for (name, val) in self.language.processor_spec.context_set() {
             translator
-                .context_mut()
                 .set_variable_default(name.as_ref(), val);
         }
-        */
         Ok(translator)
     }
 }

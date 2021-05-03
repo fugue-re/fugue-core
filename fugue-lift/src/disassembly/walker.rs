@@ -5,27 +5,26 @@ use crate::disassembly::pattern::PatternExpression;
 use crate::disassembly::symbol::{Constructor, FixedHandle, Symbol, SymbolTable};
 use crate::space_manager::SpaceManager;
 
-//use std::cell::RefCell;
-//use std::fmt;
+use std::cell::RefCell;
+use std::fmt;
 use std::mem::size_of;
 
-/*
-pub struct InstructionFormatter<'a, 'b> {
-    walker: RefCell<ParserWalker<'a, 'b>>,
-    symbols: &'a SymbolTable<'a>,
-    ctor: &'a Constructor,
+pub struct InstructionFormatter<'a, 'b, 'c> {
+    walker: RefCell<ParserWalker<'a, 'b, 'c>>,
+    symbols: &'b SymbolTable<'a>,
+    ctor: &'b Constructor,
 }
 
 pub struct MnemonicFormatter<'a, 'b, 'c> {
-    inner: &'c InstructionFormatter<'a, 'b>,
+    inner: &'b InstructionFormatter<'a, 'b, 'c>,
 }
 
 pub struct OperandFormatter<'a, 'b, 'c> {
-    inner: &'c InstructionFormatter<'a, 'b>,
+    inner: &'b InstructionFormatter<'a, 'b, 'c>,
 }
 
-impl<'a, 'b> InstructionFormatter<'a, 'b> {
-    pub fn new(walker: ParserWalker<'a, 'b>, symbols: &'a SymbolTable, ctor: &'a Constructor) -> Self {
+impl<'a, 'b, 'c> InstructionFormatter<'a, 'b, 'c> {
+    pub fn new(walker: ParserWalker<'a, 'b, 'c>, symbols: &'b SymbolTable<'a>, ctor: &'b Constructor) -> Self {
         Self {
             walker: RefCell::new(walker),
             symbols,
@@ -33,20 +32,20 @@ impl<'a, 'b> InstructionFormatter<'a, 'b> {
         }
     }
 
-    pub fn mnemonic<'c>(&'c self) -> MnemonicFormatter<'a, 'b, 'c> {
+    pub fn mnemonic(&'b self) -> MnemonicFormatter<'a, 'b, 'c> {
         MnemonicFormatter {
             inner: self,
         }
     }
 
-    pub fn operands<'c>(&'c self) -> OperandFormatter<'a, 'b, 'c> {
+    pub fn operands(&'b self) -> OperandFormatter<'a, 'b, 'c> {
         OperandFormatter {
             inner: self,
         }
     }
 }
 
-impl<'a, 'b> fmt::Display for InstructionFormatter<'a, 'b> {
+impl<'a, 'b, 'c> fmt::Display for InstructionFormatter<'a, 'b, 'c> {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         self.ctor.format_mnemonic(f, &mut self.walker.borrow_mut(), self.symbols)?;
         write!(f, " ")?;
@@ -68,7 +67,6 @@ impl<'a, 'b, 'c> fmt::Display for OperandFormatter<'a, 'b, 'c> {
         Ok(())
     }
 }
-*/
 
 #[derive(Clone)]
 pub struct ConstructState<'a, 'b> {
