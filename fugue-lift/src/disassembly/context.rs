@@ -6,7 +6,7 @@ use std::ops::{Deref, DerefMut};
 use itertools::Itertools;
 
 use crate::address::Address;
-use crate::partmap::PartMap;
+use crate::disassembly::partmap::{BoundKind, PartMap};
 use crate::varnodedata::VarnodeData;
 
 #[derive(Debug, Clone)]
@@ -69,29 +69,29 @@ impl ContextBitRange {
 }
 
 #[derive(Debug, Clone)]
-pub struct TrackedContext {
-    location: VarnodeData,
+pub struct TrackedContext<'space> {
+    location: VarnodeData<'space>,
     value: u32,
 }
 
 #[derive(Debug, Clone)]
-pub struct TrackedSet(Vec<TrackedContext>);
+pub struct TrackedSet<'space>(Vec<TrackedContext<'space>>);
 
-impl Default for TrackedSet {
+impl<'space> Default for TrackedSet<'space> {
     fn default() -> Self {
         Self(Vec::new())
     }
 }
 
-impl Deref for TrackedSet {
-    type Target = Vec<TrackedContext>;
+impl<'space> Deref for TrackedSet<'space> {
+    type Target = Vec<TrackedContext<'space>>;
 
     fn deref(&self) -> &Self::Target {
         &self.0
     }
 }
 
-impl DerefMut for TrackedSet {
+impl<'space> DerefMut for TrackedSet<'space> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
     }
@@ -288,14 +288,14 @@ impl ContextCache {
 */
 
 #[derive(Debug, Clone)]
-pub struct ContextDatabase {
+pub struct ContextDatabase<'space> {
     size: usize,
     variables: Map<String, ContextBitRange>,
-    database: PartMap<Address, FreeArray>,
-    trackbase: PartMap<Address, TrackedSet>,
+    database: PartMap<Address<'space>, FreeArray>,
+    trackbase: PartMap<Address<'space>, TrackedSet<'space>>,
 }
 
-impl ContextDatabase {
+impl<'space> ContextDatabase<'space> {
     pub fn new() -> Self {
         Self {
             size: 0,
@@ -309,13 +309,13 @@ impl ContextDatabase {
         self.size
     }
 
-    pub fn new_tracked_set(&mut self, addr1: Address, addr2: Address) -> &mut TrackedSet {
+    pub fn new_tracked_set(&mut self, addr1: Address<'space>, addr2: Address<'space>) -> &mut TrackedSet<'space> {
         let range = self.trackbase.clear_range(&addr1, &addr2);
         range.clear();
         range
     }
 
-    pub fn tracked_set(&self, address: Address) -> &TrackedSet {
+    pub fn tracked_set(&self, address: Address<'space>) -> &TrackedSet<'space> {
         self.trackbase.get_or_default(&address)
     }
 
@@ -323,7 +323,7 @@ impl ContextDatabase {
         self.trackbase.default_value()
     }
 
-    pub fn tracked_default_mut(&mut self) -> &mut TrackedSet {
+    pub fn tracked_default_mut(&mut self) -> &mut TrackedSet<'space> {
         self.trackbase.default_value_mut()
     }
 
@@ -343,16 +343,16 @@ impl ContextDatabase {
     pub fn set_variable<S: Borrow<str>>(
         &mut self,
         name: S,
-        address: Address,
+        address: Address<'space>,
         value: u32,
     ) -> Option<()> {
         let context = self.variables.get(name.borrow())?;
         let num = context.word();
         let mask = context.mask().checked_shl(context.shift()).unwrap_or(0);
 
-        for change in get_region_to_change_point(&mut self.database, &address, num, mask) {
+        get_region_to_change_point(&mut self.database, address, num, mask, |change| {
             context.set(change, value)
-        }
+        });
 
         Some(())
     }
@@ -397,13 +397,11 @@ impl ContextDatabase {
         Some(())
     }
 
-    pub fn get_context(&self, address: &Address) -> &Vec<u32> {
+    pub fn get_context(&self, address: &Address<'space>) -> &Vec<u32> {
         &self.database.get_or_default(address).values
     }
 
-    pub fn get_context_bounds(&self, address: &Address) -> (&Vec<u32>, u64, u64) {
-        use crate::partmap::BoundKind;
-
+    pub fn get_context_bounds(&self, address: &Address<'space>) -> (&Vec<u32>, u64, u64) {
         match self.database.bounds(address) {
             BoundKind::None(fa) => (&fa.values, 0, address.space().highest_offset()),
             BoundKind::Lower(l, fa) => {
@@ -438,64 +436,65 @@ impl ContextDatabase {
 
     pub fn set_context_change_point(
         &mut self,
-        address: Address,
+        address: Address<'space>,
         num: usize,
         mask: u32,
         value: u32,
-    ) {
-        for change in get_region_to_change_point(&mut self.database, &address, num, mask) {
+    ) where {
+        get_region_to_change_point(&mut self.database, address, num, mask, |change| {
             let val = &mut change[num];
             *val &= !mask;
             *val |= value;
-        }
+        })
     }
 
     pub fn set_context_region(
         &mut self,
-        addr1: Address,
-        addr2: Option<Address>,
+        addr1: Address<'space>,
+        addr2: Option<Address<'space>>,
         num: usize,
         mask: u32,
         value: u32,
     ) {
-        for change in get_region_for_set(&mut self.database, &addr1, addr2.as_ref(), num, mask) {
+        get_region_for_set(&mut self.database, addr1, addr2, num, mask, |change| {
             change[num] = (change[num] & !mask) | value;
-        }
+        })
     }
 
     pub fn set_variable_region<S: Borrow<str>>(
         &mut self,
         name: S,
-        addr1: Address,
-        addr2: Option<Address>,
+        addr1: Address<'space>,
+        addr2: Option<Address<'space>>,
         value: u32,
     ) -> Option<()> {
         let context = self.variables.get(name.borrow())?;
-        for change in get_region_for_set(
+        get_region_for_set(
             &mut self.database,
-            &addr1,
-            addr2.as_ref(),
+            addr1,
+            addr2,
             context.word(),
             context.mask(),
-        ) {
-            context.set(change, value)
-        }
-
+            |change| {
+                context.set(change, value)
+            }
+        );
         Some(())
     }
 }
 
-fn get_region_to_change_point<'a>(
-    db: &'a mut PartMap<Address, FreeArray>,
-    addr: &Address,
+fn get_region_to_change_point<'a, 'b, F>(
+    db: &'a mut PartMap<Address<'b>, FreeArray>,
+    addr: Address<'b>,
     num: usize,
     mask: u32,
-) -> impl Iterator<Item = &'a mut Vec<u32>> {
+    mut f: F
+) where F: FnMut(&mut Vec<u32>) {
     use itertools::Position;
 
-    db.split(addr);
+    db.split(&addr);
 
-    db.range_mut(addr..)
+    for change in db.range_mut(addr..)
         .with_position()
         .take_while(move |pos| match pos {
             Position::First(_) | Position::Only(_) => true,
@@ -507,27 +506,32 @@ fn get_region_to_change_point<'a>(
                 &mut fa.values
             }
             Position::Middle((_, fa)) | Position::Last((_, fa)) => &mut fa.values,
-        })
+        }) {
+        f(change)
+    }
 }
 
-fn get_region_for_set<'a>(
-    db: &'a mut PartMap<Address, FreeArray>,
-    addr1: &Address,
-    addr2: Option<&Address>,
+fn get_region_for_set<'a, 'b, F>(
+    db: &'a mut PartMap<Address<'b>, FreeArray>,
+    addr1: Address<'b>,
+    addr2: Option<Address<'b>>,
     num: usize,
     mask: u32,
-) -> impl Iterator<Item = &'a mut Vec<u32>> {
-    db.split(addr1);
+    mut f: F
+) where F: FnMut(&'a mut Vec<u32>) {
+    db.split(&addr1);
 
     let ranges = if let Some(addr2) = addr2 {
-        db.split(addr2);
+        db.split(&addr2);
         db.range_mut(addr1..addr2)
     } else {
         db.range_mut(addr1..)
     };
 
-    ranges.map(move |(_, fa)| {
+    for change in ranges.map(move |(_, fa)| {
         fa.masks[num] |= mask;
         &mut fa.values
-    })
+    }) {
+        f(change)
+    }
 }

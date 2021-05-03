@@ -21,7 +21,7 @@ impl<'a> SymbolTable<'a> {
         self.scopes.get(0)
     }
 
-    pub fn symbol(&self, id: usize) -> Option<&Symbol> {
+    pub fn symbol(&self, id: usize) -> Option<&Symbol<'a>> {
         self.symbols.get(id)
     }
 

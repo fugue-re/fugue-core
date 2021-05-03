@@ -4,7 +4,6 @@ use std::collections::btree_map::{Range, RangeMut};
 use std::ops::Bound::Excluded;
 use std::ops::RangeBounds;
 
-
 #[derive(Debug, Clone)]
 pub enum BoundKind<'a, K, V> {
     None(&'a V),
@@ -65,7 +64,7 @@ where K: Clone + Ord,
         self.mapping.is_empty()
     }
 
-    pub fn bounds(&self, point: &K) -> BoundKind<K, V> {
+    pub fn bounds<'a>(&self, point: &'a K) -> BoundKind<K, V> {
         let lb = self.mapping.range(..=point).rev().next();
         let ub = self.mapping
             .range(point..)
@@ -83,7 +82,7 @@ where K: Clone + Ord,
         self.mapping = Map::new();
     }
 
-    pub fn clear_range(&mut self, start: &K, end: &K) -> &mut V {
+    pub fn clear_range<'a>(&mut self, start: &'a K, end: &'a K) -> &mut V {
         self.split(start);
         self.split(end);
 
@@ -99,11 +98,11 @@ where K: Clone + Ord,
         self.mapping.get_mut(start).unwrap()
     }
 
-    pub fn get(&self, point: &K) -> Option<&V> {
+    pub fn get<'a>(&self, point: &'a K) -> Option<&V> {
         self.mapping.range(..=point).rev().next().map(|(_, v)| v)
     }
 
-    pub fn get_or_default(&self, point: &K) -> &V {
+    pub fn get_or_default<'a>(&self, point: &'a K) -> &V {
         self.get(point).unwrap_or(self.default_value())
     }
 
@@ -111,33 +110,33 @@ where K: Clone + Ord,
         self.mapping.iter()
     }
 
-    pub fn begin(&self, point: &K) -> Range<'_, K, V> {
+    pub fn begin<'a>(&'a self, point: &'a K) -> Range<'a, K, V> {
         self.range(point..)
     }
 
-    pub fn begin_mut(&mut self, point: &K) -> RangeMut<'_, K, V> {
+    pub fn begin_mut<'a>(&'a mut self, point: &'a K) -> RangeMut<'a, K, V> {
         self.range_mut(point..)
     }
 
-    pub fn range<T, R>(&self, range: R) -> Range<'_, K, V>
-    where K: Borrow<T>,
-          R: RangeBounds<T>,
-          T: Ord + ?Sized, {
+    pub fn range<'a, T, R>(&'a self, range: R) -> Range<'a, K, V>
+    where K: Borrow<T> + 'a,
+          R: RangeBounds<T> + 'a,
+          T: Ord + ?Sized + 'a, {
         self.mapping.range(range)
     }
 
-    pub fn range_mut<T, R>(&mut self, range: R) -> RangeMut<'_, K, V>
-    where K: Borrow<T>,
-          R: RangeBounds<T>,
-          T: Ord + ?Sized, {
+    pub fn range_mut<'a, T, R>(&'a mut self, range: R) -> RangeMut<'a, K, V>
+    where K: Borrow<T> + 'a,
+          R: RangeBounds<T> + 'a,
+          T: Ord + ?Sized + 'a, {
         self.mapping.range_mut(range)
     }
 
-    pub fn split(&mut self, at: &K) -> &V {
+    pub fn split<'a>(&'a mut self, at: &'a K) -> &'a V {
         self.split_mut(at)
     }
 
-    pub fn split_mut(&mut self, at: &K) -> &mut V {
+    pub fn split_mut<'a>(&'a mut self, at: &'a K) -> &'a mut V {
         let value = if let Some(point) = self.mapping.range(..=at).rev().next() {
             if point.0 == at {
                 None

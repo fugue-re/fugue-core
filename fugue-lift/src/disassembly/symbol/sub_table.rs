@@ -556,6 +556,7 @@ impl PatternBlock {
 
         // this can probably be done in-place without
         // the extra vec allocation
+
         self.masks = masks.to_vec();
         self.values = values.to_vec();
 

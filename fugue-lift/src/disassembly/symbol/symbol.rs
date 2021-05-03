@@ -2,6 +2,7 @@ use crate::deserialise::Error as DeserialiseError;
 use crate::deserialise::parse::XmlExt;
 use crate::disassembly::pattern::PatternExpression;
 use crate::disassembly::symbol::{Constructor, DecisionNode, SymbolTable};
+use crate::disassembly::walker::ParserWalker;
 use crate::disassembly::Error;
 use crate::space::AddressSpace;
 use crate::space_manager::SpaceManager;
@@ -266,12 +267,11 @@ impl<'a> Symbol<'a> {
         matches!(self, Self::Operand { .. })
     }
 
-    /*
-    pub fn fixed_handle<'b>(&'a self, walker: &'a mut ParserWalker<'a, 'b>, manager: &'a SpaceManager, symbols: &'a SymbolTable) -> Result<FixedHandle<'a>, Error> {
+    pub fn fixed_handle<'b, 'c>(&'b self, walker: &mut ParserWalker<'a, 'b, 'c>, manager: &'a SpaceManager, symbols: &'b SymbolTable<'a>) -> Result<FixedHandle<'a>, Error> {
         Ok(match self {
             Self::Epsilon { .. } => {
                 FixedHandle {
-                    space: manager.constant_space().with_context(|| di::InvalidSpace)?,
+                    space: manager.constant_space().ok_or_else(|| Error::InvalidSpace)?,
                     size: 0,
                     offset_space: None,
                     offset_offset: 0,
@@ -282,7 +282,7 @@ impl<'a> Symbol<'a> {
             },
             Self::Value { pattern_value, .. } => {
                 FixedHandle {
-                    space: manager.constant_space().with_context(|| di::InvalidSpace)?,
+                    space: manager.constant_space().ok_or_else(|| Error::InvalidSpace)?,
                     size: 0,
                     offset_space: None,
                     offset_offset: pattern_value.value(walker, symbols)? as u64,
@@ -304,7 +304,7 @@ impl<'a> Symbol<'a> {
             },
             Self::Operand { handle_index, .. } => {
                 walker.handle(*handle_index)?
-                    .with_context(|| di::InconsistentState)?
+                    .ok_or_else(|| Error::InconsistentState)?
             },
             Self::Start { .. } => {
                 let space = walker.address().space();
@@ -326,7 +326,7 @@ impl<'a> Symbol<'a> {
                     space,
                     size,
                     offset_space: None,
-                    offset_offset: walker.next_address().with_context(|| di::InvalidNextAddress)?.offset(),
+                    offset_offset: walker.next_address().ok_or_else(|| Error::InvalidNextAddress)?.offset(),
                     offset_size: 0,
                     temporary_space: None,
                     temporary_offset: 0,
@@ -335,13 +335,13 @@ impl<'a> Symbol<'a> {
             Self::VarnodeList { pattern_value, varnode_table, .. } => {
                 let index = pattern_value.value(walker, symbols)?;
                 let varnode = symbols.symbol(
-                    varnode_table[index as usize].with_context(|| di::InvalidSymbol)?
-                ).with_context(|| di::InvalidSymbol)?;
+                    varnode_table[index as usize].ok_or_else(|| Error::InvalidSymbol)?
+                ).ok_or_else(|| Error::InvalidSymbol)?;
                 varnode.fixed_handle(walker, manager, symbols)?
             },
             Self::ValueMap { pattern_value, value_table, .. } => {
                 FixedHandle {
-                    space: manager.constant_space().with_context(|| di::InvalidSpace)?,
+                    space: manager.constant_space().ok_or_else(|| Error::InvalidSpace)?,
                     size: 0,
                     offset_space: None,
                     offset_offset: value_table[pattern_value.value(walker, symbols)? as usize] as u64,
@@ -350,10 +350,9 @@ impl<'a> Symbol<'a> {
                     temporary_offset: 0,
                 }
             },
-            _ => return di::InvalidHandle.fail()
+            _ => return Err(Error::InvalidHandle)
         })
     }
-    */
 
     pub fn pattern_value(&self) -> Result<&PatternExpression, Error> {
         Ok(match self {

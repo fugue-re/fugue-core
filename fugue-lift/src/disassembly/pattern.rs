@@ -2,7 +2,9 @@ use crate::bits;
 //use crate::disassembly::ParserWalker;
 use crate::deserialise::Error as DeserialiseError;
 use crate::deserialise::parse::XmlExt;
+use crate::disassembly::Error;
 use crate::disassembly::symbol::{Symbol, SymbolTable};
+use crate::disassembly::walker::ParserWalker;
 //use crate::error::disassembly as di;
 
 use std::mem::size_of;
@@ -75,8 +77,7 @@ impl PatternExpression {
         }
     }
 
-    /*
-    pub fn value<'a, 'b>(&self, walker: &mut ParserWalker<'a, 'b>, symbols: &'a SymbolTable) -> Result<i64, di::Error> {
+    pub fn value<'a, 'b, 'c>(&'b self, walker: &mut ParserWalker<'a, 'b, 'c>, symbols: &'b SymbolTable<'a>) -> Result<i64, Error> {
         Ok(match self {
             Self::TokenField {
                 big_endian,
@@ -153,28 +154,28 @@ impl PatternExpression {
                 constructor_id,
                 index,
             } => {
-                let table = symbols.symbol(*table_id).context(di::InvalidSymbol)?;
+                let table = symbols.symbol(*table_id).ok_or_else(|| Error::InvalidSymbol)?;
                 let ctor = if let Symbol::Subtable { constructors, .. } = table {
                     &constructors[*constructor_id]
                 } else {
-                    return di::InconsistentState.fail()
+                    return Err(Error::InconsistentState)
                 };
 
                 let pexp = if let Symbol::Operand {
                     def_expr,
                     subsym_id,
                     ..
-                } = symbols.symbol(ctor.operand(*index)).context(di::InvalidSymbol)? {
+                } = symbols.symbol(ctor.operand(*index)).ok_or_else(|| Error::InvalidSymbol)? {
                     if let Some(def_expr) = def_expr {
                         def_expr
                     } else if let Some(subsym_id) = subsym_id {
-                        let sym = symbols.symbol(*subsym_id).context(di::InvalidSymbol)?;
+                        let sym = symbols.symbol(*subsym_id).ok_or_else(|| Error::InvalidSymbol)?;
                         sym.pattern_value()?
                     } else {
                         return Ok(0)
                     }
                 } else {
-                    return di::InconsistentState.fail()
+                    return Err(Error::InconsistentState)
                 };
 
                 walker.resolve_with(pexp, ctor, *index, symbols)?
@@ -223,7 +224,6 @@ impl PatternExpression {
             Self::Not(ref operand) => !operand.value(walker, symbols)?,
         })
     }
-    */
 
     pub fn from_xml(input: xml::Node) -> Result<Self, DeserialiseError> {
         Ok(match input.tag_name().name() {

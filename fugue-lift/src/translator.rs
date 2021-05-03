@@ -13,6 +13,7 @@ use crate::address::Address;
 use crate::deserialise::parse::XmlExt;
 use crate::deserialise::Error as DeserialiseError;
 
+use crate::disassembly::ContextDatabase;
 use crate::disassembly::symbol::{FixedHandle, Symbol, SymbolScope, SymbolTable};
 use crate::disassembly::Error as DisassemblyError;
 use crate::disassembly::PatternExpression;
@@ -69,6 +70,10 @@ pub struct TranslatorImpl {
     #[borrows(manager)]
     #[covariant]
     pub user_ops: Vec<&'this str>,
+
+    #[borrows(manager)]
+    #[covariant]
+    pub context_db: ContextDatabase<'this>,
 }
 
 #[derive(Clone)]
@@ -102,15 +107,9 @@ impl Translator {
             .find(|ff| ff.size() == size)
     }
 
-    /*
-    pub fn context(&self) -> &ContextDatabase {
-        &self.context_db
+    pub fn context_database(&self) -> ContextDatabase {
+        self.0.borrow_context_db().clone()
     }
-
-    pub fn context_mut(&mut self) -> &mut ContextDatabase {
-        &mut self.context_db
-    }
-    */
 
     pub fn manager(&self) -> &SpaceManager {
         self.0.borrow_manager()
@@ -206,7 +205,6 @@ impl Translator {
                             pc = Some((*offset, *size));
                         }
                     }
-                    /*
                     Some(Symbol::Context {
                         ref name,
                         ref pattern_value,
@@ -216,17 +214,15 @@ impl Translator {
                             bit_start, bit_end, ..
                         } = pattern_value
                         {
-                            self.context_db
+                            slf.context_db
                                 .register_variable(&**name, *bit_start, *bit_end)
-                                .expect("context variable is not duplicate");
+                                .ok_or_else(|| DeserialiseError::Invariant("duplicate context variable"))?;
                         } else {
-                            return de::Invariant {
-                                reason: "context symbol does not have context pattern",
-                            }
-                            .fail();
+                            return Err(DeserialiseError::Invariant(
+                                "context symbol does not have context pattern"
+                            ))
                         }
                     }
-                    */
                     Some(Symbol::UserOp {
                         index, ref name, ..
                     }) => {
@@ -331,6 +327,7 @@ impl Translator {
                 Ok(VarnodeData::new(register_space, 0, 0))
             },
             |_| Ok(Vec::new()),
+            |_| Ok(ContextDatabase::new())
         )?);
 
         slf.build_xrefs(program_counter)?;
