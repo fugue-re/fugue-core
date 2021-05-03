@@ -1,7 +1,7 @@
 use criterion::{criterion_group, criterion_main, Criterion};
 
-use fugue_lift::LanguageDB;
-use fugue_lift::processor::Specification;
+use fugue_ir::LanguageDB;
+use fugue_ir::processor::Specification;
 
 fn criterion_pspec_x86(c: &mut Criterion) {
     c.bench_function("Specification::from_file(\"x86.pspec\")]",

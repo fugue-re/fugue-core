@@ -1,6 +1,7 @@
 [workspace]
 members = [
-  "fugue-lift",
+  "fugue-bv",
+  "fugue-ir",
 ]
 
 [profile.bench]

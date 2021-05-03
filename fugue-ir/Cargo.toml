@@ -1,5 +1,5 @@
 [package]
-name = "fugue-lift"
+name = "fugue-ir"
 version = "0.1.0"
 authors = ["Sam Thomas <st@xv.ax>"]
 edition = "2018"

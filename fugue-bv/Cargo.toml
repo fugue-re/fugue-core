@@ -1,0 +1,10 @@
+[package]
+name = "fugue-bv"
+version = "0.1.0"
+authors = ["Sam Thomas <st@xv.ax>"]
+edition = "2018"
+
+[dependencies]
+num-traits = "0.2"
+num-bigint = "0.4"
+thiserror = "1"
