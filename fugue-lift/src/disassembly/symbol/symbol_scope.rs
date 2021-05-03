@@ -18,7 +18,7 @@ impl SymbolScope {
         self.tree.iter()
     }
 
-    pub fn find<'space>(&self, name: &str, table: &'space SymbolTable<'space>) -> Option<&'space Symbol<'space>> {
+    pub fn find<'a, 'b>(&self, name: &str, table: &'b SymbolTable<'a>) -> Option<&'b Symbol<'a>> {
         self.tree.iter().find_map(|id| table.symbol(*id).and_then(|sym| {
             if sym.name() == name {
                 Some(sym)

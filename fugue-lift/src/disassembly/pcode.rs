@@ -1,37 +1,34 @@
 use crate::address::Address;
 use crate::bits;
-use crate::construct::{ConstructTpl, OpTpl, VarnodeTpl};
-use crate::disassembly::{ParserContext, ParserWalker};
-use crate::error::disassembly as di;
+use crate::disassembly::{Error, ParserContext, ParserWalker};
+use crate::disassembly::construct::{ConstructTpl, OpTpl, VarnodeTpl};
+use crate::disassembly::symbol::{Constructor, SymbolTable};
 use crate::opcode::Opcode;
 use crate::space::AddressSpace;
-use crate::subtable::Constructor;
 use crate::space_manager::SpaceManager;
-use crate::symbol_table::SymbolTable;
 use crate::varnodedata::VarnodeData;
 use crate::Translator;
 
-use std::collections::BTreeMap as Map;
+use fnv::FnvHashMap as Map;
 use std::fmt;
 use std::mem::swap;
-use std::sync::Arc;
-use snafu::OptionExt;
 
 #[derive(Debug, Clone)]
-pub struct PCode {
-    pub address: Address,
-    pub operations: Vec<PCodeData>,
+pub struct PCode<'a> {
+    pub address: Address<'a>,
+    pub operations: Vec<PCodeData<'a>>,
     pub delay_slots: usize,
     pub length: usize,
 }
 
+/*
 pub struct PCodeFormatter<'a> {
-    pcode: &'a PCode,
+    pcode: &'a PCode<'a>,
     translator: &'a Translator,
 }
 
 impl<'a> PCodeFormatter<'a> {
-    fn new(pcode: &'a PCode, translator: &'a Translator) -> Self {
+    fn new(pcode: &'a PCode<'a>, translator: &'a Translator) -> Self {
         Self {
             pcode,
             translator,
@@ -54,13 +51,16 @@ impl<'a> fmt::Display for PCodeFormatter<'a> {
         }
     }
 }
+*/
 
-impl PCode {
-    pub fn display<'a>(&'a self, translator: &'a Translator) -> PCodeFormatter<'a> {
+impl<'a> PCode<'a> {
+    /*
+    pub fn display(&'a self, translator: &'a Translator) -> PCodeFormatter<'a> {
         PCodeFormatter::new(self, translator)
     }
+    */
 
-    pub fn nop(address: Address, length: usize) -> Self {
+    pub fn nop(address: Address<'a>, length: usize) -> Self {
         Self {
             address,
             operations: Vec::new(),
@@ -69,11 +69,11 @@ impl PCode {
         }
     }
 
-    pub fn address(&self) -> &Address {
+    pub fn address(&self) -> &Address<'a> {
         &self.address
     }
 
-    pub fn operations(&self) -> &[PCodeData] {
+    pub fn operations(&self) -> &[PCodeData<'a>] {
         self.operations.as_ref()
     }
 
@@ -102,12 +102,13 @@ impl RelativeRecord {
 }
 
 #[derive(Debug, Clone)]
-pub struct PCodeData {
+pub struct PCodeData<'a> {
     pub opcode: Opcode,
-    pub output: Option<VarnodeData>,
-    pub inputs: Vec<VarnodeData>,
+    pub output: Option<VarnodeData<'a>>,
+    pub inputs: Vec<VarnodeData<'a>>,
 }
 
+/*
 pub struct PCodeDataFormatter<'a> {
     pcode: &'a PCodeData,
     translator: &'a Translator,
@@ -139,43 +140,46 @@ impl<'a> fmt::Display for PCodeDataFormatter<'a> {
         Ok(())
     }
 }
+*/
 
+/*
 impl PCodeData {
     pub fn display<'a>(&'a self, translator: &'a Translator) -> PCodeDataFormatter<'a> {
         PCodeDataFormatter::new(self, translator)
     }
 }
+*/
 
-pub struct PCodeBuilder<'a, 'b> {
-    const_space: Arc<AddressSpace>,
+pub struct PCodeBuilder<'a, 'b, 'c> {
+    const_space: &'a AddressSpace,
     unique_mask: u64,
     unique_offset: u64,
 
-    issued: Vec<PCodeData>,
+    issued: Vec<PCodeData<'a>>,
 
     label_base: usize,
     label_count: usize,
     label_refs: Vec<RelativeRecord>,
     labels: Vec<u64>,
 
-    delay_contexts: Map<Address, &'b mut ParserContext<'a>>,
+    delay_contexts: Map<Address<'a>, &'c mut ParserContext<'a, 'b>>,
     manager: &'a SpaceManager,
-    walker: ParserWalker<'a, 'b>,
+    walker: ParserWalker<'a, 'b, 'c>,
 }
 
-impl<'a, 'b> PCodeBuilder<'a, 'b> {
-    pub fn new(walker: ParserWalker<'a, 'b>, delay_contexts: &'b mut Map<Address, ParserContext<'a>>, translator: &'a Translator) -> Result<Self, di::Error> {
+impl<'a, 'b, 'c> PCodeBuilder<'a, 'b, 'c> {
+    pub fn new(walker: ParserWalker<'a, 'b, 'c>, delay_contexts: &'c mut Map<Address<'a>, ParserContext<'a, 'b>>, manager: &'a SpaceManager, unique_mask: u64) -> Result<Self, Error> {
         Ok(Self {
-            const_space: translator.manager().constant_space().with_context(|| di::InvalidSpace)?,
-            unique_mask: translator.unique_mask(),
-            unique_offset: (walker.address().offset() & translator.unique_mask()).checked_shl(4).unwrap_or(0),
+            const_space: manager.constant_space().ok_or_else(|| Error::InvalidSpace)?,
+            unique_mask,
+            unique_offset: (walker.address().offset() & unique_mask).checked_shl(4).unwrap_or(0),
             issued: Vec::new(),
             label_base: 0,
             label_count: 0,
             labels: Vec::new(),
             label_refs: Vec::new(),
             delay_contexts: delay_contexts.iter_mut().map(|(a, v)| (a.clone(), v)).collect(),
-            manager: translator.manager(),
+            manager,
             walker,
         })
     }
@@ -184,11 +188,11 @@ impl<'a, 'b> PCodeBuilder<'a, 'b> {
         self.label_base
     }
 
-    pub fn walker(&self) -> &ParserWalker<'a, 'b> {
+    pub fn walker(&self) -> &ParserWalker<'a, 'b, 'c> {
         &self.walker
     }
 
-    pub fn walker_mut(&mut self) -> &mut ParserWalker<'a, 'b> {
+    pub fn walker_mut(&mut self) -> &mut ParserWalker<'a, 'b, 'c> {
         &mut self.walker
     }
 
@@ -198,21 +202,21 @@ impl<'a, 'b> PCodeBuilder<'a, 'b> {
             .unwrap_or(0);
     }
 
-    pub fn build_empty(&mut self, ctor: &'a Constructor, section_num: Option<usize>, symbols: &'a SymbolTable) -> Result<(), di::Error> {
+    pub fn build_empty(&mut self, ctor: &'b Constructor, section_num: Option<usize>, symbols: &'b SymbolTable<'a>) -> Result<(), Error> {
         let nops = ctor.operand_count();
 
         for i in 0..nops {
             let operand = symbols.symbol(self.walker
                                          .constructor()?
-                                         .with_context(|| di::InvalidConstructor)?
-                                         .operand(i)).with_context(|| di::InvalidSymbol)?;
+                                         .ok_or_else(|| Error::InvalidConstructor)?
+                                         .operand(i)).ok_or_else(|| Error::InvalidSymbol)?;
             let symbol = operand.defining_symbol(symbols)?;
             if symbol.is_none() || !symbol.as_ref().unwrap().is_subtable() {
                 continue
             }
 
             self.walker.push_operand(i)?;
-            if let Some(ctpl) = self.walker.constructor()?.unwrap().named_template(section_num.with_context(|| di::InconsistentState)?) {
+            if let Some(ctpl) = self.walker.constructor()?.unwrap().named_template(section_num.ok_or_else(|| Error::InconsistentState)?) {
                 self.build(ctpl, section_num, symbols)?;
             } else {
                 self.build_empty(self.walker.constructor()?.unwrap(), section_num, symbols)?;
@@ -222,12 +226,12 @@ impl<'a, 'b> PCodeBuilder<'a, 'b> {
         Ok(())
     }
 
-    pub fn append_build(&mut self, op: &'a OpTpl, section_num: Option<usize>, symbols: &'a SymbolTable) -> Result<(), di::Error> {
+    pub fn append_build(&mut self, op: &'b OpTpl, section_num: Option<usize>, symbols: &'b SymbolTable<'a>) -> Result<(), Error> {
         let index = op.input(0).offset().real() as usize;
         let operand = symbols.symbol(self.walker
                                      .constructor()?
-                                     .with_context(|| di::InvalidConstructor)?
-                                     .operand(index)).with_context(|| di::InvalidSymbol)?;
+                                     .ok_or_else(|| Error::InvalidConstructor)?
+                                     .operand(index)).ok_or_else(|| Error::InvalidSymbol)?;
         let symbol = operand.defining_symbol(symbols)?;
         if symbol.is_none() || !symbol.as_ref().unwrap().is_subtable() {
             return Ok(())
@@ -250,7 +254,7 @@ impl<'a, 'b> PCodeBuilder<'a, 'b> {
         Ok(())
     }
 
-    pub fn delay_slot(&mut self, symbols: &'a SymbolTable) -> Result<(), di::Error> {
+    pub fn delay_slot(&mut self, symbols: &'b SymbolTable<'a>) -> Result<(), Error> {
         let old_unique_offset = self.unique_offset;
         let base_address = self.walker.address();
         let delay_count = self.walker.delay_slot();
@@ -270,7 +274,7 @@ impl<'a, 'b> PCodeBuilder<'a, 'b> {
 
             self.walker.base_state();
 
-            if let Some(ctpl) = self.walker.constructor()?.with_context(|| di::InvalidConstructor)?.template() {
+            if let Some(ctpl) = self.walker.constructor()?.ok_or_else(|| Error::InvalidConstructor)?.template() {
                 self.build(ctpl, None, symbols)?;
             }
 
@@ -290,9 +294,9 @@ impl<'a, 'b> PCodeBuilder<'a, 'b> {
         Ok(())
     }
 
-    pub fn generate_location(&mut self, varnode: &'a VarnodeTpl) -> Result<VarnodeData, di::Error> {
+    pub fn generate_location(&mut self, varnode: &'b VarnodeTpl) -> Result<VarnodeData<'a>, Error> {
         let space = varnode.space().fix_space(&mut self.walker, self.manager)?
-            .with_context(|| di::InconsistentState)?;
+            .ok_or_else(|| Error::InconsistentState)?;
         let size = varnode.size().fix(&mut self.walker, self.manager)?;
 
         let offset = if space.is_constant() {
@@ -308,12 +312,12 @@ impl<'a, 'b> PCodeBuilder<'a, 'b> {
         Ok(VarnodeData::new(space, offset, size as usize))
     }
 
-    pub fn generate_pointer(&mut self, varnode: &'a VarnodeTpl) -> Result<(Arc<AddressSpace>, VarnodeData), di::Error> {
+    pub fn generate_pointer(&mut self, varnode: &'b VarnodeTpl) -> Result<(&'a AddressSpace, VarnodeData<'a>), Error> {
         let handle = self.walker.handle(
-            varnode.offset().handle_index().with_context(|| di::InconsistentState)?
-        )?.with_context(|| di::InvalidHandle)?;
+            varnode.offset().handle_index().ok_or_else(|| Error::InconsistentState)?
+        )?.ok_or_else(|| Error::InvalidHandle)?;
 
-        let space = handle.offset_space.with_context(|| di::InconsistentState)?;
+        let space = handle.offset_space.ok_or_else(|| Error::InconsistentState)?;
         let size = handle.offset_size;
 
         let offset = if space.is_constant() {
@@ -332,7 +336,7 @@ impl<'a, 'b> PCodeBuilder<'a, 'b> {
         self.label_refs.push(RelativeRecord::new(instruction, input))
     }
 
-    pub fn dump(&mut self, op: &'a OpTpl) -> Result<(), di::Error> {
+    pub fn dump(&mut self, op: &'b OpTpl) -> Result<(), Error> {
         let input_count = op.input_count();
         let mut inputs = Vec::new();
 
@@ -341,7 +345,7 @@ impl<'a, 'b> PCodeBuilder<'a, 'b> {
             if input.is_dynamic(&mut self.walker)? {
                 let varnode = self.generate_location(input)?;
                 let (spc, ptr) = self.generate_pointer(input)?;
-                let index = VarnodeData::new(self.const_space.clone(),
+                let index = VarnodeData::new(self.const_space,
                                              spc.index() as u64,
                                              0);
                 self.issued.push(PCodeData {
@@ -370,7 +374,7 @@ impl<'a, 'b> PCodeBuilder<'a, 'b> {
 
             if output.is_dynamic(&mut self.walker)? {
                 let (spc, ptr) = self.generate_pointer(output)?;
-                let index = VarnodeData::new(self.const_space.clone(),
+                let index = VarnodeData::new(self.const_space,
                                              spc.index() as u64,
                                              0);
                 self.issued.push(PCodeData {
@@ -389,7 +393,7 @@ impl<'a, 'b> PCodeBuilder<'a, 'b> {
         Ok(())
     }
 
-    pub fn build(&mut self, constructor: &'a ConstructTpl, section_num: Option<usize>, symbols: &'a SymbolTable) -> Result<(), di::Error> {
+    pub fn build(&mut self, constructor: &'b ConstructTpl, section_num: Option<usize>, symbols: &'b SymbolTable<'a>) -> Result<(), Error> {
         let old_base = self.label_base;
         self.label_base = self.label_count;
         self.label_count += constructor.labels();
@@ -403,7 +407,7 @@ impl<'a, 'b> PCodeBuilder<'a, 'b> {
                     self.delay_slot(symbols)?;
                 },
                 Opcode::CrossBuild => {
-                    return di::InconsistentState.fail()
+                    return Err(Error::InconsistentState)
                 },
                 _ => {
                     self.dump(op)?;
@@ -427,7 +431,7 @@ impl<'a, 'b> PCodeBuilder<'a, 'b> {
         }
     }
 
-    pub fn emit(self, length: usize) -> PCode {
+    pub fn emit(self, length: usize) -> PCode<'a> {
         let mut slf = self;
         slf.walker.base_state();
         PCode {

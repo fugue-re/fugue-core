@@ -262,8 +262,7 @@ pub struct VarnodeTpl {
 }
 
 impl VarnodeTpl {
-    /*
-    pub fn is_dynamic(&self, walker: &mut ParserWalker) -> Result<bool, di::Error> {
+    pub fn is_dynamic<'a, 'b, 'c>(&'b self, walker: &mut ParserWalker<'a, 'b, 'c>) -> Result<bool, Error> {
         if let ConstTpl::Handle(index, _) = self.offset {
             Ok(walker.handle(index)?
                 .ok_or_else(|| Error::InvalidHandle)?
@@ -273,7 +272,6 @@ impl VarnodeTpl {
             Ok(false)
         }
     }
-    */
 
     pub fn is_relative(&self) -> bool {
         self.offset.is_relative()
