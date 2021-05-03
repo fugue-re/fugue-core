@@ -1,10 +1,10 @@
-//use crate::disassembly::ParserWalker;
+use crate::disassembly::{Error, ParserWalker};
+use crate::disassembly::symbol::FixedHandle;
 use crate::deserialise::Error as DeserialiseError;
 use crate::deserialise::parse::XmlExt;
 
 use crate::space::AddressSpace;
 use crate::space_manager::SpaceManager;
-//use crate::symbol_table::FixedHandle;
 //use crate::error::disassembly as di;
 use crate::opcode::Opcode;
 
@@ -59,25 +59,24 @@ impl ConstTpl {
         matches!(self, Self::Relative { .. })
     }
 
-    /*
-    pub fn fix<'a, 'b>(&self, walker: &mut ParserWalker<'a, 'b>, manager: &'a SpaceManager) -> Result<u64, di::Error> {
+    pub fn fix<'a, 'b, 'c>(&'b self, walker: &mut ParserWalker<'a, 'b, 'c>, manager: &'a SpaceManager) -> Result<u64, Error> {
         Ok(match self {
             Self::Start => walker.address().offset(),
-            Self::Next => walker.next_address().with_context(|| di::InvalidNextAddress)?.offset(),
+            Self::Next => walker.next_address().ok_or_else(|| Error::InvalidNextAddress)?.offset(),
             Self::CurrentSpaceSize => walker.address().space().address_size() as u64,
             Self::CurrentSpace => walker.address().space().index() as u64,
             Self::Relative(value) | Self::Real(value) => *value,
             Self::SpaceId(name) => manager.space_by_name(name)
-                .with_context(|| di::InvalidSpace)?
+                .ok_or_else(|| Error::InvalidSpace)?
                 .index() as u64,
             Self::Handle(index, kind) => {
-                let handle = walker.handle(*index)?.with_context(|| di::InvalidHandle)?;
+                let handle = walker.handle(*index)?.ok_or_else(|| Error::InvalidHandle)?;
                 match kind {
                     HandleKind::Space => {
                         if handle.offset_space.is_none() {
                             handle.space.index() as u64
                         } else {
-                            handle.temporary_space.with_context(|| di::InvalidSpace)?.index() as u64
+                            handle.temporary_space.ok_or_else(|| Error::InvalidSpace)?.index() as u64
                         }
                     },
                     HandleKind::Offset => {
@@ -91,7 +90,7 @@ impl ConstTpl {
                         handle.size as u64
                     },
                     HandleKind::OffsetPlus(value) => {
-                        if manager.constant_space().with_context(|| di::InvalidSpace)? != handle.space {
+                        if manager.constant_space().ok_or_else(|| Error::InvalidSpace)? != handle.space {
                             if handle.offset_space.is_none() {
                                 handle.offset_offset + (*value & 0xffff)
                             } else {
@@ -113,12 +112,12 @@ impl ConstTpl {
         })
     }
 
-    pub fn offset<'a, 'b>(&self, handle: &mut FixedHandle, walker: &mut ParserWalker<'a, 'b>, manager: &'a SpaceManager) -> Result<(), di::Error> {
+    pub fn offset<'a, 'b, 'c>(&'b self, handle: &mut FixedHandle<'a>, walker: &mut ParserWalker<'a, 'b, 'c>, manager: &'a SpaceManager) -> Result<(), Error> {
         Ok(match self {
             Self::Handle(index, _) => {
                 let h = walker.handle(*index)?
-                    .with_context(|| di::InvalidHandle)?;
-                handle.offset_space = h.offset_space.clone();
+                    .ok_or_else(|| Error::InvalidHandle)?;
+                handle.offset_space = h.offset_space;
                 handle.offset_offset = h.offset_offset;
                 handle.offset_size = h.offset_size;
                 handle.temporary_space = h.temporary_space.clone();
@@ -132,45 +131,44 @@ impl ConstTpl {
         })
     }
 
-    pub fn space<'a, 'b>(&self, walker: &mut ParserWalker<'a, 'b>, manager: &'a SpaceManager) -> Result<Arc<AddressSpace>, di::Error> {
+    pub fn space<'a, 'b, 'c>(&'b self, walker: &mut ParserWalker<'a, 'b, 'c>, manager: &'a SpaceManager) -> Result<&'a AddressSpace, Error> {
         Ok(match self {
-            Self::CurrentSpace => walker.address().space_cloned(),
+            Self::CurrentSpace => walker.address().space(),
             Self::Handle(index, kind) => {
                 if *kind == HandleKind::Space {
-                    walker.handle(*index)?.with_context(|| di::InvalidHandle)?.space.clone()
+                    walker.handle(*index)?.ok_or_else(|| Error::InvalidHandle)?.space
                 } else {
-                    return di::InconsistentState.fail()
+                    return Err(Error::InconsistentState)
                 }
             },
             Self::SpaceId(name) => {
                 manager.space_by_name(name).unwrap()
             },
-            _ => return di::InconsistentState.fail()
+            _ => return Err(Error::InconsistentState)
         })
     }
 
-    pub fn fix_space<'a, 'b>(&self, walker: &mut ParserWalker<'a, 'b>, manager: &'a SpaceManager) -> Result<Option<Arc<AddressSpace>>, di::Error> {
+    pub fn fix_space<'a, 'b, 'c>(&'b self, walker: &mut ParserWalker<'a, 'b, 'c>, manager: &'a SpaceManager) -> Result<Option<&'a AddressSpace>, Error> {
         Ok(match self {
-            Self::CurrentSpace => Some(walker.address().space_cloned()),
+            Self::CurrentSpace => Some(walker.address().space()),
             Self::Handle(index, kind) => {
                 if *kind == HandleKind::Space {
-                    let h = walker.handle(*index)?.with_context(|| di::InvalidHandle)?;
+                    let h = walker.handle(*index)?.ok_or_else(|| Error::InvalidHandle)?;
                     if h.offset_space.is_none() {
-                        Some(h.space.clone())
+                        Some(h.space)
                     } else {
                         h.temporary_space.clone()
                     }
                 } else {
-                    return di::InconsistentState.fail()
+                    return Err(Error::InconsistentState)
                 }
             },
             Self::SpaceId(name) => {
                 manager.space_by_name(name)
             },
-            _ => return di::InconsistentState.fail()
+            _ => return Err(Error::InconsistentState)
         })
     }
-    */
 
     pub fn from_xml(input: xml::Node) -> Result<Self, DeserialiseError> {
         Ok(match input.attribute("type").ok_or_else(|| DeserialiseError::AttributeExpected("type"))? {
@@ -212,8 +210,7 @@ pub struct HandleTpl {
 }
 
 impl HandleTpl {
-    /*
-    pub fn fix<'a, 'b>(&'a self, walker: &mut ParserWalker<'a, 'b>, manager: &'a SpaceManager) -> Result<FixedHandle, di::Error> {
+    pub fn fix<'a, 'b, 'c>(&'b self, walker: &mut ParserWalker<'a, 'b, 'c>, manager: &'a SpaceManager) -> Result<FixedHandle<'a>, Error> {
         if self.ptr_space.is_real() {
             let mut handle = FixedHandle::new(self.space.space(walker, manager)?);
             handle.size = self.size.fix(walker, manager)? as usize;
@@ -221,12 +218,12 @@ impl HandleTpl {
             Ok(handle)
         } else {
             let mut handle = FixedHandle::new(self.space.fix_space(walker, manager)?
-                                              .with_context(|| di::InconsistentState)?);
+                                              .ok_or_else(|| Error::InconsistentState)?);
             handle.size = self.size.fix(walker, manager)? as usize;
             handle.offset_offset = self.ptr_offset.fix(walker, manager)?;
             handle.offset_space = self.ptr_space.fix_space(walker, manager)?;
 
-            if handle.offset_space.as_ref().with_context(|| di::InconsistentState)?.is_constant() {
+            if handle.offset_space.as_ref().ok_or_else(|| Error::InconsistentState)?.is_constant() {
                 handle.offset_space = None;
                 handle.offset_offset = handle.offset_offset * handle.space.word_size() as u64;
                 handle.offset_offset = handle.space.wrap_offset(handle.offset_offset);
@@ -239,7 +236,6 @@ impl HandleTpl {
             Ok(handle)
         }
     }
-    */
 
     pub fn from_xml(input: xml::Node) -> Result<Self, DeserialiseError> {
         let mut children = input.children()
@@ -270,7 +266,7 @@ impl VarnodeTpl {
     pub fn is_dynamic(&self, walker: &mut ParserWalker) -> Result<bool, di::Error> {
         if let ConstTpl::Handle(index, _) = self.offset {
             Ok(walker.handle(index)?
-                .with_context(|| di::InvalidHandle)?
+                .ok_or_else(|| Error::InvalidHandle)?
                 .offset_space
                 .is_some())
         } else {

@@ -17,6 +17,7 @@ use crate::disassembly::ContextDatabase;
 use crate::disassembly::symbol::{FixedHandle, Symbol, SymbolScope, SymbolTable};
 use crate::disassembly::Error as DisassemblyError;
 use crate::disassembly::PatternExpression;
+use crate::disassembly::{ParserState, ParserWalker};
 
 use crate::error::Error;
 
@@ -333,41 +334,6 @@ impl Translator {
         slf.build_xrefs(program_counter)?;
 
         Ok(slf)
-
-        /*
-        let symbol_table = SymbolTable::from_xml(
-            &manager,
-            children.next().ok_or_else(|| DeserialiseError::Invariant(
-                "symbol table not defined"
-            ))?,
-        )?;
-
-        let root = symbol_table
-            .global_scope()
-            .ok_or_else(|| DeserialiseError::Invariant(
-                "global scope not defined"
-            ))?
-            .find("instruction", &symbol_table)
-            .ok_or_else(|| DeserialiseError::Invariant(
-                "instruction root symbol not defined"
-            ))?;
-        */
-
-        /*
-        let register_space = manager
-            .space_by_name("register")
-            .ok_or_else(|| DeserialiseError::Invariant(
-                "missing register space"
-            ))?;
-        let program_counter_vnd = VarnodeData::new(register_space, 0, 0);
-        */
-
-        /*
-         */
-
-        //slf.build_xrefs(program_counter, register_space)?;
-
-        //Ok(slf)
     }
 
     /*
@@ -461,17 +427,18 @@ impl Translator {
             Ok(PCode::nop(address, walker.length()))
         }
     }
+    */
 
-    fn resolve_handles<'a, 'b>(
-        walker: &mut ParserWalker<'a, 'b>,
+    fn resolve_handles<'a, 'b, 'c>(
+        walker: &mut ParserWalker<'a, 'b, 'c>,
         manager: &'a SpaceManager,
-        symbol_table: &'a SymbolTable,
+        symbol_table: &'b SymbolTable<'a>,
     ) -> Result<(), Error> {
         // assumes resolve has resolved all constructors
         walker.base_state();
 
         while walker.is_state() {
-            let ct = walker.constructor()?.with_context(|| di::InvalidConstructor)?;
+            let ct = walker.constructor()?.ok_or_else(|| DisassemblyError::InvalidConstructor)?;
 
             let nops = ct.operand_count();
             let mut op = walker.operand();
@@ -479,7 +446,7 @@ impl Translator {
             'inner: while op < nops {
                 let operand = symbol_table
                     .symbol(ct.operand(op))
-                    .with_context(|| di::InvalidSymbol)?;
+                    .ok_or_else(|| DisassemblyError::InvalidSymbol)?;
 
                 walker.push_operand(op)?;
 
@@ -491,9 +458,9 @@ impl Translator {
                         walker.set_parent_handle(h)?;
                     }
                 } else {
-                    let pexp = operand.defining_expression()?.with_context(|| di::InvalidPattern)?;
+                    let pexp = operand.defining_expression()?.ok_or_else(|| DisassemblyError::InvalidPattern)?;
                     let res = pexp.value(walker, symbol_table)?;
-                    let const_space = manager.constant_space().with_context(|| di::InvalidSpace)?;
+                    let const_space = manager.constant_space().ok_or_else(|| DisassemblyError::InvalidSpace)?;
                     if let Some(handle) = walker.parent_handle_mut()? {
                         handle.space = const_space;
                         handle.offset_space = None;
@@ -526,6 +493,7 @@ impl Translator {
         Ok(())
     }
 
+    /*
     fn resolve<'a, 'b>(
         walker: &mut ParserWalker<'a, 'b>,
         root: usize,

@@ -226,7 +226,7 @@ impl<'a> Symbol<'a> {
         }
     }
 
-    pub fn defining_symbol(&self, symbols: &'a SymbolTable) -> Result<Option<&'a Symbol>, Error> {
+    pub fn defining_symbol<'b>(&self, symbols: &'b SymbolTable<'a>) -> Result<Option<&'b Symbol<'a>>, Error> {
         if let Self::Operand { subsym_id, .. } = self {
             if let Some(id) = subsym_id {
                 Ok(Some(

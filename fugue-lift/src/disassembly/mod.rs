@@ -15,4 +15,4 @@ pub mod symbol;
 pub use symbol::{Symbol, SymbolTable};
 
 pub mod walker;
-pub use walker::{ParserContext, ParserWalker};
+pub use walker::{ParserContext, ParserState, ParserWalker};
