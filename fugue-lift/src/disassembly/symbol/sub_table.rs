@@ -1,6 +1,7 @@
 use crate::deserialise::Error as DeserialiseError;
 use crate::deserialise::parse::XmlExt;
 
+use crate::disassembly::{Error, ParserWalker};
 use crate::disassembly::construct::ConstructTpl;
 use crate::disassembly::pattern::PatternExpression;
 
@@ -30,8 +31,7 @@ pub enum Context {
 }
 
 impl Context {
-    /*
-    pub fn apply<'a, 'b>(&self, walker: &mut ParserWalker<'a, 'b>, symbols: &'a SymbolTable) -> Result<(), di::Error> {
+    pub fn apply<'a, 'b, 'c>(&'b self, walker: &mut ParserWalker<'a, 'b, 'c>, symbols: &'b SymbolTable<'a>) -> Result<(), Error> {
         match self {
             Self::Operator { num, shift, mask, pattern_value } => {
                 let value = pattern_value.value(walker, symbols)? as u32;
@@ -39,13 +39,12 @@ impl Context {
                 walker.set_context_word(*num, v, *mask);
             },
             Self::Commit { symbol_id, num, mask, flow } => {
-                let sym = symbols.symbol(*symbol_id).with_context(|| di::InvalidSymbol)?;
+                let sym = symbols.symbol(*symbol_id).ok_or_else(|| Error::InvalidSymbol)?;
                 walker.add_commit(sym, *num, *mask, *flow)?;
             },
         }
         Ok(())
     }
-    */
 
     pub fn from_xml(input: xml::Node) -> Result<Self, DeserialiseError> {
         Ok(match input.tag_name().name() {
@@ -85,14 +84,12 @@ pub struct Constructor {
 }
 
 impl Constructor {
-    /*
-    pub fn apply_context<'a, 'b>(&self, walker: &mut ParserWalker<'a, 'b>, symbols: &'a SymbolTable) -> Result<(), di::Error> {
+    pub fn apply_context<'a, 'b, 'c>(&'b self, walker: &mut ParserWalker<'a, 'b, 'c>, symbols: &'b SymbolTable<'a>) -> Result<(), Error> {
         for context in &self.context {
             context.apply(walker, symbols)?;
         }
         Ok(())
     }
-    */
 
     pub fn minimum_length(&self) -> usize {
         self.min_length
@@ -291,15 +288,14 @@ impl DecisionNode {
         })
     }
 
-    /*
-    pub fn resolve<'a>(&self, walker: &mut ParserWalker, ctors: &'a [Constructor]) -> Result<&'a Constructor, di::Error> {
+    pub fn resolve<'a, 'b, 'c>(&'b self, walker: &mut ParserWalker<'a, 'b, 'c>, ctors: &'b [Constructor]) -> Result<&'b Constructor, Error> {
         if self.size == 0 {
             for pattern in self.patterns.iter() {
                 if pattern.is_match(walker)? {
-                    return ctors.get(pattern.id).with_context(|| di::InvalidConstructor)
+                    return ctors.get(pattern.id).ok_or_else(|| Error::InvalidConstructor)
                 }
             }
-            di::InstructionResolution.fail()
+            Err(Error::InstructionResolution)
         } else {
             let val = if self.context_decision {
                 walker.context_bits(self.start_bit, self.size)
@@ -310,7 +306,6 @@ impl DecisionNode {
             self.children[val as usize].resolve(walker, ctors)
         }
     }
-    */
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -320,11 +315,9 @@ pub struct DecisionPair {
 }
 
 impl DecisionPair {
-    /*
-    pub fn is_match(&self, walker: &ParserWalker) -> Result<bool, di::Error> {
+    pub fn is_match<'a, 'b, 'c>(&'b self, walker: &ParserWalker<'a, 'b, 'c>) -> Result<bool, Error> {
         self.pattern.is_match(walker)
     }
-    */
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -338,8 +331,7 @@ pub enum DisjointPattern {
 }
 
 impl DisjointPattern {
-    /*
-    pub fn is_match(&self, walker: &ParserWalker) -> Result<bool, di::Error> {
+    pub fn is_match<'a, 'b, 'c>(&'b self, walker: &ParserWalker<'a, 'b, 'c>) -> Result<bool, Error> {
         Ok(match self {
             Self::Instruction(ref pat) => pat.is_match(walker)?,
             Self::Context(ref pat) => pat.is_match(walker),
@@ -349,7 +341,6 @@ impl DisjointPattern {
             } => instruction.is_match(walker)? && context.is_match(walker),
         })
     }
-    */
 
     pub fn from_xml(input: xml::Node) -> Result<Self, DeserialiseError> {
         Ok(match input.tag_name().name() {
@@ -391,11 +382,9 @@ impl InstructionPattern {
         })
     }
 
-    /*
-    pub fn is_match(&self, walker: &ParserWalker) -> Result<bool, di::Error> {
+    pub fn is_match<'a, 'b, 'c>(&'b self, walker: &ParserWalker<'a, 'b, 'c>) -> Result<bool, Error> {
         self.mask_value.is_instruction_match(walker)
     }
-    */
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -415,11 +404,9 @@ impl ContextPattern {
         })
     }
 
-    /*
-    pub fn is_match(&self, walker: &ParserWalker) -> bool {
+    pub fn is_match<'a, 'b, 'c>(&'b self, walker: &ParserWalker<'a, 'b, 'c>) -> bool {
         self.mask_value.is_context_match(walker)
     }
-    */
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -451,8 +438,7 @@ impl PatternBlock {
         self.non_zero_size == Self::ALWAYS_FALSE
     }
 
-    /*
-    pub fn is_context_match(&self, walker: &ParserWalker) -> bool {
+    pub fn is_context_match<'a, 'b, 'c>(&'b self, walker: &ParserWalker<'a, 'b, 'c>) -> bool {
         match self.non_zero_size {
             Self::ALWAYS_FALSE => false,
             Self::ALWAYS_TRUE => true,
@@ -470,7 +456,7 @@ impl PatternBlock {
         }
     }
 
-    pub fn is_instruction_match(&self, walker: &ParserWalker) -> Result<bool, di::Error> {
+    pub fn is_instruction_match<'a, 'b, 'c>(&'b self, walker: &ParserWalker<'a, 'b, 'c>) -> Result<bool, Error> {
         Ok(match self.non_zero_size {
             Self::ALWAYS_FALSE => false,
             Self::ALWAYS_TRUE => true,
@@ -487,7 +473,6 @@ impl PatternBlock {
             }
         })
     }
-    */
 
     pub fn shift(&mut self, shift: isize) {
         let noffset = isize::try_from(self.offset).expect("PatternBlock shift offset") + shift;

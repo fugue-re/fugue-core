@@ -2,6 +2,7 @@
 use crate::deserialise::parse::XmlExt;
 use crate::deserialise::Error as DeserialiseError;
 
+use crate::disassembly::{Error, ParserWalker};
 use crate::disassembly::symbol::{Constructor, Symbol, SymbolBuilder, SymbolKind, SymbolScope};
 
 //use crate::error::disassembly as di;
@@ -25,15 +26,13 @@ impl<'a> SymbolTable<'a> {
         self.symbols.get(id)
     }
 
-    /*
-    pub (crate) fn resolve(&'a self, id: usize, walker: &mut ParserWalker) -> Result<&'a Constructor, di::Error> {
+    pub (crate) fn resolve<'b, 'c>(&'b self, id: usize, walker: &mut ParserWalker<'a, 'b, 'c>) -> Result<&'b Constructor, Error> {
         if let Symbol::Subtable { decision_tree, constructors, .. } = &self.symbols[id] {
             decision_tree.resolve(walker, constructors)
         } else {
-            di::InvalidSymbol.fail()
+            Err(Error::InvalidSymbol)
         }
     }
-    */
 
     pub fn from_xml(spaces: &'a SpaceManager, input: xml::Node) -> Result<Self, DeserialiseError> {
         if input.tag_name().name() != "symbol_table" {

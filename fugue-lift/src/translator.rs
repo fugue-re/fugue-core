@@ -293,8 +293,6 @@ impl Translator {
             section_count,
             float_formats,
             Box::new(manager),
-            //maximum_delay,
-            //section_count,
             |manager| {
                 SymbolTable::from_xml(
                     &manager,
@@ -318,7 +316,6 @@ impl Translator {
                     .global_scope()
                     .ok_or_else(|| DeserialiseError::Invariant("global scope not defined"))
             },
-            //context_db: ContextDatabase::new(),
             |_| Ok(Map::default()),
             |_| Ok(Map::default()),
             |manager| {
@@ -493,25 +490,24 @@ impl Translator {
         Ok(())
     }
 
-    /*
-    fn resolve<'a, 'b>(
-        walker: &mut ParserWalker<'a, 'b>,
+    fn resolve<'a, 'b, 'c>(
+        walker: &mut ParserWalker<'a, 'b, 'c>,
         root: usize,
-        symbol_table: &'a SymbolTable,
+        symbol_table: &'b SymbolTable<'a>,
     ) -> Result<(), Error> {
         let ctor = symbol_table.resolve(root, walker)?;
         walker.set_constructor(ctor)?;
         ctor.apply_context(walker, symbol_table)?;
 
         while walker.is_state() {
-            let ct = walker.constructor()?.with_context(|| di::InvalidConstructor)?;
+            let ct = walker.constructor()?.ok_or_else(|| DisassemblyError::InvalidConstructor)?;
             let nops = ct.operand_count();
             let mut op = walker.operand();
 
             'inner: while op < nops {
                 let operand = symbol_table
                     .symbol(ct.operand(op))
-                    .with_context(|| di::InvalidSymbol)?;
+                    .ok_or_else(|| DisassemblyError::InvalidSymbol)?;
 
                 let offset = walker.offset(operand.offset_base()?)? + operand.relative_offset()?;
 
@@ -546,7 +542,6 @@ impl Translator {
 
         Ok(())
     }
-    */
 }
 
 /*

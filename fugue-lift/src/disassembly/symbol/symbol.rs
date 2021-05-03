@@ -240,8 +240,7 @@ impl<'a> Symbol<'a> {
         }
     }
 
-    /*
-    pub fn resolve<'b>(&'a self, walker: &mut ParserWalker<'a, 'b>) -> Result<Option<&'a Constructor>, Error> {
+    pub fn resolve<'b, 'c>(&'b self, walker: &mut ParserWalker<'a, 'b, 'c>) -> Result<Option<&'b Constructor>, Error> {
         match self {
             Self::Subtable { decision_tree, constructors, .. } => {
                 Ok(Some(decision_tree.resolve(walker, constructors)?))
@@ -257,7 +256,6 @@ impl<'a> Symbol<'a> {
             // FIXME: p => unreachable!("{:?}", p) // di::InvalidSymbol.fail(),
         }
     }
-    */
 
     pub fn is_subtable(&self) -> bool {
         matches!(self, Self::Subtable { .. })
