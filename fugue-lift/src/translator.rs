@@ -6,27 +6,24 @@ use fnv::FnvHashMap as Map;
 use itertools::Itertools;
 
 use crate::address::Address;
-//use crate::context::ContextDatabase;
-//use crate::disassembly::{InstructionFormatter, ParserContext, ParserState, ParserWalker};
 
 use crate::deserialise::parse::XmlExt;
 use crate::deserialise::Error as DeserialiseError;
 
 use crate::disassembly::ContextDatabase;
-use crate::disassembly::symbol::{FixedHandle, Symbol, SymbolScope, SymbolTable};
 use crate::disassembly::Error as DisassemblyError;
 use crate::disassembly::PatternExpression;
 use crate::disassembly::{ParserContext, ParserState, ParserWalker, PCode, PCodeBuilder};
+use crate::disassembly::symbol::{FixedHandle, Symbol, SymbolScope, SymbolTable};
+use crate::disassembly::VarnodeData;
 
 use crate::error::Error;
 
 use crate::float_format::FloatFormat;
 
-//use crate::pcode::{PCode, PCodeBuilder};
 use crate::space::AddressSpace;
 use crate::space_manager::SpaceManager;
 
-use crate::varnodedata::VarnodeData;
 
 #[ouroboros::self_referencing(chain_hack)]
 #[derive(Clone)]

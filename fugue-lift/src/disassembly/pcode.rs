@@ -3,10 +3,10 @@ use crate::bits;
 use crate::disassembly::{Error, ParserContext, ParserWalker};
 use crate::disassembly::construct::{ConstructTpl, OpTpl, VarnodeTpl};
 use crate::disassembly::symbol::{Constructor, SymbolTable};
-use crate::opcode::Opcode;
+use crate::disassembly::Opcode;
+use crate::disassembly::VarnodeData;
 use crate::space::AddressSpace;
 use crate::space_manager::SpaceManager;
-use crate::varnodedata::VarnodeData;
 use crate::Translator;
 
 use fnv::FnvHashMap as Map;

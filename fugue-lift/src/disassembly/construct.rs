@@ -1,12 +1,12 @@
-use crate::disassembly::{Error, ParserWalker};
-use crate::disassembly::symbol::FixedHandle;
 use crate::deserialise::Error as DeserialiseError;
 use crate::deserialise::parse::XmlExt;
 
+use crate::disassembly::{Error, ParserWalker};
+use crate::disassembly::Opcode;
+use crate::disassembly::symbol::FixedHandle;
+
 use crate::space::AddressSpace;
 use crate::space_manager::SpaceManager;
-//use crate::error::disassembly as di;
-use crate::opcode::Opcode;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum HandleKind {

@@ -7,7 +7,7 @@ use itertools::Itertools;
 
 use crate::address::Address;
 use crate::disassembly::partmap::{BoundKind, PartMap};
-use crate::varnodedata::VarnodeData;
+use crate::disassembly::VarnodeData;
 
 #[derive(Debug, Clone)]
 pub struct ContextBitRange {
