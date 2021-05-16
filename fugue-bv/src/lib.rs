@@ -80,22 +80,53 @@ impl<const N: usize> BitVec<N> {
         Self(self.0, self.1, true)
     }
 
+    pub fn is_signed(&self) -> bool {
+        self.2
+    }
+
+    pub fn unsigned(self) -> Self {
+        Self(self.0, self.1, false)
+    }
+
+    pub fn is_unsigned(&self) -> bool {
+        !self.2
+    }
+
     fn mask(self) -> Self {
         Self(self.0 & self.1, Self::mask_value(), false)
     }
 
     pub fn convert<const M: usize>(self) -> BitVec<{ M }> {
-        BitVec::<{ M }>::from(self.0)
+        if self.is_signed() {
+            if M > N && self.0.bit(N as u64 - 1) { // negative; extension
+                let mask = ((BigInt::one() << M) - BigInt::one()) ^ self.1;
+                let mut bv = BitVec::<{ M }>::from(self.0 | mask);
+                bv.2 = true;
+                bv
+            } else { // truncate
+                BitVec::<{ M }>::from(self.0)
+            }
+        } else {
+            BitVec::<{ M }>::from(self.0)
+        }
     }
 }
 
 impl<const N: usize> BitVec<N> {
-    pub fn max_value() -> Self {
-        Self::from((BigInt::one() << N) - BigInt::one())
+    pub fn max_value(&self) -> Self {
+        if self.is_signed() {
+            Self::from((BigInt::one() << (N - 1)) - BigInt::one())
+        } else {
+            Self::from((BigInt::one() << N) - BigInt::one())
+        }
     }
 
-    pub fn min_value() -> Self {
-        Self::zero()
+    pub fn min_value(&self) -> Self {
+        if self.is_signed() {
+            Self::from(-(BigInt::one() << (N - 1)))
+        } else {
+            Self::zero()
+        }
     }
 }
 
@@ -143,7 +174,14 @@ impl<const N: usize> Shr<u32> for BitVec<N> {
     type Output = Self;
 
     fn shr(self, rhs: u32) -> Self::Output {
-        Self::from(self.0 >> rhs)
+        if rhs as usize >= N {
+            Self::zero()
+        } else if self.is_signed() { // perform ASR
+            let mask = self.1 ^ ((BigInt::one() << (N - rhs as usize)) - BigInt::one());
+            Self::from((self.0 >> rhs) ^ mask)
+        } else {
+            Self::from(self.0 >> rhs)
+        }
     }
 }
 
@@ -191,7 +229,7 @@ impl<const N: usize> Not for BitVec<N> {
     type Output = Self;
 
     fn not(self) -> Self::Output {
-        Self::max_value() ^ self
+        self.max_value() ^ self
     }
 }
 
@@ -200,7 +238,7 @@ impl<const N: usize> Sub for BitVec<N> {
 
     fn sub(self, rhs: Self) -> Self::Output {
         if rhs > self {
-            Self::max_value() - Self::from(rhs.0 - self.0 - BigInt::one())
+            self.max_value() - Self::from(rhs.0 - self.0 - BigInt::one())
         } else {
             Self::from(self.0 - rhs.0)
         }
@@ -244,8 +282,18 @@ mod test {
         let v3 = BitVec::<24>::from_u32(0xfffffe).unwrap();
         let v4 = BitVec::<24>::from_u32(0xffffff).unwrap();
 
-        println!("{:x}", v3);
-
         assert_eq!(v3 - v4, BitVec::<24>::from_u32(0xffffff).unwrap());
+    }
+
+    #[test]
+    fn test_signed_shift_right() {
+        let v1 = BitVec::<16>::from_u16(0xffff).unwrap();
+        assert_eq!(v1 >> 4, BitVec::<16>::from_u16(0x0fff).unwrap());
+
+        let v2 = BitVec::<16>::from_u16(0xffff).unwrap();
+        assert_eq!(v2.signed() >> 4, BitVec::<16>::from_u16(0xffff).unwrap());
+
+        let v3 = BitVec::<16>::from_u16(0x8000).unwrap();
+        assert_eq!(v3.signed() >> 4, BitVec::<16>::from_u16(0xf800).unwrap());
     }
 }
