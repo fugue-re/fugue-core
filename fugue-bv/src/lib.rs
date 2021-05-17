@@ -1,32 +1,11 @@
+use std::cmp::Ordering;
 use std::fmt;
 use std::ops::{Add, BitAnd, BitOr, BitXor, Div, Mul, Neg, Not, Rem, Shl, Shr, Sub};
 
 use num_bigint::BigInt;
-use num_traits::{FromPrimitive, Num, One, Zero};
+use num_traits::{FromPrimitive, One, Zero};
 
-pub trait Sort:
-    Zero
-    + One
-    + Num
-    + FromPrimitive
-    + BitAnd<Self, Output = Self>
-    + BitOr<Self, Output = Self>
-    + BitXor<Self, Output = Self>
-    + Shl<usize, Output = Self>
-    + Shl<u32, Output = Self>
-    + Shr<u32, Output = Self>
-    + Add<Self, Output = Self>
-    + Sub<Self, Output = Self>
-    + Mul<Self, Output = Self>
-    + Div<Self, Output = Self>
-    + Rem<Self, Output = Self>
-{
-    const IS_SIGNED: bool;
-
-    fn sign(&self) -> bool;
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Ord, PartialOrd, Hash)]
+#[derive(Debug, Clone, Hash)]
 pub struct BitVec<const N: usize>(BigInt, BigInt, bool);
 
 impl<const N: usize> fmt::Display for BitVec<N> {
@@ -76,8 +55,8 @@ impl<const N: usize> BitVec<N> {
         N
     }
 
-    pub fn signed(self) -> Self {
-        Self(self.0, self.1, true)
+    pub fn signed(&self) -> Self {
+        Self(self.0.clone(), self.1.clone(), true)
     }
 
     pub fn is_signed(&self) -> bool {
@@ -88,8 +67,8 @@ impl<const N: usize> BitVec<N> {
         self.2 && self.msb()
     }
 
-    pub fn unsigned(self) -> Self {
-        Self(self.0, self.1, false)
+    pub fn unsigned(&self) -> Self {
+        Self(self.0.clone(), self.1.clone(), false)
     }
 
     pub fn is_unsigned(&self) -> bool {
@@ -123,6 +102,32 @@ impl<const N: usize> BitVec<N> {
 }
 
 impl<const N: usize> BitVec<N> {
+    pub fn abs(&self) -> BitVec<N> {
+        if self.is_negative() {
+            -self
+        } else {
+            self.clone()
+        }
+    }
+
+    pub fn borrow(&self, rhs: &Self) -> bool {
+        let min = if self.is_signed() || rhs.is_signed() {
+            -(BigInt::one() << (N - 1))
+        } else {
+            BigInt::zero()
+        };
+        (&self.0 - &rhs.0) < min
+    }
+
+    pub fn carry(&self, rhs: &Self) -> bool {
+        let max = if self.is_signed() || rhs.is_signed() {
+            (BigInt::one() << (N - 1)) - BigInt::one()
+        } else {
+            (BigInt::one() << N) - BigInt::one()
+        };
+        (&self.0 + &rhs.0) > max
+    }
+
     pub fn max_value(&self) -> Self {
         if self.is_signed() {
             Self::from((BigInt::one() << (N - 1)) - BigInt::one()).signed()
@@ -140,6 +145,34 @@ impl<const N: usize> BitVec<N> {
     }
 }
 
+impl<const N: usize> PartialEq<Self> for BitVec<N> {
+    fn eq(&self, other: &Self) -> bool {
+        self.0 == other.0
+    }
+}
+impl<const N: usize> Eq for BitVec<N> { }
+
+impl<const N: usize> PartialOrd for BitVec<N> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+impl<const N: usize> Ord for BitVec<N> {
+    fn cmp(&self, other: &Self) -> Ordering {
+        let lneg = self.is_negative();
+        let rneg = other.is_negative();
+
+        if lneg || rneg {
+            let lhs = if lneg { -(-self).0 } else { self.0.clone() };
+            let rhs = if rneg { -(-other).0 } else { other.0.clone() };
+
+            lhs.cmp(&rhs)
+        } else {
+            self.0.cmp(&other.0)
+        }
+    }
+}
+
 impl<const N: usize> Neg for BitVec<N> {
     type Output = Self;
 
@@ -148,11 +181,27 @@ impl<const N: usize> Neg for BitVec<N> {
     }
 }
 
+impl<'a, const N: usize> Neg for &'a BitVec<N> {
+    type Output = BitVec<N>;
+
+    fn neg(self) -> Self::Output {
+        !self + BitVec::one()
+    }
+}
+
 impl<const N: usize> Add for BitVec<N> {
     type Output = Self;
 
     fn add(self, rhs: Self) -> Self::Output {
         Self::from(self.0 + rhs.0)
+    }
+}
+
+impl<'a, const N: usize> Add for &'a BitVec<N> {
+    type Output = BitVec<N>;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        BitVec::from(&self.0 + &rhs.0)
     }
 }
 
@@ -165,24 +214,43 @@ impl<const N: usize> Div for BitVec<N> {
             let rmsb = rhs.msb();
 
             match (lmsb, rmsb) {
-                (false, false) => Self::from(self.0 / rhs.0),
-                (true, false) => -Self::from((-self).0 / rhs.0),
-                (false, true) => -Self::from(self.0 / (-rhs).0),
-                (true, true) => Self::from((-self).0 / (-rhs).0),
+                (false, false) => BitVec::from(self.0 / rhs.0),
+                (true, false) => -BitVec::from((-self).0 / rhs.0),
+                (false, true) => -BitVec::from(self.0 / (-rhs).0),
+                (true, true) => BitVec::from((-self).0 / (-rhs).0),
             }
         } else {
-            Self::from(self.0 / rhs.0)
+            BitVec::from(self.0 / rhs.0)
+        }
+    }
+}
+
+impl<'a, const N: usize> Div for &'a BitVec<N> {
+    type Output = BitVec<N>;
+
+    fn div(self, rhs: Self) -> Self::Output {
+        if self.is_signed() || rhs.is_signed() {
+            let lmsb = self.msb();
+            let rmsb = rhs.msb();
+
+            match (lmsb, rmsb) {
+                (false, false) => BitVec::from(&self.0 / &rhs.0),
+                (true, false) => -BitVec::from((-self).0 / &rhs.0),
+                (false, true) => -BitVec::from(&self.0 / (-rhs).0),
+                (true, true) => BitVec::from((-self).0 / (-rhs).0),
+            }
+        } else {
+            BitVec::from(&self.0 / &rhs.0)
         }
     }
 }
 
 impl<const N: usize> BitVec<N> {
-    pub fn rem_euclid(self, rhs: Self) -> Self {
-        let orig_rhs = rhs.clone();
+    pub fn rem_euclid(&self, rhs: &Self) -> Self {
         let r = self.rem(rhs);
 
         if r.msb() { // less than 0
-            r + if orig_rhs.msb() { -orig_rhs } else { orig_rhs }
+            r + if rhs.msb() { -rhs } else { rhs.clone() }
         } else {
             r
         }
@@ -209,6 +277,26 @@ impl<const N: usize> Rem for BitVec<N> {
     }
 }
 
+impl<'a, const N: usize> Rem for &'a BitVec<N> {
+    type Output = BitVec<N>;
+
+    fn rem(self, rhs: Self) -> Self::Output {
+        if self.is_signed() || rhs.is_signed() {
+            let lmsb = self.msb();
+            let rmsb = rhs.msb();
+
+            match (lmsb, rmsb) {
+                (false, false) => BitVec::from(&self.0 % &rhs.0),
+                (true, false) =>  -BitVec::from((-self).0 % &rhs.0),
+                (false, true) => BitVec::from(&self.0 % (-rhs).0),
+                (true, true) => -BitVec::from((-self).0 % (-rhs).0),
+            }
+        } else {
+            BitVec::from(&self.0 % &rhs.0)
+        }
+    }
+}
+
 impl<const N: usize> Mul for BitVec<N> {
     type Output = Self;
 
@@ -217,11 +305,27 @@ impl<const N: usize> Mul for BitVec<N> {
     }
 }
 
+impl<'a, const N: usize> Mul for &'a BitVec<N> {
+    type Output = BitVec<N>;
+
+    fn mul(self, rhs: Self) -> Self::Output {
+        BitVec::from(&self.0 * &rhs.0)
+    }
+}
+
 impl<const N: usize> Shl<u32> for BitVec<N> {
     type Output = Self;
 
     fn shl(self, rhs: u32) -> Self::Output {
         Self::from(self.0 << rhs)
+    }
+}
+
+impl<'a, const N: usize> Shl<u32> for &'a BitVec<N> {
+    type Output = BitVec<N>;
+
+    fn shl(self, rhs: u32) -> Self::Output {
+        BitVec::from(&self.0 << rhs)
     }
 }
 
@@ -240,11 +344,34 @@ impl<const N: usize> Shr<u32> for BitVec<N> {
     }
 }
 
+impl<'a, const N: usize> Shr<u32> for &'a BitVec<N> {
+    type Output = BitVec<N>;
+
+    fn shr(self, rhs: u32) -> Self::Output {
+        if rhs as usize >= N {
+            BitVec::zero()
+        } else if self.is_signed() { // perform ASR
+            let mask = &self.1 ^ ((BigInt::one() << (N - rhs as usize)) - BigInt::one());
+            BitVec::from((&self.0 >> rhs) ^ mask)
+        } else {
+            BitVec::from(&self.0 >> rhs)
+        }
+    }
+}
+
 impl<const N: usize> BitAnd for BitVec<N> {
     type Output = Self;
 
     fn bitand(self, rhs: Self) -> Self::Output {
         Self::from(self.0 & rhs.0)
+    }
+}
+
+impl<'a, const N: usize> BitAnd for &'a BitVec<N> {
+    type Output = BitVec<N>;
+
+    fn bitand(self, rhs: Self) -> Self::Output {
+        BitVec::from(&self.0 & &rhs.0)
     }
 }
 
@@ -256,11 +383,27 @@ impl<const N: usize> BitOr for BitVec<N> {
     }
 }
 
+impl<'a, const N: usize> BitOr for &'a BitVec<N> {
+    type Output = BitVec<N>;
+
+    fn bitor(self, rhs: Self) -> Self::Output {
+        BitVec::from(&self.0 | &rhs.0)
+    }
+}
+
 impl<const N: usize> BitXor for BitVec<N> {
     type Output = Self;
 
     fn bitxor(self, rhs: Self) -> Self::Output {
         Self::from(self.0 ^ rhs.0)
+    }
+}
+
+impl<'a, const N: usize> BitXor for &'a BitVec<N> {
+    type Output = BitVec<N>;
+
+    fn bitxor(self, rhs: Self) -> Self::Output {
+        BitVec::from(&self.0 ^ &rhs.0)
     }
 }
 
@@ -288,15 +431,27 @@ impl<const N: usize> Not for BitVec<N> {
     }
 }
 
+impl<'a, const N: usize> Not for &'a BitVec<N> {
+    type Output = BitVec<N>;
+
+    fn not(self) -> Self::Output {
+        BitVec::from(&self.0 ^ &self.1)
+    }
+}
+
 impl<const N: usize> Sub for BitVec<N> {
     type Output = Self;
 
     fn sub(self, rhs: Self) -> Self::Output {
-        if rhs > self {
-            self.max_value() - Self::from(rhs.0 - self.0 - BigInt::one())
-        } else {
-            Self::from(self.0 - rhs.0)
-        }
+        Self::from(self.0 - rhs.0)
+    }
+}
+
+impl<'a, const N: usize> Sub for &'a BitVec<N> {
+    type Output = BitVec<N>;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        BitVec::from(&self.0 - &rhs.0)
     }
 }
 
@@ -380,41 +535,62 @@ mod test {
         let v1 = BitVec::<64>::from_i64(-100).unwrap();
         let v2 = BitVec::<64>::from_i64(-27).unwrap();
 
-        assert_eq!(v1.signed().rem_euclid(v2.signed()), BitVec::<64>::from_i64(8).unwrap());
+        assert_eq!(v1.signed().rem_euclid(&v2.signed()), BitVec::<64>::from_i64(8).unwrap());
 
         let v3 = BitVec::<64>::from_i64(-100).unwrap();
         let v4 = BitVec::<64>::from_i64(27).unwrap();
 
-        assert_eq!(v3.signed().rem_euclid(v4), BitVec::<64>::from_i64(8).unwrap());
+        assert_eq!(v3.signed().rem_euclid(&v4), BitVec::<64>::from_i64(8).unwrap());
 
         let v5 = BitVec::<64>::from_i64(100).unwrap();
         let v6 = BitVec::<64>::from_i64(-27).unwrap();
 
-        assert_eq!(v5.rem_euclid(v6.signed()), BitVec::<64>::from_i64(19).unwrap());
+        assert_eq!(v5.rem_euclid(&v6.signed()), BitVec::<64>::from_i64(19).unwrap());
 
         let v7 = BitVec::<64>::from_i64(100).unwrap();
         let v8 = BitVec::<64>::from_i64(27).unwrap();
 
-        assert_eq!(v7.signed().rem_euclid(v8), BitVec::<64>::from_i64(19).unwrap());
+        assert_eq!(v7.signed().rem_euclid(&v8), BitVec::<64>::from_i64(19).unwrap());
 
         let v1 = BitVec::<64>::from_i64(7).unwrap();
         let v2 = BitVec::<64>::from_i64(4).unwrap();
 
-        assert_eq!(v1.signed().rem_euclid(v2.signed()), BitVec::<64>::from_i64(3).unwrap());
+        assert_eq!(v1.signed().rem_euclid(&v2.signed()), BitVec::<64>::from_i64(3).unwrap());
 
         let v3 = BitVec::<64>::from_i64(-7).unwrap();
         let v4 = BitVec::<64>::from_i64(4).unwrap();
 
-        assert_eq!(v3.signed().rem_euclid(v4), BitVec::<64>::from_i64(1).unwrap());
+        assert_eq!(v3.signed().rem_euclid(&v4), BitVec::<64>::from_i64(1).unwrap());
 
         let v5 = BitVec::<64>::from_i64(7).unwrap();
         let v6 = BitVec::<64>::from_i64(-4).unwrap();
 
-        assert_eq!(v5.rem_euclid(v6.signed()), BitVec::<64>::from_i64(3).unwrap());
+        assert_eq!(v5.rem_euclid(&v6.signed()), BitVec::<64>::from_i64(3).unwrap());
 
         let v7 = BitVec::<64>::from_i64(-7).unwrap();
         let v8 = BitVec::<64>::from_i64(-4).unwrap();
 
-        assert_eq!(v7.signed().rem_euclid(v8.signed()), BitVec::<64>::from_i64(1).unwrap());
+        assert_eq!(v7.signed().rem_euclid(&v8.signed()), BitVec::<64>::from_i64(1).unwrap());
+    }
+
+    #[test]
+    fn test_abs() {
+        let v1 = BitVec::<32>::from_u32(0x8000_0000).unwrap().signed();
+        assert_eq!(v1.abs(), BitVec::from_u32(0x8000_0000).unwrap());
+
+        let v2 = BitVec::<32>::from_u32(0x8000_0001).unwrap().signed();
+        assert_eq!(v2.abs(), BitVec::from_u32(0x7fff_ffff).unwrap());
+    }
+
+    #[test]
+    fn test_ord() {
+        let v1 = BitVec::<32>::from_u32(0x8000_0000).unwrap();
+        let v2 = BitVec::<32>::from_u32(0x8000_0001).unwrap();
+        let v3 = BitVec::<32>::from_u32(0xffff_ffff).unwrap();
+
+        assert_eq!(v1 < v2, true);
+        assert_eq!(v1 < v3.signed(), false);
+        assert_eq!(v3.signed() < v1, true);
+        assert_eq!(v3.signed() < v2, true);
     }
 }
