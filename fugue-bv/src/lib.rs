@@ -2,7 +2,7 @@ use std::cmp::Ordering;
 use std::fmt;
 use std::ops::{Add, BitAnd, BitOr, BitXor, Div, Mul, Neg, Not, Rem, Shl, Shr, Sub};
 
-use num_bigint::BigInt;
+use num_bigint::{BigInt, Sign};
 use num_traits::{FromPrimitive, One, Zero};
 
 #[derive(Debug, Clone, Hash)]
@@ -41,6 +41,10 @@ impl<const N: usize> From<BigInt> for BitVec<N> {
 impl<const N: usize> BitVec<N> {
     fn mask_value() -> BigInt {
         (BigInt::one() << N) - BigInt::one()
+    }
+
+    fn mask(self) -> Self {
+        Self(self.0 & self.1, Self::mask_value(), false)
     }
 
     pub fn zero() -> Self {
@@ -83,10 +87,6 @@ impl<const N: usize> BitVec<N> {
         self.0.bit(0)
     }
 
-    fn mask(self) -> Self {
-        Self(self.0 & self.1, Self::mask_value(), false)
-    }
-
     pub fn convert<const M: usize>(self) -> BitVec<{ M }> {
         if self.is_signed() {
             if M > N && self.0.bit(N as u64 - 1) { // negative; extension
@@ -99,9 +99,65 @@ impl<const N: usize> BitVec<N> {
             BitVec::<{ M }>::from(self.0)
         }
     }
-}
 
-impl<const N: usize> BitVec<N> {
+    pub fn from_be_bytes(buf: &[u8]) -> Self {
+        if buf.len() != N / 8 {
+            panic!("invalid buf size {}; expected {}", buf.len(), N / 8);
+        }
+        Self::from(BigInt::from_bytes_be(Sign::Plus, &buf))
+    }
+
+    pub fn from_le_bytes(buf: &[u8]) -> Self {
+        if buf.len() != N / 8 {
+            panic!("invalid buf size {}; expected {}", buf.len(), N / 8);
+        }
+        Self::from(BigInt::from_bytes_le(Sign::Plus, &buf))
+    }
+
+    #[inline(always)]
+    pub fn from_ne_bytes(buf: &[u8]) -> Self {
+        if cfg!(target_endian = "big") {
+            Self::from_be_bytes(buf)
+        } else {
+            Self::from_le_bytes(buf)
+        }
+    }
+
+    pub fn to_be_bytes(&self, buf: &mut [u8]) {
+        if buf.len() != N / 8 {
+            panic!("invalid buf size {}; expected {}", buf.len(), N / 8);
+        }
+        if self.is_negative() {
+            buf.iter_mut().for_each(|v| *v = 0xffu8);
+        } else {
+            buf.iter_mut().for_each(|v| *v = 0u8);
+        };
+        let bytes = self.0.to_bytes_be().1;
+        buf[(N / 8 - bytes.len())..].copy_from_slice(&bytes);
+    }
+
+    pub fn to_le_bytes(&self, buf: &mut [u8]) {
+        if buf.len() != N / 8 {
+            panic!("invalid buf size {}; expected {}", buf.len(), N / 8);
+        }
+        if self.is_negative() {
+            buf.iter_mut().for_each(|v| *v = 0xffu8);
+        } else {
+            buf.iter_mut().for_each(|v| *v = 0u8);
+        }
+        let bytes = self.0.to_bytes_le().1;
+        buf[..bytes.len()].copy_from_slice(&bytes);
+    }
+
+    #[inline(always)]
+    pub fn to_ne_bytes(&self, buf: &mut [u8]) {
+        if cfg!(target_endian = "big") {
+            self.to_be_bytes(buf)
+        } else {
+            self.to_le_bytes(buf)
+        }
+    }
+
     pub fn abs(&self) -> BitVec<N> {
         if self.is_negative() {
             -self
@@ -583,7 +639,7 @@ mod test {
     }
 
     #[test]
-    fn test_ord() {
+    fn test_compare() {
         let v1 = BitVec::<32>::from_u32(0x8000_0000).unwrap();
         let v2 = BitVec::<32>::from_u32(0x8000_0001).unwrap();
         let v3 = BitVec::<32>::from_u32(0xffff_ffff).unwrap();
@@ -592,5 +648,37 @@ mod test {
         assert_eq!(v1 < v3.signed(), false);
         assert_eq!(v3.signed() < v1, true);
         assert_eq!(v3.signed() < v2, true);
+        assert_eq!(v1.signed() == v1, true);
+    }
+
+    #[test]
+    fn test_byte_convert() {
+        let v1 = BitVec::<16>::from_be_bytes(&[0xff, 0xff]);
+        let v2 = BitVec::<16>::from_be_bytes(&[0x80, 0x00]);
+        let v3 = BitVec::<16>::from_be_bytes(&[0x7f, 0xff]);
+
+        assert_eq!(v1, BitVec::from_u16(0xffff).unwrap());
+        assert_eq!(v2, BitVec::from_u16(0x8000).unwrap());
+        assert_eq!(v3, BitVec::from_u16(0x7fff).unwrap());
+
+        let mut buf = [0u8; 2];
+
+        v1.to_be_bytes(&mut buf);
+        assert_eq!(&buf, &[0xff, 0xff]);
+
+        v2.to_be_bytes(&mut buf);
+        assert_eq!(&buf, &[0x80, 0x00]);
+
+        v3.to_be_bytes(&mut buf);
+        assert_eq!(&buf, &[0x7f, 0xff]);
+
+        v1.to_le_bytes(&mut buf);
+        assert_eq!(&buf, &[0xff, 0xff]);
+
+        v2.to_le_bytes(&mut buf);
+        assert_eq!(&buf, &[0x00, 0x80]);
+
+        v3.to_le_bytes(&mut buf);
+        assert_eq!(&buf, &[0xff, 0x7f]);
     }
 }
