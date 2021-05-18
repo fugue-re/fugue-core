@@ -6,5 +6,5 @@ edition = "2018"
 
 [dependencies]
 num-traits = "0.2"
-num-bigint = "0.4"
+rug = { version = "1", features = ["integer"] }
 thiserror = "1"

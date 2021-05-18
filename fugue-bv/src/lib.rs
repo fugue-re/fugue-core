@@ -2,7 +2,10 @@ use std::cmp::Ordering;
 use std::fmt;
 use std::ops::{Add, BitAnd, BitOr, BitXor, Div, Mul, Neg, Not, Rem, Shl, Shr, Sub};
 
-use num_bigint::{BigInt, Sign};
+use rug::Integer as BigInt;
+use rug::integer::Order;
+
+//use num_bigint::{BigInt, Sign};
 use num_traits::{FromPrimitive, One, Zero};
 
 #[derive(Debug, Clone, Hash)]
@@ -40,7 +43,7 @@ impl<const N: usize> From<BigInt> for BitVec<N> {
 
 impl<const N: usize> BitVec<N> {
     fn mask_value() -> BigInt {
-        (BigInt::one() << N) - BigInt::one()
+        (BigInt::from(1) << N as u32) - BigInt::from(1)
     }
 
     fn mask(self) -> Self {
@@ -48,11 +51,11 @@ impl<const N: usize> BitVec<N> {
     }
 
     pub fn zero() -> Self {
-        Self::from(BigInt::zero())
+        Self::from(BigInt::from(0))
     }
 
     pub fn one() -> Self {
-        Self::from(BigInt::one())
+        Self::from(BigInt::from(1))
     }
 
     pub fn bits(&self) -> usize {
@@ -80,17 +83,17 @@ impl<const N: usize> BitVec<N> {
     }
 
     pub fn msb(&self) -> bool {
-        self.0.bit(N as u64 - 1)
+        self.0.get_bit(N as u32 - 1)
     }
 
     pub fn lsb(&self) -> bool {
-        self.0.bit(0)
+        self.0.get_bit(0)
     }
 
     pub fn convert<const M: usize>(self) -> BitVec<{ M }> {
         if self.is_signed() {
-            if M > N && self.0.bit(N as u64 - 1) { // negative; extension
-                let mask = ((BigInt::one() << M) - BigInt::one()) ^ self.1;
+            if M > N && self.0.get_bit(N as u32 - 1) { // negative; extension
+                let mask = ((BigInt::from(1) << M as u32) - BigInt::from(1)) ^ self.1;
                 BitVec::<{ M }>::from(self.0 | mask)
             } else { // truncate
                 BitVec::<{ M }>::from(self.0)
@@ -104,14 +107,14 @@ impl<const N: usize> BitVec<N> {
         if buf.len() != N / 8 {
             panic!("invalid buf size {}; expected {}", buf.len(), N / 8);
         }
-        Self::from(BigInt::from_bytes_be(Sign::Plus, &buf))
+        Self::from(BigInt::from_digits(&buf, Order::MsfBe))
     }
 
     pub fn from_le_bytes(buf: &[u8]) -> Self {
         if buf.len() != N / 8 {
             panic!("invalid buf size {}; expected {}", buf.len(), N / 8);
         }
-        Self::from(BigInt::from_bytes_le(Sign::Plus, &buf))
+        Self::from(BigInt::from_digits(&buf, Order::LsfLe))
     }
 
     #[inline(always)]
@@ -132,8 +135,7 @@ impl<const N: usize> BitVec<N> {
         } else {
             buf.iter_mut().for_each(|v| *v = 0u8);
         };
-        let bytes = self.0.to_bytes_be().1;
-        buf[(N / 8 - bytes.len())..].copy_from_slice(&bytes);
+        self.0.write_digits(&mut buf[((N / 8) - self.0.significant_digits::<u8>())..], Order::MsfBe);
     }
 
     pub fn to_le_bytes(&self, buf: &mut [u8]) {
@@ -145,8 +147,7 @@ impl<const N: usize> BitVec<N> {
         } else {
             buf.iter_mut().for_each(|v| *v = 0u8);
         }
-        let bytes = self.0.to_bytes_le().1;
-        buf[..bytes.len()].copy_from_slice(&bytes);
+        self.0.write_digits(&mut buf[..self.0.significant_digits::<u8>()], Order::LsfLe);
     }
 
     #[inline(always)]
@@ -168,33 +169,33 @@ impl<const N: usize> BitVec<N> {
 
     pub fn borrow(&self, rhs: &Self) -> bool {
         let min = if self.is_signed() || rhs.is_signed() {
-            -(BigInt::one() << (N - 1))
+            -(BigInt::from(1) << (N - 1) as u32)
         } else {
-            BigInt::zero()
+            BigInt::from(0)
         };
-        (&self.0 - &rhs.0) < min
+        BigInt::from(&self.0 - &rhs.0) < min
     }
 
     pub fn carry(&self, rhs: &Self) -> bool {
         let max = if self.is_signed() || rhs.is_signed() {
-            (BigInt::one() << (N - 1)) - BigInt::one()
+            (BigInt::from(1) << (N - 1) as u32) - BigInt::from(1)
         } else {
-            (BigInt::one() << N) - BigInt::one()
+            (BigInt::from(1) << N as u32) - BigInt::from(1)
         };
-        (&self.0 + &rhs.0) > max
+        BigInt::from(&self.0 + &rhs.0) > max
     }
 
     pub fn max_value(&self) -> Self {
         if self.is_signed() {
-            Self::from((BigInt::one() << (N - 1)) - BigInt::one()).signed()
+            Self::from((BigInt::from(1) << (N - 1) as u32) - BigInt::from(1)).signed()
         } else {
-            Self::from((BigInt::one() << N) - BigInt::one())
+            Self::from((BigInt::from(1) << N as u32) - BigInt::from(1))
         }
     }
 
     pub fn min_value(&self) -> Self {
         if self.is_signed() {
-            Self::from(-(BigInt::one() << (N - 1))).signed()
+            Self::from(-(BigInt::from(1) << (N - 1) as u32)).signed()
         } else {
             Self::zero()
         }
@@ -257,7 +258,7 @@ impl<'a, const N: usize> Add for &'a BitVec<N> {
     type Output = BitVec<N>;
 
     fn add(self, rhs: Self) -> Self::Output {
-        BitVec::from(&self.0 + &rhs.0)
+        BitVec::from(BigInt::from(&self.0 + &rhs.0))
     }
 }
 
@@ -290,13 +291,13 @@ impl<'a, const N: usize> Div for &'a BitVec<N> {
             let rmsb = rhs.msb();
 
             match (lmsb, rmsb) {
-                (false, false) => BitVec::from(&self.0 / &rhs.0),
-                (true, false) => -BitVec::from((-self).0 / &rhs.0),
-                (false, true) => -BitVec::from(&self.0 / (-rhs).0),
-                (true, true) => BitVec::from((-self).0 / (-rhs).0),
+                (false, false) => BitVec::from(BigInt::from(&self.0 / &rhs.0)),
+                (true, false) => -BitVec::from(BigInt::from(&(-self).0 / &rhs.0)),
+                (false, true) => -BitVec::from(BigInt::from(&self.0 / &(-rhs).0)),
+                (true, true) => BitVec::from(BigInt::from(&(-self).0 / &(-rhs).0)),
             }
         } else {
-            BitVec::from(&self.0 / &rhs.0)
+            BitVec::from(BigInt::from(&self.0 / &rhs.0))
         }
     }
 }
@@ -342,13 +343,13 @@ impl<'a, const N: usize> Rem for &'a BitVec<N> {
             let rmsb = rhs.msb();
 
             match (lmsb, rmsb) {
-                (false, false) => BitVec::from(&self.0 % &rhs.0),
+                (false, false) => BitVec::from(BigInt::from(&self.0 % &rhs.0)),
                 (true, false) =>  -BitVec::from((-self).0 % &rhs.0),
                 (false, true) => BitVec::from(&self.0 % (-rhs).0),
                 (true, true) => -BitVec::from((-self).0 % (-rhs).0),
             }
         } else {
-            BitVec::from(&self.0 % &rhs.0)
+            BitVec::from(BigInt::from(&self.0 % &rhs.0))
         }
     }
 }
@@ -365,7 +366,7 @@ impl<'a, const N: usize> Mul for &'a BitVec<N> {
     type Output = BitVec<N>;
 
     fn mul(self, rhs: Self) -> Self::Output {
-        BitVec::from(&self.0 * &rhs.0)
+        BitVec::from(BigInt::from(&self.0 * &rhs.0))
     }
 }
 
@@ -381,7 +382,7 @@ impl<'a, const N: usize> Shl<u32> for &'a BitVec<N> {
     type Output = BitVec<N>;
 
     fn shl(self, rhs: u32) -> Self::Output {
-        BitVec::from(&self.0 << rhs)
+        BitVec::from(BigInt::from(&self.0 << rhs))
     }
 }
 
@@ -392,7 +393,7 @@ impl<const N: usize> Shr<u32> for BitVec<N> {
         if rhs as usize >= N {
             Self::zero()
         } else if self.is_signed() { // perform ASR
-            let mask = self.1 ^ ((BigInt::one() << (N - rhs as usize)) - BigInt::one());
+            let mask = self.1 ^ ((BigInt::from(1) << (N - rhs as usize) as u32) - BigInt::from(1));
             Self::from((self.0 >> rhs) ^ mask)
         } else {
             Self::from(self.0 >> rhs)
@@ -407,10 +408,10 @@ impl<'a, const N: usize> Shr<u32> for &'a BitVec<N> {
         if rhs as usize >= N {
             BitVec::zero()
         } else if self.is_signed() { // perform ASR
-            let mask = &self.1 ^ ((BigInt::one() << (N - rhs as usize)) - BigInt::one());
-            BitVec::from((&self.0 >> rhs) ^ mask)
+            let mask = &self.1 ^ ((BigInt::from(1) << (N - rhs as usize) as u32) - BigInt::from(1));
+            BitVec::from(BigInt::from(&self.0 >> rhs) ^ mask)
         } else {
-            BitVec::from(&self.0 >> rhs)
+            BitVec::from(BigInt::from(&self.0 >> rhs))
         }
     }
 }
@@ -427,7 +428,7 @@ impl<'a, const N: usize> BitAnd for &'a BitVec<N> {
     type Output = BitVec<N>;
 
     fn bitand(self, rhs: Self) -> Self::Output {
-        BitVec::from(&self.0 & &rhs.0)
+        BitVec::from(BigInt::from(&self.0 & &rhs.0))
     }
 }
 
@@ -443,7 +444,7 @@ impl<'a, const N: usize> BitOr for &'a BitVec<N> {
     type Output = BitVec<N>;
 
     fn bitor(self, rhs: Self) -> Self::Output {
-        BitVec::from(&self.0 | &rhs.0)
+        BitVec::from(BigInt::from(&self.0 | &rhs.0))
     }
 }
 
@@ -459,23 +460,23 @@ impl<'a, const N: usize> BitXor for &'a BitVec<N> {
     type Output = BitVec<N>;
 
     fn bitxor(self, rhs: Self) -> Self::Output {
-        BitVec::from(&self.0 ^ &rhs.0)
+        BitVec::from(BigInt::from(&self.0 ^ &rhs.0))
     }
 }
 
 impl<const N: usize> Zero for BitVec<N> {
     fn zero() -> Self {
-        Self::from(BigInt::zero())
+        Self::from(BigInt::from(0))
     }
 
     fn is_zero(&self) -> bool {
-        self.0.is_zero()
+        self.0 == 0
     }
 }
 
 impl<const N: usize> One for BitVec<N> {
     fn one() -> Self {
-        Self::from(BigInt::one())
+        Self::from(BigInt::from(1))
     }
 }
 
@@ -491,7 +492,7 @@ impl<'a, const N: usize> Not for &'a BitVec<N> {
     type Output = BitVec<N>;
 
     fn not(self) -> Self::Output {
-        BitVec::from(&self.0 ^ &self.1)
+        BitVec::from(BigInt::from(&self.0 ^ &self.1))
     }
 }
 
@@ -507,17 +508,17 @@ impl<'a, const N: usize> Sub for &'a BitVec<N> {
     type Output = BitVec<N>;
 
     fn sub(self, rhs: Self) -> Self::Output {
-        BitVec::from(&self.0 - &rhs.0)
+        BitVec::from(BigInt::from(&self.0 - &rhs.0))
     }
 }
 
 impl<const N: usize> FromPrimitive for BitVec<N> {
     fn from_i64(n: i64) -> Option<Self> {
-        BigInt::from_i64(n).map(Self::from)
+        Some(Self::from(BigInt::from(n)))
     }
 
     fn from_u64(n: u64) -> Option<Self> {
-        BigInt::from_u64(n).map(Self::from)
+        Some(Self::from(BigInt::from(n)))
     }
 }
 
