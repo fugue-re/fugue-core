@@ -416,7 +416,7 @@ impl Translator {
                 let tmpl = ctor.template()
                     .ok_or_else(|| DisassemblyError::InconsistentState)?;
                 let mut builder =
-                    PCodeBuilder::new(ParserWalker::new(&mut context), &mut delay_contexts, &slf.manager, *slf.unique_mask)?;
+                    PCodeBuilder::new(ParserWalker::new(&mut context), &mut delay_contexts, &slf.manager, &slf.float_formats, &slf.user_ops, *slf.unique_mask)?;
 
                 builder.build(tmpl, None, &slf.symbol_table)?;
                 builder.resolve_relatives();

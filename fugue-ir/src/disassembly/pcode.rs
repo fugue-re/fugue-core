@@ -5,29 +5,41 @@ use crate::disassembly::construct::{ConstructTpl, OpTpl, VarnodeTpl};
 use crate::disassembly::symbol::{Constructor, SymbolTable};
 use crate::disassembly::Opcode;
 use crate::disassembly::VarnodeData;
+use crate::float_format::FloatFormat;
 use crate::space::AddressSpace;
 use crate::space_manager::SpaceManager;
 use crate::Translator;
 
 use fnv::FnvHashMap as Map;
+use smallvec::{smallvec, SmallVec};
 use std::fmt;
 use std::mem::swap;
+
+use super::ecode;
 
 #[derive(Debug, Clone)]
 pub struct PCode<'a> {
     pub address: Address<'a>,
-    pub operations: Vec<PCodeData<'a>>,
+    pub operations: SmallVec<[PCodeData<'a>; 16]>,
     pub delay_slots: usize,
     pub length: usize,
 }
 
-pub struct PCodeFormatter<'a> {
-    pcode: &'a PCode<'a>,
+#[derive(Debug, Clone)]
+pub struct ECode<'space> {
+    pub address: Address<'space>,
+    pub operations: SmallVec<[ecode::Stmt<'space>; 16]>,
+    pub delay_slots: usize,
+    pub length: usize,
+}
+
+pub struct PCodeFormatter<'a, 'b> {
+    pcode: &'b PCode<'a>,
     translator: &'a Translator,
 }
 
-impl<'a> PCodeFormatter<'a> {
-    fn new(pcode: &'a PCode<'a>, translator: &'a Translator) -> Self {
+impl<'a, 'b> PCodeFormatter<'a, 'b> {
+    fn new(pcode: &'b PCode<'a>, translator: &'a Translator) -> Self {
         Self {
             pcode,
             translator,
@@ -35,7 +47,7 @@ impl<'a> PCodeFormatter<'a> {
     }
 }
 
-impl<'a> fmt::Display for PCodeFormatter<'a> {
+impl<'a, 'b> fmt::Display for PCodeFormatter<'a, 'b> {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         let len =  self.pcode.operations.len();
         if len > 0 {
@@ -52,14 +64,14 @@ impl<'a> fmt::Display for PCodeFormatter<'a> {
 }
 
 impl<'a> PCode<'a> {
-    pub fn display(&'a self, translator: &'a Translator) -> PCodeFormatter<'a> {
+    pub fn display<'b>(&'b self, translator: &'a Translator) -> PCodeFormatter<'a, 'b> {
         PCodeFormatter::new(self, translator)
     }
 
     pub fn nop(address: Address<'a>, length: usize) -> Self {
         Self {
             address,
-            operations: Vec::new(),
+            operations: SmallVec::new(),
             delay_slots: 0,
             length,
         }
@@ -101,16 +113,16 @@ impl RelativeRecord {
 pub struct PCodeData<'a> {
     pub opcode: Opcode,
     pub output: Option<VarnodeData<'a>>,
-    pub inputs: Vec<VarnodeData<'a>>,
+    pub inputs: SmallVec<[VarnodeData<'a>; 16]>,
 }
 
-pub struct PCodeDataFormatter<'a> {
-    pcode: &'a PCodeData<'a>,
+pub struct PCodeDataFormatter<'a, 'b> {
+    pcode: &'b PCodeData<'a>,
     translator: &'a Translator,
 }
 
-impl<'a> PCodeDataFormatter<'a> {
-    fn new(pcode: &'a PCodeData<'a>, translator: &'a Translator) -> Self {
+impl<'a, 'b> PCodeDataFormatter<'a, 'b> {
+    fn new(pcode: &'b PCodeData<'a>, translator: &'a Translator) -> Self {
         Self {
             pcode,
             translator,
@@ -118,7 +130,7 @@ impl<'a> PCodeDataFormatter<'a> {
     }
 }
 
-impl<'a> fmt::Display for PCodeDataFormatter<'a> {
+impl<'a, 'b> fmt::Display for PCodeDataFormatter<'a, 'b> {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         write!(f, "{:?}(", self.pcode.opcode)?;
         if let Some(ref output) = self.pcode.output {
@@ -137,7 +149,7 @@ impl<'a> fmt::Display for PCodeDataFormatter<'a> {
 }
 
 impl<'a> PCodeData<'a> {
-    pub fn display(&'a self, translator: &'a Translator) -> PCodeDataFormatter<'a> {
+    pub fn display<'b>(&'b self, translator: &'a Translator) -> PCodeDataFormatter<'a, 'b> {
         PCodeDataFormatter::new(self, translator)
     }
 }
@@ -147,31 +159,37 @@ pub struct PCodeBuilder<'a, 'b, 'c> {
     unique_mask: u64,
     unique_offset: u64,
 
-    issued: Vec<PCodeData<'a>>,
+    issued: SmallVec<[PCodeData<'a>; 16]>,
 
     label_base: usize,
     label_count: usize,
-    label_refs: Vec<RelativeRecord>,
-    labels: Vec<u64>,
+    label_refs: SmallVec<[RelativeRecord; 16]>,
+    labels: SmallVec<[u64; 16]>,
 
     delay_contexts: Map<Address<'a>, &'c mut ParserContext<'a, 'b>>,
+
     manager: &'a SpaceManager,
+    float_formats: Map<usize, &'a FloatFormat>,
+    user_ops: &'a [&'a str],
+
     walker: ParserWalker<'a, 'b, 'c>,
 }
 
 impl<'a, 'b, 'c> PCodeBuilder<'a, 'b, 'c> {
-    pub fn new(walker: ParserWalker<'a, 'b, 'c>, delay_contexts: &'c mut Map<Address<'a>, ParserContext<'a, 'b>>, manager: &'a SpaceManager, unique_mask: u64) -> Result<Self, Error> {
+    pub fn new(walker: ParserWalker<'a, 'b, 'c>, delay_contexts: &'c mut Map<Address<'a>, ParserContext<'a, 'b>>, manager: &'a SpaceManager, float_formats: &'a [FloatFormat], user_ops: &'a [&'a str], unique_mask: u64) -> Result<Self, Error> {
         Ok(Self {
             const_space: manager.constant_space().ok_or_else(|| Error::InvalidSpace)?,
             unique_mask,
             unique_offset: (walker.address().offset() & unique_mask).checked_shl(4).unwrap_or(0),
-            issued: Vec::new(),
+            issued: SmallVec::new(),
             label_base: 0,
             label_count: 0,
-            labels: Vec::new(),
-            label_refs: Vec::new(),
+            labels: SmallVec::new(),
+            label_refs: SmallVec::new(),
             delay_contexts: delay_contexts.iter_mut().map(|(a, v)| (a.clone(), v)).collect(),
             manager,
+            float_formats: float_formats.iter().map(|ff| (ff.bits(), ff)).collect(),
+            user_ops,
             walker,
         })
     }
@@ -273,9 +291,7 @@ impl<'a, 'b, 'c> PCodeBuilder<'a, 'b, 'c> {
             fall_offset += length;
             byte_count += length;
 
-            // restote
             swap(&mut self.walker, &mut nwalker);
-            //drop(nwalker);
 
             if byte_count >= delay_count {
                 break
@@ -330,7 +346,7 @@ impl<'a, 'b, 'c> PCodeBuilder<'a, 'b, 'c> {
 
     pub fn dump(&mut self, op: &'b OpTpl) -> Result<(), Error> {
         let input_count = op.input_count();
-        let mut inputs = Vec::new();
+        let mut inputs = SmallVec::<[_; 16]>::new();
 
         for i in 0..input_count {
             let input = op.input(i);
@@ -342,7 +358,7 @@ impl<'a, 'b, 'c> PCodeBuilder<'a, 'b, 'c> {
                                              0);
                 self.issued.push(PCodeData {
                     opcode: Opcode::Load,
-                    inputs: vec![index, ptr],
+                    inputs: smallvec![index, ptr],
                     output: Some(varnode.clone()),
                 });
                 inputs.push(varnode);
@@ -371,7 +387,7 @@ impl<'a, 'b, 'c> PCodeBuilder<'a, 'b, 'c> {
                                              0);
                 self.issued.push(PCodeData {
                     opcode: Opcode::Store,
-                    inputs: vec![index, ptr, outp],
+                    inputs: smallvec![index, ptr, outp],
                     output: None,
                 })
             }
@@ -430,6 +446,39 @@ impl<'a, 'b, 'c> PCodeBuilder<'a, 'b, 'c> {
             address: slf.walker().address(),
             operations: slf.issued,
             delay_slots: slf.walker.delay_slot(),
+            length,
+        }
+    }
+
+    pub fn emit_ecode(self, length: usize) -> ECode<'a> {
+        let mut slf = self;
+        slf.walker.base_state();
+
+        let address = slf.walker.address();
+        let delay_slots = slf.walker.delay_slot();
+
+        let manager = slf.manager;
+        let float_formats = slf.float_formats;
+        let user_ops = slf.user_ops;
+
+        ECode {
+            operations: slf.issued.into_iter()
+                .enumerate()
+                .map(|(i, op)|
+                     ecode::Stmt::from_parts(
+                         manager,
+                         &float_formats,
+                         user_ops,
+                         &address,
+                         i,
+                         op.opcode,
+                         op.inputs,
+                         op.output
+                     )
+                )
+                .collect(),
+            address,
+            delay_slots,
             length,
         }
     }

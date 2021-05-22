@@ -334,6 +334,10 @@ impl FloatFormat {
         self.size
     }
 
+    pub fn bits(&self) -> usize {
+        self.size * 8
+    }
+
     pub fn from_xml(input: xml::Node) -> Result<Self, Error> {
         let size = input.attribute_int("size")?;
         let sign_pos = input.attribute_int("signpos")?;

@@ -6,8 +6,10 @@ edition = "2018"
 
 [dependencies]
 fnv = "1"
+fugue-bv = { path = "../fugue-bv" }
 itertools = "0.10"
 ouroboros = "0.9"
+smallvec = "1"
 thiserror = "1"
 xml = { version = "0.14", package = "roxmltree" }
 

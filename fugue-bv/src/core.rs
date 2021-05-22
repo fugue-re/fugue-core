@@ -1,12 +1,13 @@
 use std::cmp::Ordering;
 use std::fmt;
 use std::ops::{Add, BitAnd, BitOr, BitXor, Div, Mul, Neg, Not, Rem, Shl, Shr, Sub};
+use std::sync::Arc;
 
 use rug::Integer as BigInt;
 use rug::integer::Order;
 
 #[derive(Debug, Clone, Hash)]
-pub struct BitVec(BigInt, BigInt, bool, usize);
+pub struct BitVec(BigInt, Arc<BigInt>, bool, usize);
 
 impl fmt::Display for BitVec {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -37,12 +38,17 @@ impl BitVec {
         Self(v, Self::mask_value(bits), false, bits).mask()
     }
 
-    fn mask_value(bits: usize) -> BigInt {
-        (BigInt::from(1) << bits as u32) - BigInt::from(1)
+    fn from_bigint_with(v: BigInt, mask: Arc<BigInt>) -> Self {
+        let bits = mask.significant_digits::<u8>() * 8;
+        Self(v, mask, false, bits).mask()
+    }
+
+    fn mask_value(bits: usize) -> Arc<BigInt> {
+        Arc::new((BigInt::from(1) << bits as u32) - BigInt::from(1))
     }
 
     fn mask(self) -> Self {
-        Self(self.0 & &self.1, self.1, false, self.3)
+        Self(self.0 & &*self.1, self.1, false, self.3)
     }
 
     pub fn zero(bits: usize) -> Self {
@@ -189,17 +195,17 @@ impl BitVec {
 
     pub fn max_value(&self) -> Self {
         if self.is_signed() {
-            Self::from_bigint((BigInt::from(1) << (self.3 - 1) as u32) - BigInt::from(1), self.3).signed()
+            Self::from_bigint_with((BigInt::from(1) << (self.3 - 1) as u32) - BigInt::from(1), self.1.clone()).signed()
         } else {
-            Self::from_bigint((BigInt::from(1) << self.3 as u32) - BigInt::from(1), self.3)
+            Self::from_bigint_with((BigInt::from(1) << self.3 as u32) - BigInt::from(1), self.1.clone())
         }
     }
 
     pub fn min_value(&self) -> Self {
         if self.is_signed() {
-            Self::from_bigint(-(BigInt::from(1) << (self.3 - 1) as u32), self.3).signed()
+            Self::from_bigint_with(-(BigInt::from(1) << (self.3 - 1) as u32), self.1.clone()).signed()
         } else {
-            Self::zero(self.3)
+            Self::from_bigint_with(BigInt::from(0), self.1.clone())
         }
     }
 }
@@ -243,8 +249,7 @@ impl Neg for BitVec {
     type Output = Self;
 
     fn neg(self) -> Self::Output {
-        let bits = self.3;
-        !self + Self::one(bits)
+        BitVec::from_bigint_with((self.0 ^ &*self.1) + 1, self.1.clone())
     }
 }
 
@@ -252,7 +257,7 @@ impl<'a> Neg for &'a BitVec {
     type Output = BitVec;
 
     fn neg(self) -> Self::Output {
-        !self + BitVec::one(self.3)
+        BitVec::from_bigint_with(BigInt::from(&self.0 ^ &*self.1) + 1, self.1.clone())
     }
 }
 
@@ -260,7 +265,7 @@ impl Not for BitVec {
     type Output = Self;
 
     fn not(self) -> Self::Output {
-        Self::from_bigint(self.0 ^ self.1, self.3)
+        Self::from_bigint_with(self.0 ^ &*self.1, self.1.clone())
     }
 }
 
@@ -268,7 +273,7 @@ impl<'a> Not for &'a BitVec {
     type Output = BitVec;
 
     fn not(self) -> Self::Output {
-        BitVec::from_bigint(BigInt::from(&self.0 ^ &self.1), self.3)
+        BitVec::from_bigint_with(BigInt::from(&self.0 ^ &*self.1), self.1.clone())
     }
 }
 
@@ -281,7 +286,7 @@ impl Add for BitVec {
                    self.3,
                    rhs.3)
         }
-        Self::from_bigint(self.0 + rhs.0, self.3)
+        Self::from_bigint_with(self.0 + rhs.0, self.1.clone())
     }
 }
 
@@ -294,7 +299,7 @@ impl<'a> Add for &'a BitVec {
                    self.3,
                    rhs.3)
         }
-        BitVec::from_bigint(BigInt::from(&self.0 + &rhs.0), self.3)
+        BitVec::from_bigint_with(BigInt::from(&self.0 + &rhs.0), self.1.clone())
     }
 }
 
@@ -309,13 +314,13 @@ impl Div for BitVec {
         }
         let lneg = self.is_negative();
         let rneg = rhs.is_negative();
-        let size = self.3;
+        let size = self.1.clone();
 
         match (lneg, rneg) {
-            (false, false) => BitVec::from_bigint(self.0 / rhs.0, size),
-            (true, false) => -BitVec::from_bigint((-self).0 / rhs.0, size),
-            (false, true) => -BitVec::from_bigint(self.0 / (-rhs).0, size),
-            (true, true) => BitVec::from_bigint((-self).0 / (-rhs).0, size),
+            (false, false) => BitVec::from_bigint_with(self.0 / rhs.0, size),
+            (true, false) => -BitVec::from_bigint_with((-self).0 / rhs.0, size),
+            (false, true) => -BitVec::from_bigint_with(self.0 / (-rhs).0, size),
+            (true, true) => BitVec::from_bigint_with((-self).0 / (-rhs).0, size),
         }
     }
 }
@@ -333,10 +338,10 @@ impl<'a> Div for &'a BitVec {
         let rneg = rhs.is_negative();
 
         match (lneg, rneg) {
-            (false, false) => BitVec::from_bigint(BigInt::from(&self.0 / &rhs.0), self.3),
-            (true, false) => -BitVec::from_bigint(BigInt::from(&(-self).0 / &rhs.0), self.3),
-            (false, true) => -BitVec::from_bigint(BigInt::from(&self.0 / &(-rhs).0), self.3),
-            (true, true) => BitVec::from_bigint(BigInt::from(&(-self).0 / &(-rhs).0), self.3),
+            (false, false) => BitVec::from_bigint_with(BigInt::from(&self.0 / &rhs.0), self.1.clone()),
+            (true, false) => -BitVec::from_bigint_with(BigInt::from(&(-self).0 / &rhs.0), self.1.clone()),
+            (false, true) => -BitVec::from_bigint_with(BigInt::from(&self.0 / &(-rhs).0), self.1.clone()),
+            (true, true) => BitVec::from_bigint_with(BigInt::from(&(-self).0 / &(-rhs).0), self.1.clone()),
         }
     }
 }
@@ -350,7 +355,7 @@ impl Mul for BitVec {
                    self.3,
                    rhs.3)
         }
-        Self::from_bigint(self.0 * rhs.0, self.3)
+        Self::from_bigint_with(self.0 * rhs.0, self.1.clone())
     }
 }
 
@@ -358,7 +363,7 @@ impl<'a> Mul for &'a BitVec {
     type Output = BitVec;
 
     fn mul(self, rhs: Self) -> Self::Output {
-        BitVec::from_bigint(BigInt::from(&self.0 * &rhs.0), self.3)
+        BitVec::from_bigint_with(BigInt::from(&self.0 * &rhs.0), self.1.clone())
     }
 }
 
@@ -373,13 +378,13 @@ impl Rem for BitVec {
         }
         let lneg = self.is_negative();
         let rneg = rhs.is_negative();
-        let size = self.3;
+        let size = self.1.clone();
 
         match (lneg, rneg) {
-            (false, false) => BitVec::from_bigint(self.0 % rhs.0, size),
-            (true, false) =>  -BitVec::from_bigint((-self).0 % rhs.0, size),
-            (false, true) => BitVec::from_bigint(self.0 % (-rhs).0, size),
-            (true, true) => -BitVec::from_bigint((-self).0 % (-rhs).0, size),
+            (false, false) => BitVec::from_bigint_with(self.0 % rhs.0, size),
+            (true, false) =>  -BitVec::from_bigint_with((-self).0 % rhs.0, size),
+            (false, true) => BitVec::from_bigint_with(self.0 % (-rhs).0, size),
+            (true, true) => -BitVec::from_bigint_with((-self).0 % (-rhs).0, size),
         }
     }
 }
@@ -397,10 +402,10 @@ impl<'a> Rem for &'a BitVec {
         let rneg = rhs.is_negative();
 
         match (lneg, rneg) {
-            (false, false) => BitVec::from_bigint(BigInt::from(&self.0 % &rhs.0), self.3),
-            (true, false) =>  -BitVec::from_bigint((-self).0 % &rhs.0, self.3),
-            (false, true) => BitVec::from_bigint(&self.0 % (-rhs).0, self.3),
-            (true, true) => -BitVec::from_bigint((-self).0 % (-rhs).0, self.3),
+            (false, false) => BitVec::from_bigint_with(BigInt::from(&self.0 % &rhs.0), self.1.clone()),
+            (true, false) =>  -BitVec::from_bigint_with((-self).0 % &rhs.0, self.1.clone()),
+            (false, true) => BitVec::from_bigint_with(&self.0 % (-rhs).0, self.1.clone()),
+            (true, true) => -BitVec::from_bigint_with((-self).0 % (-rhs).0, self.1.clone()),
         }
     }
 }
@@ -414,7 +419,7 @@ impl Sub for BitVec {
                    self.3,
                    rhs.3)
         }
-        Self::from_bigint(self.0 - rhs.0, self.3)
+        Self::from_bigint_with(self.0 - rhs.0, self.1.clone())
     }
 }
 
@@ -427,7 +432,7 @@ impl<'a> Sub for &'a BitVec {
                    self.3,
                    rhs.3)
         }
-        BitVec::from_bigint(BigInt::from(&self.0 - &rhs.0), self.3)
+        BitVec::from_bigint_with(BigInt::from(&self.0 - &rhs.0), self.1.clone())
     }
 }
 
@@ -440,7 +445,7 @@ impl BitAnd for BitVec {
                    self.3,
                    rhs.3)
         }
-        Self::from_bigint(self.0 & rhs.0, self.3)
+        Self::from_bigint_with(self.0 & rhs.0, self.1.clone())
     }
 }
 
@@ -453,7 +458,7 @@ impl<'a> BitAnd for &'a BitVec {
                    self.3,
                    rhs.3)
         }
-        BitVec::from_bigint(BigInt::from(&self.0 & &rhs.0), self.3)
+        BitVec::from_bigint_with(BigInt::from(&self.0 & &rhs.0), self.1.clone())
     }
 }
 
@@ -466,7 +471,7 @@ impl BitOr for BitVec {
                    self.3,
                    rhs.3)
         }
-        Self::from_bigint(self.0 | rhs.0, self.3)
+        Self::from_bigint_with(self.0 | rhs.0, self.1.clone())
     }
 }
 
@@ -479,7 +484,7 @@ impl<'a> BitOr for &'a BitVec {
                    self.3,
                    rhs.3)
         }
-        BitVec::from_bigint(BigInt::from(&self.0 | &rhs.0), self.3)
+        BitVec::from_bigint_with(BigInt::from(&self.0 | &rhs.0), self.1.clone())
     }
 }
 
@@ -492,7 +497,7 @@ impl BitXor for BitVec {
                    self.3,
                    rhs.3)
         }
-        Self::from_bigint(self.0 ^ rhs.0, self.3)
+        Self::from_bigint_with(self.0 ^ rhs.0, self.1.clone())
     }
 }
 
@@ -505,7 +510,7 @@ impl<'a> BitXor for &'a BitVec {
                    self.3,
                    rhs.3)
         }
-        BitVec::from_bigint(BigInt::from(&self.0 ^ &rhs.0), self.3)
+        BitVec::from_bigint_with(BigInt::from(&self.0 ^ &rhs.0), self.1.clone())
     }
 }
 
@@ -513,7 +518,7 @@ impl Shl<u32> for BitVec {
     type Output = Self;
 
     fn shl(self, rhs: u32) -> Self::Output {
-        Self::from_bigint(self.0 << rhs, self.3)
+        Self::from_bigint_with(self.0 << rhs, self.1.clone())
     }
 }
 
@@ -521,7 +526,39 @@ impl<'a> Shl<u32> for &'a BitVec {
     type Output = BitVec;
 
     fn shl(self, rhs: u32) -> Self::Output {
-        BitVec::from_bigint(BigInt::from(&self.0 << rhs), self.3)
+        BitVec::from_bigint_with(BigInt::from(&self.0 << rhs), self.1.clone())
+    }
+}
+
+impl Shl for BitVec {
+    type Output = Self;
+
+    fn shl(self, rhs: Self) -> Self::Output {
+        if rhs.0 > self.bits() {
+            Self::zero(self.bits())
+        } else {
+            if let Some(rhs) = rhs.0.to_u32() {
+                Self::from_bigint_with(self.0 << rhs, self.1.clone())
+            } else {
+                Self::zero(self.bits())
+            }
+        }
+    }
+}
+
+impl<'a> Shl for &'a BitVec {
+    type Output = BitVec;
+
+    fn shl(self, rhs: Self) -> Self::Output {
+        if rhs.0 > self.bits() {
+            BitVec::zero(self.bits())
+        } else {
+            if let Some(rhs) = rhs.0.to_u32() {
+                BitVec::from_bigint_with(BigInt::from(&self.0 << rhs), self.1.clone())
+            } else {
+                BitVec::zero(self.bits())
+            }
+        }
     }
 }
 
@@ -533,10 +570,10 @@ impl Shr<u32> for BitVec {
         if rhs as usize >= size {
             Self::zero(size)
         } else if self.is_signed() { // perform ASR
-            let mask = self.1 ^ ((BigInt::from(1) << (size - rhs as usize) as u32) - BigInt::from(1));
-            Self::from_bigint((self.0 >> rhs) ^ mask, size)
+            let mask = &*self.1 ^ ((BigInt::from(1) << (size - rhs as usize) as u32) - BigInt::from(1));
+            Self::from_bigint_with((self.0 >> rhs) ^ mask, self.1.clone())
         } else {
-            Self::from_bigint(self.0 >> rhs, size)
+            Self::from_bigint_with(self.0 >> rhs, self.1.clone())
         }
     }
 }
@@ -549,10 +586,56 @@ impl<'a> Shr<u32> for &'a BitVec {
         if rhs as usize >= size {
             BitVec::zero(size)
         } else if self.is_signed() { // perform ASR
-            let mask = &self.1 ^ ((BigInt::from(1) << (size - rhs as usize) as u32) - BigInt::from(1));
-            BitVec::from_bigint(BigInt::from(&self.0 >> rhs) ^ mask, size)
+            let mask = &*self.1 ^ ((BigInt::from(1) << (size - rhs as usize) as u32) - BigInt::from(1));
+            BitVec::from_bigint_with(BigInt::from(&self.0 >> rhs) ^ mask, self.1.clone())
         } else {
-            BitVec::from_bigint(BigInt::from(&self.0 >> rhs), size)
+            BitVec::from_bigint_with(BigInt::from(&self.0 >> rhs), self.1.clone())
+        }
+    }
+}
+
+impl Shr for BitVec {
+    type Output = Self;
+
+    fn shr(self, rhs: Self) -> Self::Output {
+        if rhs.0 >= self.bits() {
+            Self::zero(self.bits())
+        } else if self.is_signed() { // perform ASR
+            if let Some(rhs) = rhs.0.to_u32() {
+                let mask = &*self.1 ^ ((BigInt::from(1) << (self.bits() - rhs as usize) as u32) - BigInt::from(1));
+                Self::from_bigint_with((self.0 >> rhs) ^ mask, self.1.clone())
+            } else {
+                Self::zero(self.bits())
+            }
+        } else {
+            if let Some(rhs) = rhs.0.to_u32() {
+                Self::from_bigint_with(self.0 >> rhs, self.1.clone())
+            } else {
+                Self::zero(self.bits())
+            }
+        }
+    }
+}
+
+impl<'a> Shr for &'a BitVec {
+    type Output = BitVec;
+
+    fn shr(self, rhs: Self) -> Self::Output {
+        if rhs.0 >= self.bits() {
+            BitVec::zero(self.bits())
+        } else if self.is_signed() { // perform ASR
+            if let Some(rhs) = rhs.0.to_u32() {
+                let mask = &*self.1 ^ ((BigInt::from(1) << (self.bits() - rhs as usize) as u32) - BigInt::from(1));
+                BitVec::from_bigint_with(BigInt::from(&self.0 >> rhs) ^ mask, self.1.clone())
+            } else {
+                BitVec::zero(self.bits())
+            }
+        } else {
+            if let Some(rhs) = rhs.0.to_u32() {
+                BitVec::from_bigint_with(BigInt::from(&self.0 >> rhs), self.1.clone())
+            } else {
+                BitVec::zero(self.bits())
+            }
         }
     }
 }

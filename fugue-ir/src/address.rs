@@ -69,6 +69,10 @@ impl<'a> Address<'a> {
         self.space.properties().is_big_endian()
     }
 
+    pub fn is_little_endian(&self) -> bool {
+        !self.space.properties().is_big_endian()
+    }
+
     pub fn address_size(&self) -> usize {
         self.space.address_size()
     }
