@@ -1,10 +1,11 @@
 use std::borrow::Cow;
+use std::fmt;
 
-use crate::{Address, Opcode};
 use crate::float_format::FloatFormat;
 use crate::space::AddressSpace;
 use crate::space_manager::SpaceManager;
 use crate::VarnodeData;
+use crate::{Address, Opcode};
 
 use fnv::FnvHashMap as Map;
 use fugue_bv::BitVec;
@@ -32,11 +33,20 @@ impl<'space> Var<'space> {
     }
 
     pub fn with_generation(&self, generation: usize) -> Self {
-        Self { generation, ..*self }
+        Self {
+            generation,
+            ..*self
+        }
     }
 
     pub fn space(&self) -> &'space AddressSpace {
         self.space
+    }
+}
+
+impl<'space> fmt::Display for Var<'space> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}[{:#x}]:{}", self.space().name(), self.offset(), self.bits())
     }
 }
 
@@ -55,6 +65,12 @@ impl<'space> From<VarnodeData<'space>> for Var<'space> {
 pub struct Location<'space> {
     address: Address<'space>,
     position: usize,
+}
+
+impl<'space> fmt::Display for Location<'space> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}.{}", self.address, self.position)
+    }
 }
 
 impl<'space> Location<'space> {
@@ -79,17 +95,21 @@ impl<'space> Location<'space> {
     }
 
     pub(crate) fn absolute_from<A>(&mut self, address: A, position: usize)
-    where A: Into<Address<'space>> {
+    where
+        A: Into<Address<'space>>,
+    {
         if self.is_absolute() {
-            return
+            return;
         }
 
         let offset = self.address().offset() as i64;
         let position = if offset.is_negative() {
-            position.checked_sub(offset.abs() as usize)
+            position
+                .checked_sub(offset.abs() as usize)
                 .expect("negative offset from position in valid range")
         } else {
-            position.checked_add(offset as usize)
+            position
+                .checked_add(offset as usize)
                 .expect("positive offset from position in valid range")
         };
 
@@ -111,6 +131,15 @@ impl<'space> From<VarnodeData<'space>> for Location<'space> {
 pub enum BranchTarget<'space> {
     Location(Location<'space>),
     Computed(Expr<'space>, &'space AddressSpace),
+}
+
+impl<'space> fmt::Display for BranchTarget<'space> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Location(loc) => write!(f, "{}", loc),
+            Self::Computed(expr, spc) => write!(f, "{}[{}]", spc.name(), expr),
+        }
+    }
 }
 
 impl<'space> From<Location<'space>> for BranchTarget<'space> {
@@ -135,14 +164,27 @@ impl<'space> BranchTarget<'space> {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Cast<'space> {
-    Bool, // T -> Bool
+    Bool,                       // T -> Bool
     Float(&'space FloatFormat), // T -> FloatFormat::T
 
-    Signed(usize), // sign-extension
+    Signed(usize),   // sign-extension
     Unsigned(usize), // zero-extension
 
     High(usize), // truncate keep MSBs
-    Low(usize), // truncate keep LSBs
+    Low(usize),  // truncate keep LSBs
+}
+
+impl<'space> fmt::Display for Cast<'space> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Bool => write!(f, "bool"),
+            Self::Float(format) => write!(f, "float{}", format.bits()),
+            Self::Signed(bits) => write!(f, "i{}", bits),
+            Self::Unsigned(bits) => write!(f, "u{}", bits),
+            Self::High(bits) => write!(f, "u{}", bits),
+            Self::Low(bits) => write!(f, "u{}", bits),
+        }
+    }
 }
 
 impl<'space> Cast<'space> {
@@ -207,10 +249,10 @@ pub enum BinRel {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Expr<'space> {
-    UnRel(UnRel, Box<Expr<'space>>), // T -> bool
+    UnRel(UnRel, Box<Expr<'space>>),                      // T -> bool
     BinRel(BinRel, Box<Expr<'space>>, Box<Expr<'space>>), // T * T -> bool
 
-    UnOp(UnOp, Box<Expr<'space>>), // T -> T
+    UnOp(UnOp, Box<Expr<'space>>),                      // T -> T
     BinOp(BinOp, Box<Expr<'space>>, Box<Expr<'space>>), // T * T -> T
 
     Cast(Box<Expr<'space>>, Cast<'space>), // T -> Cast::T
@@ -221,8 +263,146 @@ pub enum Expr<'space> {
 
     Intrinsic(&'space str, SmallVec<[Box<Expr<'space>>; 4]>, usize),
 
-    Val(BitVec), // BitVec -> T
+    Val(BitVec),      // BitVec -> T
     Var(Var<'space>), // String * usize -> T
+}
+
+impl<'space> Expr<'space> {
+    fn fmt_l1(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Expr::Val(v) => write!(f, "{}", v),
+            Expr::Var(v) => write!(f, "{}", v),
+
+            Expr::Intrinsic(name, args, _) => {
+                write!(f, "{}(", name)?;
+                if !args.is_empty() {
+                    write!(f, "{}", args[0])?;
+                    for arg in &args[1..] {
+                        write!(f, ", {}", arg)?;
+                    }
+                }
+                write!(f, ")")
+            }
+
+            Expr::Cast(expr, Cast::High(bits)) => write!(f, "extract-msb({}, bits={})", expr, bits),
+            Expr::Cast(expr, Cast::Low(bits)) => write!(f, "extract-lsb({}, bits={})", expr, bits),
+
+            Expr::Cast(expr, Cast::Bool) => write!(f, "{} as bool", expr),
+            Expr::Cast(expr, Cast::Signed(bits)) => write!(f, "{} as i{}", expr, bits),
+            Expr::Cast(expr, Cast::Unsigned(bits)) => write!(f, "{} as u{}", expr, bits),
+            Expr::Cast(expr, Cast::Float(format)) => write!(f, "{} as f{}", expr, format.bits()),
+
+            Expr::Load(expr, bits, space) => write!(f, "{}[{}]:{}", space.name(), expr, bits),
+
+            Expr::Extract(expr, lsb, msb) => write!(f, "extract({}, from={}, to={})", expr, lsb, msb),
+            Expr::Concat(e1, e2) => write!(f, "concat({}, {})", e1, e2),
+
+            Expr::UnOp(UnOp::ABS, expr) => write!(f, "abs({})", expr),
+            Expr::UnOp(UnOp::SQRT, expr) => write!(f, "sqrt({})", expr),
+            Expr::UnOp(UnOp::ROUND, expr) => write!(f, "round({})", expr),
+            Expr::UnOp(UnOp::CEILING, expr) => write!(f, "ceiling({})", expr),
+            Expr::UnOp(UnOp::FLOOR, expr) => write!(f, "floor({})", expr),
+            Expr::UnOp(UnOp::POPCOUNT, expr) => write!(f, "popcount({})", expr),
+
+            Expr::UnRel(UnRel::NAN, expr) => write!(f, "is-nan({})", expr),
+
+            Expr::BinRel(BinRel::CARRY, e1, e2) => write!(f, "carry({}, {})", e1, e2),
+            Expr::BinRel(BinRel::SCARRY, e1, e2) => write!(f, "scarry({}, {})", e1, e2),
+            Expr::BinRel(BinRel::SBORROW, e1, e2) => write!(f, "sborrow({}, {})", e1, e2),
+
+            expr => write!(f, "({})", expr),
+        }
+    }
+
+    fn fmt_l2(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Expr::UnOp(UnOp::NEG, expr) => { write!(f, "-")?; expr.fmt_l1(f) },
+            Expr::UnOp(UnOp::NOT, expr) => { write!(f, "!")?; expr.fmt_l1(f) },
+            expr => expr.fmt_l1(f)
+        }
+    }
+
+    fn fmt_l3(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Expr::BinOp(BinOp::MUL, e1, e2) => { e1.fmt_l3(f)?; write!(f, " * ")?; e2.fmt_l2(f) }
+            Expr::BinOp(BinOp::DIV, e1, e2) => { e1.fmt_l3(f)?; write!(f, " / ")?; e2.fmt_l2(f) }
+            Expr::BinOp(BinOp::SDIV, e1, e2) => { e1.fmt_l3(f)?; write!(f, " s/ ")?; e2.fmt_l2(f) }
+            Expr::BinOp(BinOp::REM, e1, e2) => { e1.fmt_l3(f)?; write!(f, " % ")?; e2.fmt_l2(f) }
+            Expr::BinOp(BinOp::SREM, e1, e2) => { e1.fmt_l3(f)?; write!(f, " s% ")?; e2.fmt_l2(f) }
+            expr => expr.fmt_l2(f)
+        }
+    }
+
+    fn fmt_l4(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Expr::BinOp(BinOp::ADD, e1, e2) => { e1.fmt_l4(f)?; write!(f, " + ")?; e2.fmt_l3(f) },
+            Expr::BinOp(BinOp::SUB, e1, e2) => { e1.fmt_l4(f)?; write!(f, " - ")?; e2.fmt_l3(f) },
+            expr => expr.fmt_l3(f)
+        }
+    }
+
+    fn fmt_l5(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Expr::BinOp(BinOp::SHL, e1, e2) => { e1.fmt_l5(f)?; write!(f, " << ")?; e2.fmt_l4(f) },
+            Expr::BinOp(BinOp::SHR, e1, e2) => { e1.fmt_l5(f)?; write!(f, " >> ")?; e2.fmt_l4(f) },
+            Expr::BinOp(BinOp::SAR, e1, e2) => { e1.fmt_l5(f)?; write!(f, " s>> ")?; e2.fmt_l4(f) },
+            expr => expr.fmt_l4(f)
+        }
+    }
+
+    fn fmt_l6(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Expr::BinRel(BinRel::LT, e1, e2) => { e1.fmt_l6(f)?; write!(f, " < ")?; e2.fmt_l5(f) },
+            Expr::BinRel(BinRel::LE, e1, e2) => { e1.fmt_l6(f)?; write!(f, " <= ")?; e2.fmt_l5(f) },
+            Expr::BinRel(BinRel::SLT, e1, e2) => { e1.fmt_l6(f)?; write!(f, " s< ")?; e2.fmt_l5(f) },
+            Expr::BinRel(BinRel::SLE, e1, e2) => { e1.fmt_l6(f)?; write!(f, " s<= ")?; e2.fmt_l5(f) },
+            expr => expr.fmt_l5(f)
+        }
+    }
+
+    fn fmt_l7(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Expr::BinRel(BinRel::EQ, e1, e2) => { e1.fmt_l7(f)?; write!(f, " == ")?; e2.fmt_l6(f) },
+            Expr::BinRel(BinRel::NEQ, e1, e2) => { e1.fmt_l7(f)?; write!(f, " != ")?; e2.fmt_l6(f) },
+            expr => expr.fmt_l6(f)
+        }
+    }
+
+    fn fmt_l8(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if let Expr::BinOp(BinOp::AND, e1, e2) = self {
+            e1.fmt_l8(f)?;
+            write!(f, " & ")?;
+            e2.fmt_l7(f)
+        } else {
+            self.fmt_l7(f)
+        }
+    }
+
+    fn fmt_l9(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if let Expr::BinOp(BinOp::XOR, e1, e2) = self {
+            e1.fmt_l9(f)?;
+            write!(f, " ^ ")?;
+            e2.fmt_l8(f)
+        } else {
+            self.fmt_l8(f)
+        }
+    }
+
+    fn fmt_l10(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if let Expr::BinOp(BinOp::OR, e1, e2) = self {
+            e1.fmt_l10(f)?;
+            write!(f, " | ")?;
+            e2.fmt_l9(f)
+        } else {
+            self.fmt_l9(f)
+        }
+    }
+}
+
+impl<'space> fmt::Display for Expr<'space> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.fmt_l10(f)
+    }
 }
 
 impl<'space> From<BitVec> for Expr<'space> {
@@ -243,11 +423,23 @@ impl<'space> From<VarnodeData<'space>> for Expr<'space> {
             Self::from(BitVec::from_u64(vnd.offset(), vnd.size() * 8))
         } else if vnd.space().is_unique() || vnd.space().is_register() {
             Self::from(Var::from(vnd))
-        } else { // address-like
+        } else {
+            let val = BitVec::from_u64(vnd.offset(), vnd.size() * 8);
+            let src = if vnd.space().word_size() > 1 {
+                let s = Expr::from(val);
+                let bits = s.bits();
+
+                let w = Expr::from(BitVec::from_usize(vnd.space().word_size(), bits));
+
+                Expr::int_mul(s, w)
+            } else {
+                Expr::from(val)
+            };
+            // address-like
             Self::load(
-                BitVec::from_u64(vnd.offset(), vnd.size() * 8),
+                src,
                 vnd.space().address_size(),
-                vnd.space()
+                vnd.space(),
             )
         }
     }
@@ -289,17 +481,18 @@ impl<'space> Expr<'space> {
     }
 
     pub fn is_unsigned(&self) -> bool {
-        matches!(self, Self::Cast(_, Cast::Unsigned(_))) ||
-            !matches!(self, Self::Cast(_, _))
+        matches!(self, Self::Cast(_, Cast::Unsigned(_))) || !matches!(self, Self::Cast(_, _))
     }
 
     pub fn is_unsigned_bits(&self, bits: usize) -> bool {
-        matches!(self, Self::Cast(_, Cast::Unsigned(sz)) if *sz == bits) ||
-            (!matches!(self, Self::Cast(_, _)) && self.bits() == bits)
+        matches!(self, Self::Cast(_, Cast::Unsigned(sz)) if *sz == bits)
+            || (!matches!(self, Self::Cast(_, _)) && self.bits() == bits)
     }
 
     pub fn cast_bool<E>(expr: E) -> Self
-    where E: Into<Expr<'space>> {
+    where
+        E: Into<Expr<'space>>,
+    {
         let expr = expr.into();
         if expr.is_bool() {
             expr
@@ -309,7 +502,9 @@ impl<'space> Expr<'space> {
     }
 
     pub fn cast_signed<E>(expr: E, bits: usize) -> Self
-    where E: Into<Expr<'space>> {
+    where
+        E: Into<Expr<'space>>,
+    {
         let expr = expr.into();
         if expr.is_signed_bits(bits) {
             expr
@@ -319,7 +514,9 @@ impl<'space> Expr<'space> {
     }
 
     pub fn cast_unsigned<E>(expr: E, bits: usize) -> Self
-    where E: Into<Expr<'space>> {
+    where
+        E: Into<Expr<'space>>,
+    {
         let expr = expr.into();
         if expr.is_unsigned_bits(bits) {
             expr
@@ -329,7 +526,9 @@ impl<'space> Expr<'space> {
     }
 
     pub fn cast_float<E>(expr: E, format: &'space FloatFormat) -> Self
-    where E: Into<Expr<'space>> {
+    where
+        E: Into<Expr<'space>>,
+    {
         let expr = expr.into();
         if expr.is_float_format(format) {
             expr
@@ -339,7 +538,9 @@ impl<'space> Expr<'space> {
     }
 
     pub fn extract_high<E>(expr: E, bits: usize) -> Self
-    where E: Into<Expr<'space>> {
+    where
+        E: Into<Expr<'space>>,
+    {
         let expr = expr.into();
         if expr.is_unsigned_bits(bits) {
             expr
@@ -349,7 +550,9 @@ impl<'space> Expr<'space> {
     }
 
     pub fn extract_low<E>(expr: E, bits: usize) -> Self
-    where E: Into<Expr<'space>> {
+    where
+        E: Into<Expr<'space>>,
+    {
         let expr = expr.into();
         if expr.is_unsigned_bits(bits) {
             expr
@@ -359,427 +562,601 @@ impl<'space> Expr<'space> {
     }
 
     pub(crate) fn unary_op<E>(op: UnOp, expr: E) -> Self
-    where E: Into<Expr<'space>> {
+    where
+        E: Into<Expr<'space>>,
+    {
         Self::UnOp(op, Box::new(expr.into()))
     }
 
     pub(crate) fn unary_rel<E>(rel: UnRel, expr: E) -> Self
-    where E: Into<Expr<'space>> {
+    where
+        E: Into<Expr<'space>>,
+    {
         Self::cast_bool(Self::UnRel(rel, Box::new(expr.into())))
     }
 
     pub(crate) fn binary_op<E1, E2>(op: BinOp, expr1: E1, expr2: E2) -> Self
-    where E1: Into<Expr<'space>>,
-          E2: Into<Expr<'space>> {
+    where
+        E1: Into<Expr<'space>>,
+        E2: Into<Expr<'space>>,
+    {
         Self::BinOp(op, Box::new(expr1.into()), Box::new(expr2.into()))
     }
 
     pub(crate) fn binary_op_promote_as<E1, E2, F>(op: BinOp, expr1: E1, expr2: E2, cast: F) -> Self
-    where E1: Into<Expr<'space>>,
-          E2: Into<Expr<'space>>,
-          F: Fn(Expr<'space>, usize) -> Expr<'space> {
+    where
+        E1: Into<Expr<'space>>,
+        E2: Into<Expr<'space>>,
+        F: Fn(Expr<'space>, usize) -> Expr<'space>,
+    {
         let e1 = expr1.into();
         let e2 = expr2.into();
         let bits = e1.bits().max(e2.bits());
 
-        Self::binary_op(
-            op,
-            cast(e1, bits),
-            cast(e2, bits),
-        )
+        Self::binary_op(op, cast(e1, bits), cast(e2, bits))
     }
 
     pub(crate) fn binary_op_promote<E1, E2>(op: BinOp, expr1: E1, expr2: E2) -> Self
-    where E1: Into<Expr<'space>>,
-          E2: Into<Expr<'space>> {
+    where
+        E1: Into<Expr<'space>>,
+        E2: Into<Expr<'space>>,
+    {
         Self::binary_op_promote_as(op, expr1, expr2, |e, sz| Self::cast_unsigned(e, sz))
     }
 
     pub(crate) fn binary_op_promote_bool<E1, E2>(op: BinOp, expr1: E1, expr2: E2) -> Self
-    where E1: Into<Expr<'space>>,
-          E2: Into<Expr<'space>> {
+    where
+        E1: Into<Expr<'space>>,
+        E2: Into<Expr<'space>>,
+    {
         Self::binary_op_promote_as(op, expr1, expr2, |e, _sz| Self::cast_bool(e))
     }
 
     pub(crate) fn binary_op_promote_signed<E1, E2>(op: BinOp, expr1: E1, expr2: E2) -> Self
-    where E1: Into<Expr<'space>>,
-          E2: Into<Expr<'space>> {
+    where
+        E1: Into<Expr<'space>>,
+        E2: Into<Expr<'space>>,
+    {
         Self::binary_op_promote_as(op, expr1, expr2, |e, sz| Self::cast_signed(e, sz))
     }
 
-    pub(crate) fn binary_op_promote_float<E1, E2>(op: BinOp, expr1: E1, expr2: E2, formats: &Map<usize, &'space FloatFormat>) -> Self
-    where E1: Into<Expr<'space>>,
-          E2: Into<Expr<'space>> {
-        Self::binary_op_promote_as(
-            op,
-            expr1,
-            expr2,
-            |e, sz| Self::cast_float(Self::cast_signed(e, sz), formats[&sz])
-        )
+    pub(crate) fn binary_op_promote_float<E1, E2>(
+        op: BinOp,
+        expr1: E1,
+        expr2: E2,
+        formats: &Map<usize, &'space FloatFormat>,
+    ) -> Self
+    where
+        E1: Into<Expr<'space>>,
+        E2: Into<Expr<'space>>,
+    {
+        Self::binary_op_promote_as(op, expr1, expr2, |e, sz| {
+            Self::cast_float(Self::cast_signed(e, sz), formats[&sz])
+        })
     }
 
     pub(crate) fn binary_rel<E1, E2>(rel: BinRel, expr1: E1, expr2: E2) -> Self
-    where E1: Into<Expr<'space>>,
-          E2: Into<Expr<'space>> {
-        Self::cast_bool(Self::BinRel(rel, Box::new(expr1.into()), Box::new(expr2.into())))
+    where
+        E1: Into<Expr<'space>>,
+        E2: Into<Expr<'space>>,
+    {
+        Self::cast_bool(Self::BinRel(
+            rel,
+            Box::new(expr1.into()),
+            Box::new(expr2.into()),
+        ))
     }
 
-    pub(crate) fn binary_rel_promote_as<E1, E2, F>(op: BinRel, expr1: E1, expr2: E2, cast: F) -> Self
-    where E1: Into<Expr<'space>>,
-          E2: Into<Expr<'space>>,
-          F: Fn(Expr<'space>, usize) -> Expr<'space> {
+    pub(crate) fn binary_rel_promote_as<E1, E2, F>(
+        op: BinRel,
+        expr1: E1,
+        expr2: E2,
+        cast: F,
+    ) -> Self
+    where
+        E1: Into<Expr<'space>>,
+        E2: Into<Expr<'space>>,
+        F: Fn(Expr<'space>, usize) -> Expr<'space>,
+    {
         let e1 = expr1.into();
         let e2 = expr2.into();
         let bits = e1.bits().max(e2.bits());
 
-        Self::binary_rel(
-            op,
-            cast(e1, bits),
-            cast(e2, bits),
-        )
+        Self::binary_rel(op, cast(e1, bits), cast(e2, bits))
     }
 
     pub(crate) fn binary_rel_promote<E1, E2>(op: BinRel, expr1: E1, expr2: E2) -> Self
-    where E1: Into<Expr<'space>>,
-          E2: Into<Expr<'space>> {
+    where
+        E1: Into<Expr<'space>>,
+        E2: Into<Expr<'space>>,
+    {
         Self::binary_rel_promote_as(op, expr1, expr2, |e, sz| Self::cast_unsigned(e, sz))
     }
 
-    pub(crate) fn binary_rel_promote_float<E1, E2>(op: BinRel, expr1: E1, expr2: E2, formats: &Map<usize, &'space FloatFormat>) -> Self
-    where E1: Into<Expr<'space>>,
-          E2: Into<Expr<'space>> {
-        Self::binary_rel_promote_as(
-            op,
-            expr1,
-            expr2,
-            |e, sz| Self::cast_float(Self::cast_signed(e, sz), formats[&sz])
-        )
+    pub(crate) fn binary_rel_promote_float<E1, E2>(
+        op: BinRel,
+        expr1: E1,
+        expr2: E2,
+        formats: &Map<usize, &'space FloatFormat>,
+    ) -> Self
+    where
+        E1: Into<Expr<'space>>,
+        E2: Into<Expr<'space>>,
+    {
+        Self::binary_rel_promote_as(op, expr1, expr2, |e, sz| {
+            Self::cast_float(Self::cast_signed(e, sz), formats[&sz])
+        })
     }
 
     pub(crate) fn binary_rel_promote_signed<E1, E2>(op: BinRel, expr1: E1, expr2: E2) -> Self
-    where E1: Into<Expr<'space>>,
-          E2: Into<Expr<'space>> {
+    where
+        E1: Into<Expr<'space>>,
+        E2: Into<Expr<'space>>,
+    {
         Self::binary_rel_promote_as(op, expr1, expr2, |e, sz| Self::cast_signed(e, sz))
     }
 
     pub(crate) fn binary_rel_promote_bool<E1, E2>(op: BinRel, expr1: E1, expr2: E2) -> Self
-    where E1: Into<Expr<'space>>,
-          E2: Into<Expr<'space>> {
+    where
+        E1: Into<Expr<'space>>,
+        E2: Into<Expr<'space>>,
+    {
         Self::binary_rel_promote_as(op, expr1, expr2, |e, _sz| Self::cast_bool(e))
     }
 
     pub fn load<E>(expr: E, size: usize, space: &'space AddressSpace) -> Self
-    where E: Into<Expr<'space>> {
+    where
+        E: Into<Expr<'space>>,
+    {
         Self::Load(
             Box::new(Self::cast_unsigned(expr, space.address_size())),
             size,
-            space
+            space,
         )
     }
 
     pub fn intrinsic<N, I, E>(name: N, arguments: I, bits: usize) -> Self
-    where N: Into<&'space str>,
-          I: Iterator<Item=E>,
-          E: Into<Expr<'space>> {
-        Self::Intrinsic(name.into(), arguments.map(|e| Box::new(e.into())).collect(), bits)
+    where
+        N: Into<&'space str>,
+        I: Iterator<Item = E>,
+        E: Into<Expr<'space>>,
+    {
+        Self::Intrinsic(
+            name.into(),
+            arguments.map(|e| Box::new(e.into())).collect(),
+            bits,
+        )
     }
 
     pub fn extract<E>(expr: E, loff: usize, moff: usize) -> Self
-    where E: Into<Expr<'space>> {
+    where
+        E: Into<Expr<'space>>,
+    {
         Self::Extract(Box::new(expr.into()), loff, moff)
     }
 }
 
 impl<'space> Expr<'space> {
     pub fn bool_not<E>(expr: E) -> Self
-    where E: Into<Expr<'space>> {
+    where
+        E: Into<Expr<'space>>,
+    {
         Self::unary_op(UnOp::NOT, Self::cast_bool(expr))
     }
 
     pub fn bool_eq<E1, E2>(expr1: E1, expr2: E2) -> Self
-    where E1: Into<Expr<'space>>,
-          E2: Into<Expr<'space>> {
+    where
+        E1: Into<Expr<'space>>,
+        E2: Into<Expr<'space>>,
+    {
         Self::binary_rel_promote_bool(BinRel::EQ, expr1, expr2)
     }
 
     pub fn bool_neq<E1, E2>(expr1: E1, expr2: E2) -> Self
-    where E1: Into<Expr<'space>>,
-          E2: Into<Expr<'space>> {
+    where
+        E1: Into<Expr<'space>>,
+        E2: Into<Expr<'space>>,
+    {
         Self::binary_rel_promote_bool(BinRel::NEQ, expr1, expr2)
     }
 
     pub fn bool_and<E1, E2>(expr1: E1, expr2: E2) -> Self
-    where E1: Into<Expr<'space>>,
-          E2: Into<Expr<'space>> {
+    where
+        E1: Into<Expr<'space>>,
+        E2: Into<Expr<'space>>,
+    {
         Self::binary_op_promote_bool(BinOp::AND, expr1, expr2)
     }
 
     pub fn bool_or<E1, E2>(expr1: E1, expr2: E2) -> Self
-    where E1: Into<Expr<'space>>,
-          E2: Into<Expr<'space>> {
+    where
+        E1: Into<Expr<'space>>,
+        E2: Into<Expr<'space>>,
+    {
         Self::binary_op_promote_bool(BinOp::OR, expr1, expr2)
     }
 
     pub fn bool_xor<E1, E2>(expr1: E1, expr2: E2) -> Self
-    where E1: Into<Expr<'space>>,
-          E2: Into<Expr<'space>> {
+    where
+        E1: Into<Expr<'space>>,
+        E2: Into<Expr<'space>>,
+    {
         Self::binary_op_promote_bool(BinOp::XOR, expr1, expr2)
     }
 
     pub fn float_nan<E>(expr: E, formats: &Map<usize, &'space FloatFormat>) -> Self
-    where E: Into<Expr<'space>> {
+    where
+        E: Into<Expr<'space>>,
+    {
         let expr = expr.into();
         let bits = expr.bits();
         let format = formats[&bits];
 
-        Self::unary_rel(UnRel::NAN, Expr::cast_float(Expr::cast_signed(expr, bits), format))
+        Self::unary_rel(
+            UnRel::NAN,
+            Expr::cast_float(Expr::cast_signed(expr, bits), format),
+        )
     }
 
     pub fn float_neg<E>(expr: E, formats: &Map<usize, &'space FloatFormat>) -> Self
-    where E: Into<Expr<'space>> {
+    where
+        E: Into<Expr<'space>>,
+    {
         let expr = expr.into();
         let bits = expr.bits();
         let format = formats[&bits];
 
-        Self::unary_op(UnOp::NEG, Expr::cast_float(Expr::cast_signed(expr, bits), format))
+        Self::unary_op(
+            UnOp::NEG,
+            Expr::cast_float(Expr::cast_signed(expr, bits), format),
+        )
     }
 
     pub fn float_abs<E>(expr: E, formats: &Map<usize, &'space FloatFormat>) -> Self
-    where E: Into<Expr<'space>> {
+    where
+        E: Into<Expr<'space>>,
+    {
         let expr = expr.into();
         let bits = expr.bits();
         let format = formats[&bits];
 
-        Self::unary_op(UnOp::ABS, Expr::cast_float(Expr::cast_signed(expr, bits), format))
+        Self::unary_op(
+            UnOp::ABS,
+            Expr::cast_float(Expr::cast_signed(expr, bits), format),
+        )
     }
 
     pub fn float_sqrt<E>(expr: E, formats: &Map<usize, &'space FloatFormat>) -> Self
-    where E: Into<Expr<'space>> {
+    where
+        E: Into<Expr<'space>>,
+    {
         let expr = expr.into();
         let bits = expr.bits();
         let format = formats[&bits];
 
-        Self::unary_op(UnOp::SQRT, Expr::cast_float(Expr::cast_signed(expr, bits), format))
+        Self::unary_op(
+            UnOp::SQRT,
+            Expr::cast_float(Expr::cast_signed(expr, bits), format),
+        )
     }
 
     pub fn float_ceiling<E>(expr: E, formats: &Map<usize, &'space FloatFormat>) -> Self
-    where E: Into<Expr<'space>> {
+    where
+        E: Into<Expr<'space>>,
+    {
         let expr = expr.into();
         let bits = expr.bits();
         let format = formats[&bits];
 
-        Self::unary_op(UnOp::CEILING, Expr::cast_float(Expr::cast_signed(expr, bits), format))
+        Self::unary_op(
+            UnOp::CEILING,
+            Expr::cast_float(Expr::cast_signed(expr, bits), format),
+        )
     }
 
     pub fn float_round<E>(expr: E, formats: &Map<usize, &'space FloatFormat>) -> Self
-    where E: Into<Expr<'space>> {
+    where
+        E: Into<Expr<'space>>,
+    {
         let expr = expr.into();
         let bits = expr.bits();
         let format = formats[&bits];
 
-        Self::unary_op(UnOp::ROUND, Expr::cast_float(Expr::cast_signed(expr, bits), format))
+        Self::unary_op(
+            UnOp::ROUND,
+            Expr::cast_float(Expr::cast_signed(expr, bits), format),
+        )
     }
 
     pub fn float_floor<E>(expr: E, formats: &Map<usize, &'space FloatFormat>) -> Self
-    where E: Into<Expr<'space>> {
+    where
+        E: Into<Expr<'space>>,
+    {
         let expr = expr.into();
         let bits = expr.bits();
         let format = formats[&bits];
 
-        Self::unary_op(UnOp::FLOOR, Expr::cast_float(Expr::cast_signed(expr, bits), format))
+        Self::unary_op(
+            UnOp::FLOOR,
+            Expr::cast_float(Expr::cast_signed(expr, bits), format),
+        )
     }
 
     pub fn float_eq<E1, E2>(expr1: E1, expr2: E2, formats: &Map<usize, &'space FloatFormat>) -> Self
-    where E1: Into<Expr<'space>>,
-          E2: Into<Expr<'space>> {
+    where
+        E1: Into<Expr<'space>>,
+        E2: Into<Expr<'space>>,
+    {
         Self::binary_rel_promote_float(BinRel::EQ, expr1, expr2, formats)
     }
 
-    pub fn float_neq<E1, E2>(expr1: E1, expr2: E2, formats: &Map<usize, &'space FloatFormat>) -> Self
-    where E1: Into<Expr<'space>>,
-          E2: Into<Expr<'space>> {
+    pub fn float_neq<E1, E2>(
+        expr1: E1,
+        expr2: E2,
+        formats: &Map<usize, &'space FloatFormat>,
+    ) -> Self
+    where
+        E1: Into<Expr<'space>>,
+        E2: Into<Expr<'space>>,
+    {
         Self::binary_rel_promote_float(BinRel::NEQ, expr1, expr2, formats)
     }
 
     pub fn float_lt<E1, E2>(expr1: E1, expr2: E2, formats: &Map<usize, &'space FloatFormat>) -> Self
-    where E1: Into<Expr<'space>>,
-          E2: Into<Expr<'space>> {
+    where
+        E1: Into<Expr<'space>>,
+        E2: Into<Expr<'space>>,
+    {
         Self::binary_rel_promote_float(BinRel::LT, expr1, expr2, formats)
     }
 
     pub fn float_le<E1, E2>(expr1: E1, expr2: E2, formats: &Map<usize, &'space FloatFormat>) -> Self
-    where E1: Into<Expr<'space>>,
-          E2: Into<Expr<'space>> {
+    where
+        E1: Into<Expr<'space>>,
+        E2: Into<Expr<'space>>,
+    {
         Self::binary_rel_promote_float(BinRel::LE, expr1, expr2, formats)
     }
 
-    pub fn float_add<E1, E2>(expr1: E1, expr2: E2, formats: &Map<usize, &'space FloatFormat>) -> Self
-    where E1: Into<Expr<'space>>,
-          E2: Into<Expr<'space>> {
+    pub fn float_add<E1, E2>(
+        expr1: E1,
+        expr2: E2,
+        formats: &Map<usize, &'space FloatFormat>,
+    ) -> Self
+    where
+        E1: Into<Expr<'space>>,
+        E2: Into<Expr<'space>>,
+    {
         Self::binary_op_promote_float(BinOp::ADD, expr1, expr2, formats)
     }
 
-    pub fn float_sub<E1, E2>(expr1: E1, expr2: E2, formats: &Map<usize, &'space FloatFormat>) -> Self
-    where E1: Into<Expr<'space>>,
-          E2: Into<Expr<'space>> {
+    pub fn float_sub<E1, E2>(
+        expr1: E1,
+        expr2: E2,
+        formats: &Map<usize, &'space FloatFormat>,
+    ) -> Self
+    where
+        E1: Into<Expr<'space>>,
+        E2: Into<Expr<'space>>,
+    {
         Self::binary_op_promote_float(BinOp::SUB, expr1, expr2, formats)
     }
 
-    pub fn float_div<E1, E2>(expr1: E1, expr2: E2, formats: &Map<usize, &'space FloatFormat>) -> Self
-    where E1: Into<Expr<'space>>,
-          E2: Into<Expr<'space>> {
+    pub fn float_div<E1, E2>(
+        expr1: E1,
+        expr2: E2,
+        formats: &Map<usize, &'space FloatFormat>,
+    ) -> Self
+    where
+        E1: Into<Expr<'space>>,
+        E2: Into<Expr<'space>>,
+    {
         Self::binary_op_promote_float(BinOp::DIV, expr1, expr2, formats)
     }
 
-    pub fn float_mul<E1, E2>(expr1: E1, expr2: E2, formats: &Map<usize, &'space FloatFormat>) -> Self
-    where E1: Into<Expr<'space>>,
-          E2: Into<Expr<'space>> {
+    pub fn float_mul<E1, E2>(
+        expr1: E1,
+        expr2: E2,
+        formats: &Map<usize, &'space FloatFormat>,
+    ) -> Self
+    where
+        E1: Into<Expr<'space>>,
+        E2: Into<Expr<'space>>,
+    {
         Self::binary_op_promote_float(BinOp::MUL, expr1, expr2, formats)
     }
 
     pub fn int_neg<E>(expr: E) -> Self
-    where E: Into<Expr<'space>> {
+    where
+        E: Into<Expr<'space>>,
+    {
         let expr = expr.into();
         let size = expr.bits();
         Self::unary_op(UnOp::NEG, Self::cast_signed(expr, size))
     }
 
     pub fn int_not<E>(expr: E) -> Self
-    where E: Into<Expr<'space>> {
+    where
+        E: Into<Expr<'space>>,
+    {
         let expr = expr.into();
         let size = expr.bits();
         Self::unary_op(UnOp::NOT, Self::cast_unsigned(expr, size))
     }
 
     pub fn int_eq<E1, E2>(expr1: E1, expr2: E2) -> Self
-    where E1: Into<Expr<'space>>,
-          E2: Into<Expr<'space>> {
+    where
+        E1: Into<Expr<'space>>,
+        E2: Into<Expr<'space>>,
+    {
         Self::binary_rel_promote(BinRel::EQ, expr1, expr2)
     }
 
     pub fn int_neq<E1, E2>(expr1: E1, expr2: E2) -> Self
-    where E1: Into<Expr<'space>>,
-          E2: Into<Expr<'space>> {
+    where
+        E1: Into<Expr<'space>>,
+        E2: Into<Expr<'space>>,
+    {
         Self::binary_rel_promote(BinRel::NEQ, expr1, expr2)
     }
 
     pub fn int_lt<E1, E2>(expr1: E1, expr2: E2) -> Self
-    where E1: Into<Expr<'space>>,
-          E2: Into<Expr<'space>> {
+    where
+        E1: Into<Expr<'space>>,
+        E2: Into<Expr<'space>>,
+    {
         Self::binary_rel_promote(BinRel::LT, expr1, expr2)
     }
 
     pub fn int_le<E1, E2>(expr1: E1, expr2: E2) -> Self
-    where E1: Into<Expr<'space>>,
-          E2: Into<Expr<'space>> {
+    where
+        E1: Into<Expr<'space>>,
+        E2: Into<Expr<'space>>,
+    {
         Self::binary_rel_promote(BinRel::LE, expr1, expr2)
     }
 
     pub fn int_slt<E1, E2>(expr1: E1, expr2: E2) -> Self
-    where E1: Into<Expr<'space>>,
-          E2: Into<Expr<'space>> {
+    where
+        E1: Into<Expr<'space>>,
+        E2: Into<Expr<'space>>,
+    {
         Self::binary_rel_promote_signed(BinRel::SLT, expr1, expr2)
     }
 
     pub fn int_sle<E1, E2>(expr1: E1, expr2: E2) -> Self
-    where E1: Into<Expr<'space>>,
-          E2: Into<Expr<'space>> {
+    where
+        E1: Into<Expr<'space>>,
+        E2: Into<Expr<'space>>,
+    {
         Self::binary_rel_promote_signed(BinRel::SLE, expr1, expr2)
     }
 
     pub fn int_carry<E1, E2>(expr1: E1, expr2: E2) -> Self
-    where E1: Into<Expr<'space>>,
-          E2: Into<Expr<'space>> {
+    where
+        E1: Into<Expr<'space>>,
+        E2: Into<Expr<'space>>,
+    {
         Self::binary_rel_promote(BinRel::CARRY, expr1, expr2)
     }
 
     pub fn int_scarry<E1, E2>(expr1: E1, expr2: E2) -> Self
-    where E1: Into<Expr<'space>>,
-          E2: Into<Expr<'space>> {
+    where
+        E1: Into<Expr<'space>>,
+        E2: Into<Expr<'space>>,
+    {
         Self::binary_rel_promote_signed(BinRel::SCARRY, expr1, expr2)
     }
 
     pub fn int_sborrow<E1, E2>(expr1: E1, expr2: E2) -> Self
-    where E1: Into<Expr<'space>>,
-          E2: Into<Expr<'space>> {
+    where
+        E1: Into<Expr<'space>>,
+        E2: Into<Expr<'space>>,
+    {
         Self::binary_rel_promote_signed(BinRel::SBORROW, expr1, expr2)
     }
 
     pub fn int_add<E1, E2>(expr1: E1, expr2: E2) -> Self
-    where E1: Into<Expr<'space>>,
-          E2: Into<Expr<'space>> {
+    where
+        E1: Into<Expr<'space>>,
+        E2: Into<Expr<'space>>,
+    {
         Self::binary_op_promote(BinOp::ADD, expr1, expr2)
     }
 
     pub fn int_sub<E1, E2>(expr1: E1, expr2: E2) -> Self
-    where E1: Into<Expr<'space>>,
-          E2: Into<Expr<'space>> {
+    where
+        E1: Into<Expr<'space>>,
+        E2: Into<Expr<'space>>,
+    {
         Self::binary_op_promote(BinOp::SUB, expr1, expr2)
     }
 
     pub fn int_mul<E1, E2>(expr1: E1, expr2: E2) -> Self
-    where E1: Into<Expr<'space>>,
-          E2: Into<Expr<'space>> {
+    where
+        E1: Into<Expr<'space>>,
+        E2: Into<Expr<'space>>,
+    {
         Self::binary_op_promote(BinOp::MUL, expr1, expr2)
     }
 
     pub fn int_div<E1, E2>(expr1: E1, expr2: E2) -> Self
-    where E1: Into<Expr<'space>>,
-          E2: Into<Expr<'space>> {
+    where
+        E1: Into<Expr<'space>>,
+        E2: Into<Expr<'space>>,
+    {
         Self::binary_op_promote(BinOp::DIV, expr1, expr2)
     }
 
     pub fn int_sdiv<E1, E2>(expr1: E1, expr2: E2) -> Self
-    where E1: Into<Expr<'space>>,
-          E2: Into<Expr<'space>> {
+    where
+        E1: Into<Expr<'space>>,
+        E2: Into<Expr<'space>>,
+    {
         Self::binary_op_promote_signed(BinOp::SDIV, expr1, expr2)
     }
 
     pub fn int_rem<E1, E2>(expr1: E1, expr2: E2) -> Self
-    where E1: Into<Expr<'space>>,
-          E2: Into<Expr<'space>> {
+    where
+        E1: Into<Expr<'space>>,
+        E2: Into<Expr<'space>>,
+    {
         Self::binary_op_promote(BinOp::REM, expr1, expr2)
     }
 
     pub fn int_srem<E1, E2>(expr1: E1, expr2: E2) -> Self
-    where E1: Into<Expr<'space>>,
-          E2: Into<Expr<'space>> {
+    where
+        E1: Into<Expr<'space>>,
+        E2: Into<Expr<'space>>,
+    {
         Self::binary_op_promote_signed(BinOp::SREM, expr1, expr2)
     }
 
     pub fn int_shl<E1, E2>(expr1: E1, expr2: E2) -> Self
-    where E1: Into<Expr<'space>>,
-          E2: Into<Expr<'space>> {
+    where
+        E1: Into<Expr<'space>>,
+        E2: Into<Expr<'space>>,
+    {
         Self::binary_op_promote(BinOp::SHL, expr1, expr2)
     }
 
     pub fn int_shr<E1, E2>(expr1: E1, expr2: E2) -> Self
-    where E1: Into<Expr<'space>>,
-          E2: Into<Expr<'space>> {
+    where
+        E1: Into<Expr<'space>>,
+        E2: Into<Expr<'space>>,
+    {
         Self::binary_op_promote(BinOp::SHR, expr1, expr2)
     }
 
     pub fn int_sar<E1, E2>(expr1: E1, expr2: E2) -> Self
-    where E1: Into<Expr<'space>>,
-          E2: Into<Expr<'space>> {
+    where
+        E1: Into<Expr<'space>>,
+        E2: Into<Expr<'space>>,
+    {
         Self::binary_op_promote_signed(BinOp::SAR, expr1, expr2)
     }
 
     pub fn int_and<E1, E2>(expr1: E1, expr2: E2) -> Self
-    where E1: Into<Expr<'space>>,
-          E2: Into<Expr<'space>> {
+    where
+        E1: Into<Expr<'space>>,
+        E2: Into<Expr<'space>>,
+    {
         Self::binary_op_promote(BinOp::AND, expr1, expr2)
     }
 
     pub fn int_or<E1, E2>(expr1: E1, expr2: E2) -> Self
-    where E1: Into<Expr<'space>>,
-          E2: Into<Expr<'space>> {
+    where
+        E1: Into<Expr<'space>>,
+        E2: Into<Expr<'space>>,
+    {
         Self::binary_op_promote(BinOp::OR, expr1, expr2)
     }
 
     pub fn int_xor<E1, E2>(expr1: E1, expr2: E2) -> Self
-    where E1: Into<Expr<'space>>,
-          E2: Into<Expr<'space>> {
+    where
+        E1: Into<Expr<'space>>,
+        E2: Into<Expr<'space>>,
+    {
         Self::binary_op_promote(BinOp::XOR, expr1, expr2)
     }
 }
@@ -801,6 +1178,30 @@ pub enum Stmt<'space> {
     Intrinsic(&'space str, SmallVec<[Box<Expr<'space>>; 4]>), // no output intrinsic
 }
 
+impl<'space> fmt::Display for Stmt<'space> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Assign(dest, src) => write!(f, "{} ← {}", dest, src),
+            Self::Store(dest, src, size, spc) => write!(f, "{}[{}]:{} ← {}", spc.name(), dest, size, src),
+            Self::Branch(target) => write!(f, "goto {}", target),
+            Self::CBranch(cond, target) => write!(f, "goto {} if {}", target, cond),
+            Self::Call(target) => write!(f, "call {}", target),
+            Self::Return(target) => write!(f, "return {}", target),
+            Self::Skip => write!(f, "skip"),
+            Self::Intrinsic(name, args) => {
+                write!(f, "{}(", name)?;
+                if !args.is_empty() {
+                    write!(f, "{}", args[0])?;
+                    for arg in &args[1..] {
+                        write!(f, ", {}", arg)?;
+                    }
+                }
+                write!(f, ")")
+            }
+        }
+    }
+}
+
 impl<'space> Stmt<'space> {
     pub fn from_parts(
         manager: &'space SpaceManager,
@@ -810,12 +1211,12 @@ impl<'space> Stmt<'space> {
         position: usize,
         opcode: Opcode,
         inputs: SmallVec<[VarnodeData<'space>; 16]>,
-        output: Option<VarnodeData<'space>>
+        output: Option<VarnodeData<'space>>,
     ) -> Self {
         let mut inputs = inputs.into_iter();
         let spaces = manager.spaces();
         match opcode {
-            Opcode::Copy => { Self::assign(output.unwrap(), inputs.next().unwrap()) },
+            Opcode::Copy => Self::assign(output.unwrap(), inputs.next().unwrap()),
             Opcode::Load => {
                 let space = &spaces[inputs.next().unwrap().offset() as usize];
                 let destination = output.unwrap();
@@ -834,7 +1235,7 @@ impl<'space> Stmt<'space> {
                 };
 
                 Self::assign(destination, Expr::load(src, size, space))
-            },
+            }
             Opcode::Store => {
                 let space = &spaces[inputs.next().unwrap().offset() as usize];
                 let destination = inputs.next().unwrap();
@@ -853,13 +1254,13 @@ impl<'space> Stmt<'space> {
                 };
 
                 Self::store(dest, source, size, space)
-            },
+            }
             Opcode::Branch => {
                 let mut target = Location::from(inputs.next().unwrap());
                 target.absolute_from(address.to_owned(), position);
 
                 Self::branch(target)
-            },
+            }
             Opcode::CBranch => {
                 let mut target = Location::from(inputs.next().unwrap());
                 target.absolute_from(address.to_owned(), position);
@@ -867,25 +1268,25 @@ impl<'space> Stmt<'space> {
                 let condition = inputs.next().unwrap();
 
                 Self::branch_conditional(condition, target)
-            },
+            }
             Opcode::IBranch => {
                 let target = inputs.next().unwrap();
                 let space = address.space();
 
                 Self::branch_indirect(target, space)
-            },
+            }
             Opcode::Call => {
                 let mut target = Location::from(inputs.next().unwrap());
                 target.absolute_from(address.to_owned(), position);
 
                 Self::call(target)
-            },
+            }
             Opcode::ICall => {
                 let target = inputs.next().unwrap();
                 let space = address.space();
 
                 Self::call_indirect(target, space)
-            },
+            }
             Opcode::CallOther => {
                 let name = user_ops[inputs.next().unwrap().offset() as usize];
                 if let Some(output) = output {
@@ -895,13 +1296,13 @@ impl<'space> Stmt<'space> {
                 } else {
                     Self::intrinsic(name, inputs)
                 }
-            },
+            }
             Opcode::Return => {
                 let target = inputs.next().unwrap();
                 let space = address.space();
 
                 Self::return_(target, space)
-            },
+            }
             Opcode::Subpiece => {
                 let source = Expr::from(inputs.next().unwrap());
                 let src_size = source.bits();
@@ -923,7 +1324,7 @@ impl<'space> Stmt<'space> {
                 };
 
                 Self::assign(output, trun)
-            },
+            }
             Opcode::PopCount => {
                 let input = inputs.next().unwrap();
                 let output = Var::from(output.unwrap());
@@ -932,312 +1333,312 @@ impl<'space> Stmt<'space> {
                 let popcount = Expr::unary_op(UnOp::POPCOUNT, input);
 
                 Self::assign(output, Expr::cast_unsigned(popcount, size))
-            },
+            }
             Opcode::BoolNot => {
                 let input = inputs.next().unwrap();
                 let output = output.unwrap();
 
                 Self::assign(output, Expr::bool_not(input))
-            },
+            }
             Opcode::BoolAnd => {
                 let input1 = inputs.next().unwrap();
                 let input2 = inputs.next().unwrap();
                 let output = output.unwrap();
 
                 Self::assign(output, Expr::bool_and(input1, input2))
-            },
+            }
             Opcode::BoolOr => {
                 let input1 = inputs.next().unwrap();
                 let input2 = inputs.next().unwrap();
                 let output = output.unwrap();
 
                 Self::assign(output, Expr::bool_or(input1, input2))
-            },
+            }
             Opcode::BoolXor => {
                 let input1 = inputs.next().unwrap();
                 let input2 = inputs.next().unwrap();
                 let output = output.unwrap();
 
                 Self::assign(output, Expr::bool_xor(input1, input2))
-            },
+            }
             Opcode::IntNeg => {
                 let input = inputs.next().unwrap();
                 let output = output.unwrap();
 
                 Self::assign(output, Expr::int_neg(input))
-            },
+            }
             Opcode::IntNot => {
                 let input = inputs.next().unwrap();
                 let output = output.unwrap();
 
                 Self::assign(output, Expr::int_not(input))
-            },
+            }
             Opcode::IntSExt => {
                 let input = inputs.next().unwrap();
                 let size = inputs.next().unwrap().offset() as usize;
                 let output = output.unwrap();
 
                 Self::assign(output, Expr::cast_signed(input, size))
-            },
+            }
             Opcode::IntZExt => {
                 let input = inputs.next().unwrap();
                 let size = inputs.next().unwrap().offset() as usize;
                 let output = output.unwrap();
 
                 Self::assign(output, Expr::cast_unsigned(input, size))
-            },
+            }
             Opcode::IntEq => {
                 let input1 = inputs.next().unwrap();
                 let input2 = inputs.next().unwrap();
                 let output = output.unwrap();
 
                 Self::assign(output, Expr::int_eq(input1, input2))
-            },
+            }
             Opcode::IntNotEq => {
                 let input1 = inputs.next().unwrap();
                 let input2 = inputs.next().unwrap();
                 let output = output.unwrap();
 
                 Self::assign(output, Expr::int_neq(input1, input2))
-            },
+            }
             Opcode::IntLess => {
                 let input1 = inputs.next().unwrap();
                 let input2 = inputs.next().unwrap();
                 let output = output.unwrap();
 
                 Self::assign(output, Expr::int_lt(input1, input2))
-            },
+            }
             Opcode::IntLessEq => {
                 let input1 = inputs.next().unwrap();
                 let input2 = inputs.next().unwrap();
                 let output = output.unwrap();
 
                 Self::assign(output, Expr::int_le(input1, input2))
-            },
+            }
             Opcode::IntSLess => {
                 let input1 = inputs.next().unwrap();
                 let input2 = inputs.next().unwrap();
                 let output = output.unwrap();
 
                 Self::assign(output, Expr::int_slt(input1, input2))
-            },
+            }
             Opcode::IntSLessEq => {
                 let input1 = inputs.next().unwrap();
                 let input2 = inputs.next().unwrap();
                 let output = output.unwrap();
 
                 Self::assign(output, Expr::int_sle(input1, input2))
-            },
+            }
             Opcode::IntCarry => {
                 let input1 = inputs.next().unwrap();
                 let input2 = inputs.next().unwrap();
                 let output = output.unwrap();
 
                 Self::assign(output, Expr::int_carry(input1, input2))
-            },
+            }
             Opcode::IntSCarry => {
                 let input1 = inputs.next().unwrap();
                 let input2 = inputs.next().unwrap();
                 let output = output.unwrap();
 
                 Self::assign(output, Expr::int_scarry(input1, input2))
-            },
+            }
             Opcode::IntSBorrow => {
                 let input1 = inputs.next().unwrap();
                 let input2 = inputs.next().unwrap();
                 let output = output.unwrap();
 
                 Self::assign(output, Expr::int_sborrow(input1, input2))
-            },
+            }
             Opcode::IntAdd => {
                 let input1 = inputs.next().unwrap();
                 let input2 = inputs.next().unwrap();
                 let output = output.unwrap();
 
                 Self::assign(output, Expr::int_add(input1, input2))
-            },
+            }
             Opcode::IntSub => {
                 let input1 = inputs.next().unwrap();
                 let input2 = inputs.next().unwrap();
                 let output = output.unwrap();
 
                 Self::assign(output, Expr::int_sub(input1, input2))
-            },
+            }
             Opcode::IntDiv => {
                 let input1 = inputs.next().unwrap();
                 let input2 = inputs.next().unwrap();
                 let output = output.unwrap();
 
                 Self::assign(output, Expr::int_div(input1, input2))
-            },
+            }
             Opcode::IntSDiv => {
                 let input1 = inputs.next().unwrap();
                 let input2 = inputs.next().unwrap();
                 let output = output.unwrap();
 
                 Self::assign(output, Expr::int_sdiv(input1, input2))
-            },
+            }
             Opcode::IntMul => {
                 let input1 = inputs.next().unwrap();
                 let input2 = inputs.next().unwrap();
                 let output = output.unwrap();
 
                 Self::assign(output, Expr::int_mul(input1, input2))
-            },
+            }
             Opcode::IntRem => {
                 let input1 = inputs.next().unwrap();
                 let input2 = inputs.next().unwrap();
                 let output = output.unwrap();
 
                 Self::assign(output, Expr::int_rem(input1, input2))
-            },
+            }
             Opcode::IntSRem => {
                 let input1 = inputs.next().unwrap();
                 let input2 = inputs.next().unwrap();
                 let output = output.unwrap();
 
                 Self::assign(output, Expr::int_srem(input1, input2))
-            },
+            }
             Opcode::IntLShift => {
                 let input1 = inputs.next().unwrap();
                 let input2 = inputs.next().unwrap();
                 let output = output.unwrap();
 
                 Self::assign(output, Expr::int_shl(input1, input2))
-            },
+            }
             Opcode::IntRShift => {
                 let input1 = inputs.next().unwrap();
                 let input2 = inputs.next().unwrap();
                 let output = output.unwrap();
 
                 Self::assign(output, Expr::int_shr(input1, input2))
-            },
+            }
             Opcode::IntSRShift => {
                 let input1 = inputs.next().unwrap();
                 let input2 = inputs.next().unwrap();
                 let output = output.unwrap();
 
                 Self::assign(output, Expr::int_sar(input1, input2))
-            },
+            }
             Opcode::IntAnd => {
                 let input1 = inputs.next().unwrap();
                 let input2 = inputs.next().unwrap();
                 let output = output.unwrap();
 
                 Self::assign(output, Expr::int_and(input1, input2))
-            },
+            }
             Opcode::IntOr => {
                 let input1 = inputs.next().unwrap();
                 let input2 = inputs.next().unwrap();
                 let output = output.unwrap();
 
                 Self::assign(output, Expr::int_or(input1, input2))
-            },
+            }
             Opcode::IntXor => {
                 let input1 = inputs.next().unwrap();
                 let input2 = inputs.next().unwrap();
                 let output = output.unwrap();
 
                 Self::assign(output, Expr::int_xor(input1, input2))
-            },
+            }
             Opcode::FloatIsNaN => {
                 let input = inputs.next().unwrap();
                 let output = output.unwrap();
 
                 Self::assign(output, Expr::float_nan(input, float_formats))
-            },
+            }
             Opcode::FloatAbs => {
                 let input = inputs.next().unwrap();
                 let output = output.unwrap();
 
                 Self::assign(output, Expr::float_abs(input, float_formats))
-            },
+            }
             Opcode::FloatNeg => {
                 let input = inputs.next().unwrap();
                 let output = output.unwrap();
 
                 Self::assign(output, Expr::float_neg(input, float_formats))
-            },
+            }
             Opcode::FloatSqrt => {
                 let input = inputs.next().unwrap();
                 let output = output.unwrap();
 
                 Self::assign(output, Expr::float_sqrt(input, float_formats))
-            },
+            }
             Opcode::FloatFloor => {
                 let input = inputs.next().unwrap();
                 let output = output.unwrap();
 
                 Self::assign(output, Expr::float_floor(input, float_formats))
-            },
+            }
             Opcode::FloatCeiling => {
                 let input = inputs.next().unwrap();
                 let output = output.unwrap();
 
                 Self::assign(output, Expr::float_ceiling(input, float_formats))
-            },
+            }
             Opcode::FloatRound => {
                 let input = inputs.next().unwrap();
                 let output = output.unwrap();
 
                 Self::assign(output, Expr::float_round(input, float_formats))
-            },
+            }
             Opcode::FloatEq => {
                 let input1 = inputs.next().unwrap();
                 let input2 = inputs.next().unwrap();
                 let output = output.unwrap();
 
                 Self::assign(output, Expr::float_eq(input1, input2, float_formats))
-            },
+            }
             Opcode::FloatNotEq => {
                 let input1 = inputs.next().unwrap();
                 let input2 = inputs.next().unwrap();
                 let output = output.unwrap();
 
                 Self::assign(output, Expr::float_neq(input1, input2, float_formats))
-            },
+            }
             Opcode::FloatLess => {
                 let input1 = inputs.next().unwrap();
                 let input2 = inputs.next().unwrap();
                 let output = output.unwrap();
 
                 Self::assign(output, Expr::float_lt(input1, input2, float_formats))
-            },
+            }
             Opcode::FloatLessEq => {
                 let input1 = inputs.next().unwrap();
                 let input2 = inputs.next().unwrap();
                 let output = output.unwrap();
 
                 Self::assign(output, Expr::float_le(input1, input2, float_formats))
-            },
+            }
             Opcode::FloatAdd => {
                 let input1 = inputs.next().unwrap();
                 let input2 = inputs.next().unwrap();
                 let output = output.unwrap();
 
                 Self::assign(output, Expr::float_add(input1, input2, float_formats))
-            },
+            }
             Opcode::FloatSub => {
                 let input1 = inputs.next().unwrap();
                 let input2 = inputs.next().unwrap();
                 let output = output.unwrap();
 
                 Self::assign(output, Expr::float_sub(input1, input2, float_formats))
-            },
+            }
             Opcode::FloatDiv => {
                 let input1 = inputs.next().unwrap();
                 let input2 = inputs.next().unwrap();
                 let output = output.unwrap();
 
                 Self::assign(output, Expr::float_div(input1, input2, float_formats))
-            },
+            }
             Opcode::FloatMul => {
                 let input1 = inputs.next().unwrap();
                 let input2 = inputs.next().unwrap();
                 let output = output.unwrap();
 
                 Self::assign(output, Expr::float_mul(input1, input2, float_formats))
-            },
+            }
             Opcode::FloatOfFloat => {
                 let input = Expr::from(inputs.next().unwrap());
                 let input_size = input.bits();
@@ -1250,9 +1651,9 @@ impl<'space> Stmt<'space> {
 
                 Self::assign(
                     output,
-                    Expr::cast_float(Expr::cast_float(input, input_format), output_format)
+                    Expr::cast_float(Expr::cast_float(input, input_format), output_format),
                 )
-            },
+            }
             Opcode::FloatOfInt => {
                 let input = Expr::from(inputs.next().unwrap());
                 let input_size = input.bits();
@@ -1263,9 +1664,9 @@ impl<'space> Stmt<'space> {
                 let format = float_formats[&output_size];
                 Self::assign(
                     output,
-                    Expr::cast_float(Expr::cast_signed(input, input_size), format)
+                    Expr::cast_float(Expr::cast_signed(input, input_size), format),
                 )
-            },
+            }
             Opcode::FloatTruncate => {
                 let input = Expr::from(inputs.next().unwrap());
                 let input_size = input.bits();
@@ -1276,74 +1677,93 @@ impl<'space> Stmt<'space> {
                 let format = float_formats[&input_size];
                 Self::assign(
                     output,
-                    Expr::cast_signed(Expr::cast_float(input, format), output_size)
+                    Expr::cast_signed(Expr::cast_float(input, format), output_size),
                 )
-            },
-            Opcode::Build | Opcode::CrossBuild | Opcode::CPoolRef | Opcode::Piece | Opcode::Extract | Opcode::DelaySlot | Opcode::New | Opcode::Insert | Opcode::Cast | Opcode::Label | Opcode::SegmentOp => {
+            }
+            Opcode::Build
+            | Opcode::CrossBuild
+            | Opcode::CPoolRef
+            | Opcode::Piece
+            | Opcode::Extract
+            | Opcode::DelaySlot
+            | Opcode::New
+            | Opcode::Insert
+            | Opcode::Cast
+            | Opcode::Label
+            | Opcode::SegmentOp => {
                 panic!("unimplemented due to spec.")
             }
         }
     }
 
     pub fn assign<D, S>(destination: D, source: S) -> Self
-    where D: Into<Var<'space>>,
-          S: Into<Expr<'space>> {
-        Self::Assign(destination.into(), source.into())
+    where
+        D: Into<Var<'space>>,
+        S: Into<Expr<'space>>,
+    {
+        let dest = destination.into();
+        let bits = dest.bits();
+        Self::Assign(dest, Expr::cast_unsigned(source, bits))
     }
 
     pub fn store<D, S>(destination: D, source: S, size: usize, space: &'space AddressSpace) -> Self
-    where D: Into<Expr<'space>>,
-          S: Into<Expr<'space>> {
+    where
+        D: Into<Expr<'space>>,
+        S: Into<Expr<'space>>,
+    {
         Self::Store(destination.into(), source.into(), size, space)
     }
 
     pub fn branch<T>(target: T) -> Self
-    where T: Into<BranchTarget<'space>> {
+    where
+        T: Into<BranchTarget<'space>>,
+    {
         Self::Branch(target.into())
     }
 
     pub fn branch_conditional<C, T>(condition: C, target: T) -> Self
-    where C: Into<Expr<'space>>,
-          T: Into<BranchTarget<'space>> {
-        Self::CBranch(
-            Expr::cast_bool(condition),
-            target.into()
-        )
+    where
+        C: Into<Expr<'space>>,
+        T: Into<BranchTarget<'space>>,
+    {
+        Self::CBranch(Expr::cast_bool(condition), target.into())
     }
 
     pub fn branch_indirect<T>(target: T, space: &'space AddressSpace) -> Self
-    where T: Into<Expr<'space>> {
-        Self::Branch(
-            BranchTarget::computed(
-                Expr::load(target, space.address_size(), space),
-                space
-            )
-        )
+    where
+        T: Into<Expr<'space>>,
+    {
+        Self::Branch(BranchTarget::computed(
+            Expr::load(target, space.address_size(), space),
+            space,
+        ))
     }
 
     pub fn call<T>(target: T) -> Self
-    where T: Into<BranchTarget<'space>> {
+    where
+        T: Into<BranchTarget<'space>>,
+    {
         Self::Call(target.into())
     }
 
     pub fn call_indirect<T>(target: T, space: &'space AddressSpace) -> Self
-    where T: Into<Expr<'space>> {
-        Self::Call(
-            BranchTarget::computed(
-                Expr::load(target, space.address_size(), space),
-                space
-            )
-        )
+    where
+        T: Into<Expr<'space>>,
+    {
+        Self::Call(BranchTarget::computed(
+            Expr::load(target, space.address_size(), space),
+            space,
+        ))
     }
 
     pub fn return_<T>(target: T, space: &'space AddressSpace) -> Self
-    where T: Into<Expr<'space>> {
-        Self::Return(
-            BranchTarget::computed(
-                Expr::load(target, space.address_size(), space),
-                space
-            )
-        )
+    where
+        T: Into<Expr<'space>>,
+    {
+        Self::Return(BranchTarget::computed(
+            Expr::load(target, space.address_size(), space),
+            space,
+        ))
     }
 
     pub fn skip() -> Self {
@@ -1351,9 +1771,11 @@ impl<'space> Stmt<'space> {
     }
 
     pub fn intrinsic<N, I, E>(name: N, arguments: I) -> Self
-    where N: Into<&'space str>,
-          I: Iterator<Item=E>,
-          E: Into<Expr<'space>> {
+    where
+        N: Into<&'space str>,
+        I: Iterator<Item = E>,
+        E: Into<Expr<'space>>,
+    {
         Self::Intrinsic(name.into(), arguments.map(|e| Box::new(e.into())).collect())
     }
 }

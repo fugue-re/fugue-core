@@ -33,6 +33,33 @@ pub struct ECode<'space> {
     pub length: usize,
 }
 
+impl<'space> ECode<'space> {
+    pub fn nop(address: Address<'space>, length: usize) -> Self {
+        Self {
+            address,
+            operations: smallvec![ecode::Stmt::skip()],
+            delay_slots: 0,
+            length,
+        }
+    }
+
+    pub fn address(&self) -> &Address<'space> {
+        &self.address
+    }
+
+    pub fn operations(&self) -> &[ecode::Stmt<'space>] {
+        self.operations.as_ref()
+    }
+
+    pub fn delay_slots(&self) -> usize {
+        self.delay_slots
+    }
+
+    pub fn length(&self) -> usize {
+        self.length
+    }
+}
+
 pub struct PCodeFormatter<'a, 'b> {
     pcode: &'b PCode<'a>,
     translator: &'a Translator,

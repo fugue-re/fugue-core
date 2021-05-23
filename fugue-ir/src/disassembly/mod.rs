@@ -14,9 +14,9 @@ pub mod partmap;
 pub mod pattern;
 pub use pattern::PatternExpression;
 
-mod ecode;
+pub mod ecode;
 pub mod pcode;
-pub use pcode::{PCode, PCodeBuilder};
+pub use pcode::{ECode, PCode, PCodeBuilder};
 
 pub mod symbol;
 pub use symbol::{Symbol, SymbolTable};
