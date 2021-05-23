@@ -4,8 +4,7 @@ use std::fmt;
 use crate::float_format::FloatFormat;
 use crate::space::AddressSpace;
 use crate::space_manager::SpaceManager;
-use crate::VarnodeData;
-use crate::{Address, Opcode};
+use crate::{Address, Opcode, Translator, VarnodeData};
 
 use fnv::FnvHashMap as Map;
 use fugue_bv::BitVec;
@@ -46,7 +45,31 @@ impl<'space> Var<'space> {
 
 impl<'space> fmt::Display for Var<'space> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}[{:#x}]:{}", self.space().name(), self.offset(), self.bits())
+        write!(f, "{}", self.display(None))
+    }
+}
+
+impl<'var, 'space> fmt::Display for VarFormatter<'var, 'space> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.translator.is_some() && self.var.space().is_register() {
+            write!(f, "{}:{}", self.translator.unwrap().registers()[&(self.var.offset(), self.var.bits() / 8)], self.var.bits())
+        } else {
+            write!(f, "{}[{:#x}]:{}", self.var.space().name(), self.var.offset(), self.var.bits())
+        }
+    }
+}
+
+pub struct VarFormatter<'var, 'space> {
+    var: &'var Var<'space>,
+    translator: Option<&'space Translator>,
+}
+
+impl<'space> Var<'space> {
+    fn display<'var>(&'var self, translator: Option<&'space Translator>) -> VarFormatter<'var, 'space> {
+        VarFormatter {
+            var: self,
+            translator,
+        }
     }
 }
 
@@ -135,9 +158,29 @@ pub enum BranchTarget<'space> {
 
 impl<'space> fmt::Display for BranchTarget<'space> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Location(loc) => write!(f, "{}", loc),
-            Self::Computed(expr, spc) => write!(f, "{}[{}]", spc.name(), expr),
+        write!(f, "{}", self.display(None))
+    }
+}
+
+pub struct BranchTargetFormatter<'target, 'space> {
+    target: &'target BranchTarget<'space>,
+    translator: Option<&'space Translator>,
+}
+
+impl<'target, 'space> fmt::Display for BranchTargetFormatter<'target, 'space> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.target {
+            BranchTarget::Location(loc) => write!(f, "{}", loc),
+            BranchTarget::Computed(expr, spc) => write!(f, "{}[{}]", spc.name(), expr.display(self.translator.clone())),
+        }
+    }
+}
+
+impl<'space> BranchTarget<'space> {
+    fn display<'target>(&'target self, translator: Option<&'space Translator>) -> BranchTargetFormatter<'target, 'space> {
+        BranchTargetFormatter {
+            target: self,
+            translator,
         }
     }
 }
@@ -213,7 +256,7 @@ pub enum UnOp {
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum UnRel {
-    NAN,
+    NAN
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -268,10 +311,10 @@ pub enum Expr<'space> {
 }
 
 impl<'space> Expr<'space> {
-    fn fmt_l1(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt_l1(&self, f: &mut fmt::Formatter<'_>, translator: Option<&'space Translator>) -> fmt::Result {
         match self {
             Expr::Val(v) => write!(f, "{}", v),
-            Expr::Var(v) => write!(f, "{}", v),
+            Expr::Var(v) => write!(f, "{}", v.display(translator.clone())),
 
             Expr::Intrinsic(name, args, _) => {
                 write!(f, "{}(", name)?;
@@ -284,124 +327,144 @@ impl<'space> Expr<'space> {
                 write!(f, ")")
             }
 
-            Expr::Cast(expr, Cast::High(bits)) => write!(f, "extract-msb({}, bits={})", expr, bits),
-            Expr::Cast(expr, Cast::Low(bits)) => write!(f, "extract-lsb({}, bits={})", expr, bits),
+            Expr::Cast(expr, Cast::High(bits)) => write!(f, "extract-msb({}, bits={})", expr.display(translator.clone()), bits),
+            Expr::Cast(expr, Cast::Low(bits)) => write!(f, "extract-lsb({}, bits={})", expr.display(translator.clone()), bits),
 
-            Expr::Cast(expr, Cast::Bool) => write!(f, "{} as bool", expr),
-            Expr::Cast(expr, Cast::Signed(bits)) => write!(f, "{} as i{}", expr, bits),
-            Expr::Cast(expr, Cast::Unsigned(bits)) => write!(f, "{} as u{}", expr, bits),
-            Expr::Cast(expr, Cast::Float(format)) => write!(f, "{} as f{}", expr, format.bits()),
+            Expr::Cast(expr, Cast::Bool) => { expr.fmt_l1(f, translator)?; write!(f, " as bool") },
+            Expr::Cast(expr, Cast::Signed(bits)) => { expr.fmt_l1(f, translator)?;  write!(f, " as i{}", bits) },
+            Expr::Cast(expr, Cast::Unsigned(bits)) => { expr.fmt_l1(f, translator)?; write!(f, " as u{}", bits) },
+            Expr::Cast(expr, Cast::Float(format)) => { expr.fmt_l1(f, translator)?; write!(f, " as f{}", format.bits()) },
 
-            Expr::Load(expr, bits, space) => write!(f, "{}[{}]:{}", space.name(), expr, bits),
+            Expr::Load(expr, bits, space) => write!(f, "{}[{}]:{}", space.name(), expr.display(translator.clone()), bits),
 
-            Expr::Extract(expr, lsb, msb) => write!(f, "extract({}, from={}, to={})", expr, lsb, msb),
-            Expr::Concat(e1, e2) => write!(f, "concat({}, {})", e1, e2),
+            Expr::Extract(expr, lsb, msb) => write!(f, "extract({}, from={}, to={})", expr.display(translator.clone()), lsb, msb),
+            Expr::Concat(e1, e2) => write!(f, "concat({}, {})", e1.display(translator.clone()), e2.display(translator.clone())),
 
-            Expr::UnOp(UnOp::ABS, expr) => write!(f, "abs({})", expr),
-            Expr::UnOp(UnOp::SQRT, expr) => write!(f, "sqrt({})", expr),
-            Expr::UnOp(UnOp::ROUND, expr) => write!(f, "round({})", expr),
-            Expr::UnOp(UnOp::CEILING, expr) => write!(f, "ceiling({})", expr),
-            Expr::UnOp(UnOp::FLOOR, expr) => write!(f, "floor({})", expr),
-            Expr::UnOp(UnOp::POPCOUNT, expr) => write!(f, "popcount({})", expr),
+            Expr::UnOp(UnOp::ABS, expr) => write!(f, "abs({})", expr.display(translator.clone())),
+            Expr::UnOp(UnOp::SQRT, expr) => write!(f, "sqrt({})", expr.display(translator.clone())),
+            Expr::UnOp(UnOp::ROUND, expr) => write!(f, "round({})", expr.display(translator.clone())),
+            Expr::UnOp(UnOp::CEILING, expr) => write!(f, "ceiling({})", expr.display(translator.clone())),
+            Expr::UnOp(UnOp::FLOOR, expr) => write!(f, "floor({})", expr.display(translator.clone())),
+            Expr::UnOp(UnOp::POPCOUNT, expr) => write!(f, "popcount({})", expr.display(translator.clone())),
 
-            Expr::UnRel(UnRel::NAN, expr) => write!(f, "is-nan({})", expr),
+            Expr::UnRel(UnRel::NAN, expr) => write!(f, "is-nan({})", expr.display(translator.clone())),
 
-            Expr::BinRel(BinRel::CARRY, e1, e2) => write!(f, "carry({}, {})", e1, e2),
-            Expr::BinRel(BinRel::SCARRY, e1, e2) => write!(f, "scarry({}, {})", e1, e2),
-            Expr::BinRel(BinRel::SBORROW, e1, e2) => write!(f, "sborrow({}, {})", e1, e2),
+            Expr::BinRel(BinRel::CARRY, e1, e2) => write!(f, "carry({}, {})", e1.display(translator.clone()), e2.display(translator.clone())),
+            Expr::BinRel(BinRel::SCARRY, e1, e2) => write!(f, "scarry({}, {})", e1.display(translator.clone()), e2.display(translator.clone())),
+            Expr::BinRel(BinRel::SBORROW, e1, e2) => write!(f, "sborrow({}, {})", e1.display(translator.clone()), e2.display(translator.clone())),
 
-            expr => write!(f, "({})", expr),
+            expr => write!(f, "({})", expr.display(translator)),
         }
     }
 
-    fn fmt_l2(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt_l2(&self, f: &mut fmt::Formatter<'_>, translator: Option<&'space Translator>) -> fmt::Result {
         match self {
-            Expr::UnOp(UnOp::NEG, expr) => { write!(f, "-")?; expr.fmt_l1(f) },
-            Expr::UnOp(UnOp::NOT, expr) => { write!(f, "!")?; expr.fmt_l1(f) },
-            expr => expr.fmt_l1(f)
+            Expr::UnOp(UnOp::NEG, expr) => { write!(f, "-")?; expr.fmt_l1(f, translator) },
+            Expr::UnOp(UnOp::NOT, expr) => { write!(f, "!")?; expr.fmt_l1(f, translator) },
+            expr => expr.fmt_l1(f, translator)
         }
     }
 
-    fn fmt_l3(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt_l3(&self, f: &mut fmt::Formatter<'_>, translator: Option<&'space Translator>) -> fmt::Result {
         match self {
-            Expr::BinOp(BinOp::MUL, e1, e2) => { e1.fmt_l3(f)?; write!(f, " * ")?; e2.fmt_l2(f) }
-            Expr::BinOp(BinOp::DIV, e1, e2) => { e1.fmt_l3(f)?; write!(f, " / ")?; e2.fmt_l2(f) }
-            Expr::BinOp(BinOp::SDIV, e1, e2) => { e1.fmt_l3(f)?; write!(f, " s/ ")?; e2.fmt_l2(f) }
-            Expr::BinOp(BinOp::REM, e1, e2) => { e1.fmt_l3(f)?; write!(f, " % ")?; e2.fmt_l2(f) }
-            Expr::BinOp(BinOp::SREM, e1, e2) => { e1.fmt_l3(f)?; write!(f, " s% ")?; e2.fmt_l2(f) }
-            expr => expr.fmt_l2(f)
+            Expr::BinOp(BinOp::MUL, e1, e2) => { e1.fmt_l3(f, translator.clone())?; write!(f, " * ")?; e2.fmt_l2(f, translator) }
+            Expr::BinOp(BinOp::DIV, e1, e2) => { e1.fmt_l3(f, translator.clone())?; write!(f, " / ")?; e2.fmt_l2(f, translator) }
+            Expr::BinOp(BinOp::SDIV, e1, e2) => { e1.fmt_l3(f, translator.clone())?; write!(f, " s/ ")?; e2.fmt_l2(f, translator) }
+            Expr::BinOp(BinOp::REM, e1, e2) => { e1.fmt_l3(f, translator.clone())?; write!(f, " % ")?; e2.fmt_l2(f, translator) }
+            Expr::BinOp(BinOp::SREM, e1, e2) => { e1.fmt_l3(f, translator.clone())?; write!(f, " s% ")?; e2.fmt_l2(f, translator) }
+            expr => expr.fmt_l2(f, translator)
         }
     }
 
-    fn fmt_l4(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt_l4(&self, f: &mut fmt::Formatter<'_>, translator: Option<&'space Translator>) -> fmt::Result {
         match self {
-            Expr::BinOp(BinOp::ADD, e1, e2) => { e1.fmt_l4(f)?; write!(f, " + ")?; e2.fmt_l3(f) },
-            Expr::BinOp(BinOp::SUB, e1, e2) => { e1.fmt_l4(f)?; write!(f, " - ")?; e2.fmt_l3(f) },
-            expr => expr.fmt_l3(f)
+            Expr::BinOp(BinOp::ADD, e1, e2) => { e1.fmt_l4(f, translator.clone())?; write!(f, " + ")?; e2.fmt_l3(f, translator) },
+            Expr::BinOp(BinOp::SUB, e1, e2) => { e1.fmt_l4(f, translator.clone())?; write!(f, " - ")?; e2.fmt_l3(f, translator) },
+            expr => expr.fmt_l3(f, translator)
         }
     }
 
-    fn fmt_l5(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt_l5(&self, f: &mut fmt::Formatter<'_>, translator: Option<&'space Translator>) -> fmt::Result {
         match self {
-            Expr::BinOp(BinOp::SHL, e1, e2) => { e1.fmt_l5(f)?; write!(f, " << ")?; e2.fmt_l4(f) },
-            Expr::BinOp(BinOp::SHR, e1, e2) => { e1.fmt_l5(f)?; write!(f, " >> ")?; e2.fmt_l4(f) },
-            Expr::BinOp(BinOp::SAR, e1, e2) => { e1.fmt_l5(f)?; write!(f, " s>> ")?; e2.fmt_l4(f) },
-            expr => expr.fmt_l4(f)
+            Expr::BinOp(BinOp::SHL, e1, e2) => { e1.fmt_l5(f, translator.clone())?; write!(f, " << ")?; e2.fmt_l4(f, translator) },
+            Expr::BinOp(BinOp::SHR, e1, e2) => { e1.fmt_l5(f, translator.clone())?; write!(f, " >> ")?; e2.fmt_l4(f, translator) },
+            Expr::BinOp(BinOp::SAR, e1, e2) => { e1.fmt_l5(f, translator.clone())?; write!(f, " s>> ")?; e2.fmt_l4(f, translator) },
+            expr => expr.fmt_l4(f, translator)
         }
     }
 
-    fn fmt_l6(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt_l6(&self, f: &mut fmt::Formatter<'_>, translator: Option<&'space Translator>) -> fmt::Result {
         match self {
-            Expr::BinRel(BinRel::LT, e1, e2) => { e1.fmt_l6(f)?; write!(f, " < ")?; e2.fmt_l5(f) },
-            Expr::BinRel(BinRel::LE, e1, e2) => { e1.fmt_l6(f)?; write!(f, " <= ")?; e2.fmt_l5(f) },
-            Expr::BinRel(BinRel::SLT, e1, e2) => { e1.fmt_l6(f)?; write!(f, " s< ")?; e2.fmt_l5(f) },
-            Expr::BinRel(BinRel::SLE, e1, e2) => { e1.fmt_l6(f)?; write!(f, " s<= ")?; e2.fmt_l5(f) },
-            expr => expr.fmt_l5(f)
+            Expr::BinRel(BinRel::LT, e1, e2) => { e1.fmt_l6(f, translator.clone())?; write!(f, " < ")?; e2.fmt_l5(f, translator) },
+            Expr::BinRel(BinRel::LE, e1, e2) => { e1.fmt_l6(f, translator.clone())?; write!(f, " <= ")?; e2.fmt_l5(f, translator) },
+            Expr::BinRel(BinRel::SLT, e1, e2) => { e1.fmt_l6(f, translator.clone())?; write!(f, " s< ")?; e2.fmt_l5(f, translator) },
+            Expr::BinRel(BinRel::SLE, e1, e2) => { e1.fmt_l6(f, translator.clone())?; write!(f, " s<= ")?; e2.fmt_l5(f, translator) },
+            expr => expr.fmt_l5(f, translator)
         }
     }
 
-    fn fmt_l7(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt_l7(&self, f: &mut fmt::Formatter<'_>, translator: Option<&'space Translator>) -> fmt::Result {
         match self {
-            Expr::BinRel(BinRel::EQ, e1, e2) => { e1.fmt_l7(f)?; write!(f, " == ")?; e2.fmt_l6(f) },
-            Expr::BinRel(BinRel::NEQ, e1, e2) => { e1.fmt_l7(f)?; write!(f, " != ")?; e2.fmt_l6(f) },
-            expr => expr.fmt_l6(f)
+            Expr::BinRel(BinRel::EQ, e1, e2) => { e1.fmt_l7(f, translator.clone())?; write!(f, " == ")?; e2.fmt_l6(f, translator) },
+            Expr::BinRel(BinRel::NEQ, e1, e2) => { e1.fmt_l7(f, translator.clone())?; write!(f, " != ")?; e2.fmt_l6(f, translator) },
+            expr => expr.fmt_l6(f, translator)
         }
     }
 
-    fn fmt_l8(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt_l8(&self, f: &mut fmt::Formatter<'_>, translator: Option<&'space Translator>) -> fmt::Result {
         if let Expr::BinOp(BinOp::AND, e1, e2) = self {
-            e1.fmt_l8(f)?;
+            e1.fmt_l8(f, translator.clone())?;
             write!(f, " & ")?;
-            e2.fmt_l7(f)
+            e2.fmt_l7(f, translator)
         } else {
-            self.fmt_l7(f)
+            self.fmt_l7(f, translator)
         }
     }
 
-    fn fmt_l9(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt_l9(&self, f: &mut fmt::Formatter<'_>, translator: Option<&'space Translator>) -> fmt::Result {
         if let Expr::BinOp(BinOp::XOR, e1, e2) = self {
-            e1.fmt_l9(f)?;
+            e1.fmt_l9(f, translator.clone())?;
             write!(f, " ^ ")?;
-            e2.fmt_l8(f)
+            e2.fmt_l8(f, translator)
         } else {
-            self.fmt_l8(f)
+            self.fmt_l8(f, translator)
         }
     }
 
-    fn fmt_l10(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt_l10(&self, f: &mut fmt::Formatter<'_>, translator: Option<&'space Translator>) -> fmt::Result {
         if let Expr::BinOp(BinOp::OR, e1, e2) = self {
-            e1.fmt_l10(f)?;
+            e1.fmt_l10(f, translator.clone())?;
             write!(f, " | ")?;
-            e2.fmt_l9(f)
+            e2.fmt_l9(f, translator)
         } else {
-            self.fmt_l9(f)
+            self.fmt_l9(f, translator)
         }
     }
 }
 
 impl<'space> fmt::Display for Expr<'space> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.fmt_l10(f)
+        self.fmt_l10(f, None)
+    }
+}
+
+pub struct ExprFormatter<'expr, 'space> {
+    expr: &'expr Expr<'space>,
+    translator: Option<&'space Translator>,
+}
+
+impl<'expr, 'space> fmt::Display for ExprFormatter<'expr, 'space> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.expr.fmt_l10(f, self.translator.clone())
+    }
+}
+
+impl<'space> Expr<'space> {
+    pub fn display<'expr>(&'expr self, translator: Option<&'space Translator>) -> ExprFormatter<'expr, 'space> {
+        ExprFormatter {
+            expr: self,
+            translator,
+        }
     }
 }
 
@@ -1198,6 +1261,44 @@ impl<'space> fmt::Display for Stmt<'space> {
                 }
                 write!(f, ")")
             }
+        }
+    }
+}
+
+impl<'stmt, 'space> fmt::Display for StmtFormatter<'stmt, 'space> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.stmt {
+            Stmt::Assign(dest, src) => write!(f, "{} ← {}", dest.display(self.translator.clone()), src.display(self.translator.clone())),
+            Stmt::Store(dest, src, size, spc) => write!(f, "{}[{}]:{} ← {}", spc.name(), dest.display(self.translator.clone()), size, src.display(self.translator.clone())),
+            Stmt::Branch(target) => write!(f, "goto {}", target.display(self.translator.clone())),
+            Stmt::CBranch(cond, target) => write!(f, "goto {} if {}", target.display(self.translator.clone()), cond.display(self.translator.clone())),
+            Stmt::Call(target) => write!(f, "call {}", target.display(self.translator.clone())),
+            Stmt::Return(target) => write!(f, "return {}", target.display(self.translator.clone())),
+            Stmt::Skip => write!(f, "skip"),
+            Stmt::Intrinsic(name, args) => {
+                write!(f, "{}(", name)?;
+                if !args.is_empty() {
+                    write!(f, "{}", args[0].display(self.translator.clone()))?;
+                    for arg in &args[1..] {
+                        write!(f, ", {}", arg.display(self.translator.clone()))?;
+                    }
+                }
+                write!(f, ")")
+            }
+        }
+    }
+}
+
+pub struct StmtFormatter<'stmt, 'space> {
+    stmt: &'stmt Stmt<'space>,
+    translator: Option<&'space Translator>,
+}
+
+impl<'space> Stmt<'space> {
+    pub fn display<'stmt>(&'stmt self, translator: Option<&'space Translator>) -> StmtFormatter<'stmt, 'space> {
+        StmtFormatter {
+            stmt: self,
+            translator,
         }
     }
 }

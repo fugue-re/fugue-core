@@ -778,7 +778,7 @@ mod test {
             let mut orig_len = output.1;
             */
             let output = translator
-                .instruction(&mut db, address, &more_code[offset..])
+                .lift(&mut db, address, &more_code[offset..])
                 .expect("ok");
             /*
             let mut delays = output.delay_slots();
