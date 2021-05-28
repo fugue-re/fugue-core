@@ -15,7 +15,8 @@ use smallvec::{smallvec, SmallVec};
 use std::fmt;
 use std::mem::swap;
 
-//pub mod pcode;
+pub mod pcode;
+pub use pcode::{PCode, PCodeFormatter};
 pub mod ecode;
 pub use ecode::{ECode, ECodeFormatter};
 
@@ -164,13 +165,14 @@ pub struct IRBuilder<'a, 'b, 'c> {
 
     manager: &'a SpaceManager,
     float_formats: Map<usize, &'a FloatFormat>,
+    registers: &'a Map<(u64, usize), &'a str>,
     user_ops: &'a [&'a str],
 
     walker: ParserWalker<'a, 'b, 'c>,
 }
 
 impl<'a, 'b, 'c> IRBuilder<'a, 'b, 'c> {
-    pub fn new(walker: ParserWalker<'a, 'b, 'c>, delay_contexts: &'c mut Map<Address<'a>, ParserContext<'a, 'b>>, manager: &'a SpaceManager, float_formats: &'a [FloatFormat], user_ops: &'a [&'a str], unique_mask: u64) -> Result<Self, Error> {
+    pub fn new(walker: ParserWalker<'a, 'b, 'c>, delay_contexts: &'c mut Map<Address<'a>, ParserContext<'a, 'b>>, manager: &'a SpaceManager, float_formats: &'a [FloatFormat], registers: &'a Map<(u64, usize), &str>, user_ops: &'a [&'a str], unique_mask: u64) -> Result<Self, Error> {
         Ok(Self {
             const_space: manager.constant_space(),
             unique_mask,
@@ -183,6 +185,7 @@ impl<'a, 'b, 'c> IRBuilder<'a, 'b, 'c> {
             delay_contexts: delay_contexts.iter_mut().map(|(a, v)| (a.clone(), v)).collect(),
             manager,
             float_formats: float_formats.iter().map(|ff| (ff.bits(), ff)).collect(),
+            registers,
             user_ops,
             walker,
         })
@@ -444,18 +447,35 @@ impl<'a, 'b, 'c> IRBuilder<'a, 'b, 'c> {
         }
     }
 
-    /*
     pub fn emit_pcode(self, length: usize) -> PCode<'a> {
         let mut slf = self;
         slf.walker.base_state();
+
+        let address = slf.walker.address();
+        let delay_slots = slf.walker.delay_slot();
+
+        let manager = slf.manager;
+        let registers = slf.registers;
+        let user_ops = slf.user_ops;
+
         PCode {
-            address: slf.walker().address(),
-            operations: slf.issued,
-            delay_slots: slf.walker.delay_slot(),
+            operations: slf.issued.into_iter()
+                .map(|op|
+                     pcode::PCodeOp::from_parts(
+                         manager,
+                         registers,
+                         user_ops,
+                         op.opcode,
+                         op.inputs,
+                         op.output,
+                     )
+                )
+                .collect(),
+            address,
+            delay_slots,
             length,
         }
     }
-    */
 
     pub fn emit_ecode(self, length: usize) -> ECode<'a> {
         let mut slf = self;

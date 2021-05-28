@@ -14,5 +14,6 @@ pub mod translator;
 
 pub use address::Address;
 pub use disassembly::{ECode, PCodeRaw, IRBuilder, Opcode, VarnodeData};
+pub use disassembly::lift;
 pub use language::LanguageDB;
 pub use translator::Translator;

@@ -1476,15 +1476,15 @@ impl<'space> Stmt<'space> {
             }
             Opcode::IntSExt => {
                 let input = inputs.next().unwrap();
-                let size = inputs.next().unwrap().offset() as usize;
                 let output = output.unwrap();
+                let size = output.size() * 8;
 
                 Self::assign(output, Expr::cast_signed(input, size))
             }
             Opcode::IntZExt => {
                 let input = inputs.next().unwrap();
-                let size = inputs.next().unwrap().offset() as usize;
                 let output = output.unwrap();
+                let size = output.size() * 8;
 
                 Self::assign(output, Expr::cast_unsigned(input, size))
             }

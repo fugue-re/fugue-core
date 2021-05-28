@@ -14,7 +14,7 @@ use crate::deserialise::Error as DeserialiseError;
 use crate::disassembly::ContextDatabase;
 use crate::disassembly::Error as DisassemblyError;
 use crate::disassembly::PatternExpression;
-use crate::disassembly::{ParserContext, ParserState, ParserWalker, ECode, PCodeRaw, IRBuilder};
+use crate::disassembly::{ParserContext, ParserState, ParserWalker, ECode, PCode, PCodeRaw, IRBuilder};
 use crate::disassembly::VarnodeData;
 use crate::disassembly::symbol::{FixedHandle, Symbol, SymbolScope, SymbolTable};
 use crate::disassembly::walker::InstructionFormatter;
@@ -413,7 +413,7 @@ impl Translator {
                 let tmpl = ctor.template()
                     .ok_or_else(|| DisassemblyError::InconsistentState)?;
                 let mut builder =
-                    IRBuilder::new(ParserWalker::new(&mut context), &mut delay_contexts, &slf.manager, &slf.float_formats, &slf.user_ops, *slf.unique_mask)?;
+                    IRBuilder::new(ParserWalker::new(&mut context), &mut delay_contexts, &slf.manager, &slf.float_formats, &slf.registers, &slf.user_ops, *slf.unique_mask)?;
 
                 builder.build(tmpl, None, &slf.symbol_table)?;
                 builder.resolve_relatives();
@@ -424,7 +424,7 @@ impl Translator {
         })
     }
 
-    pub fn lift<'a>(&'a self, db: &mut ContextDatabase<'a>, address: Address<'a>, bytes: &[u8]) -> Result<ECode<'a>, Error> {
+    pub fn lift_pcode<'a>(&'a self, db: &mut ContextDatabase<'a>, address: Address<'a>, bytes: &[u8]) -> Result<PCode<'a>, Error> {
         self.0.with::<'a>(|slf| {
             if *slf.alignment != 1 {
                 if address.offset() % *slf.alignment as u64 != 0 {
@@ -481,7 +481,75 @@ impl Translator {
                 let tmpl = ctor.template()
                     .ok_or_else(|| DisassemblyError::InconsistentState)?;
                 let mut builder =
-                    IRBuilder::new(ParserWalker::new(&mut context), &mut delay_contexts, &slf.manager, &slf.float_formats, &slf.user_ops, *slf.unique_mask)?;
+                    IRBuilder::new(ParserWalker::new(&mut context), &mut delay_contexts, &slf.manager, &slf.float_formats, &slf.registers, &slf.user_ops, *slf.unique_mask)?;
+
+                builder.build(tmpl, None, &slf.symbol_table)?;
+                builder.resolve_relatives();
+                Ok(builder.emit_pcode(fall_offset))
+            } else {
+                Ok(PCode::nop(address, walker.length()))
+            }
+        })
+    }
+
+    pub fn lift_ecode<'a>(&'a self, db: &mut ContextDatabase<'a>, address: Address<'a>, bytes: &[u8]) -> Result<ECode<'a>, Error> {
+        self.0.with::<'a>(|slf| {
+            if *slf.alignment != 1 {
+                if address.offset() % *slf.alignment as u64 != 0 {
+                    return Err(DisassemblyError::IncorrectAlignment {
+                        address: address.offset(),
+                        alignment: *slf.alignment,
+                    })?
+                }
+            }
+
+            // Main instruction
+            let mut context = ParserContext::new(db, address.clone(), bytes);
+            let mut walker = ParserWalker::new(&mut context);
+
+            Translator::resolve(&mut walker, slf.root.id(), &slf.symbol_table)?;
+            Translator::resolve_handles(&mut walker, &slf.manager, &slf.symbol_table)?;
+
+            walker.base_state();
+            walker.apply_commits(db, &slf.manager, &slf.symbol_table)?;
+
+            let mut fall_offset = walker.length();
+
+            let delay_slots = walker.delay_slot();
+            let mut delay_contexts = Map::default();
+
+            if delay_slots > 0 {
+                let mut byte_count = 0;
+                loop {
+                    let mut dcontext =
+                        ParserContext::new(db, address.clone() + fall_offset, &bytes[fall_offset..]);
+                    let mut dwalker = ParserWalker::new(&mut dcontext);
+
+                    Translator::resolve(&mut dwalker, slf.root.id(), &slf.symbol_table)?;
+                    Translator::resolve_handles(&mut dwalker, &slf.manager, &slf.symbol_table)?;
+
+                    dwalker.base_state();
+                    dwalker.apply_commits(db, &slf.manager, &slf.symbol_table)?;
+
+                    let length = dwalker.length();
+
+                    delay_contexts.insert(address.clone() + fall_offset, dcontext);
+
+                    fall_offset += length;
+                    byte_count += length;
+
+                    if byte_count >= delay_slots {
+                        break;
+                    }
+                }
+                walker.set_next_address(address.clone() + fall_offset);
+            }
+
+            if let Some(ctor) = walker.constructor()? {
+                let tmpl = ctor.template()
+                    .ok_or_else(|| DisassemblyError::InconsistentState)?;
+                let mut builder =
+                    IRBuilder::new(ParserWalker::new(&mut context), &mut delay_contexts, &slf.manager, &slf.float_formats, &slf.registers, &slf.user_ops, *slf.unique_mask)?;
 
                 builder.build(tmpl, None, &slf.symbol_table)?;
                 builder.resolve_relatives();
@@ -770,7 +838,7 @@ mod test {
             let mut orig_len = output.1;
             */
             let output = translator
-                .lift(&mut db, translator.address(address), &more_code[offset..])
+                .lift_ecode(&mut db, translator.address(address), &more_code[offset..])
                 .expect("ok");
             /*
             let mut delays = output.delay_slots();
