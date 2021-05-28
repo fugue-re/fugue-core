@@ -1,6 +1,7 @@
 [workspace]
 members = [
   "fugue-bv",
+  "fugue-db",
   "fugue-ir",
 ]
 

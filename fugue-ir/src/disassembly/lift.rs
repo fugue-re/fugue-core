@@ -15,10 +15,8 @@ use smallvec::{smallvec, SmallVec};
 use std::fmt;
 use std::mem::swap;
 
-pub mod pcode;
-pub use pcode::{PCode, PCodeFormatter};
-pub mod ecode;
-pub use ecode::{ECode, ECodeFormatter};
+use crate::il::pcode::{self, PCode};
+use crate::il::ecode::{self, ECode};
 
 #[derive(Debug, Clone)]
 pub struct PCodeRaw<'a> {

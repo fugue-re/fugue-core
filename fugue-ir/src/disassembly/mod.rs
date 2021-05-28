@@ -15,7 +15,7 @@ pub mod pattern;
 pub use pattern::PatternExpression;
 
 pub mod lift;
-pub use lift::{ECode, ECodeFormatter, PCode, PCodeRaw, PCodeRawFormatter, IRBuilder};
+pub use lift::{PCodeRaw, PCodeRawFormatter, IRBuilder};
 
 pub mod symbol;
 pub use symbol::{Symbol, SymbolTable};

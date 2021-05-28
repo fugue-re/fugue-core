@@ -14,10 +14,13 @@ use crate::deserialise::Error as DeserialiseError;
 use crate::disassembly::ContextDatabase;
 use crate::disassembly::Error as DisassemblyError;
 use crate::disassembly::PatternExpression;
-use crate::disassembly::{ParserContext, ParserState, ParserWalker, ECode, PCode, PCodeRaw, IRBuilder};
+use crate::disassembly::{ParserContext, ParserState, ParserWalker, PCodeRaw, IRBuilder};
 use crate::disassembly::VarnodeData;
 use crate::disassembly::symbol::{FixedHandle, Symbol, SymbolScope, SymbolTable};
 use crate::disassembly::walker::InstructionFormatter;
+
+use crate::il::ecode::ECode;
+use crate::il::pcode::PCode;
 
 use crate::error::Error;
 
@@ -838,7 +841,7 @@ mod test {
             let mut orig_len = output.1;
             */
             let output = translator
-                .lift_ecode(&mut db, translator.address(address), &more_code[offset..])
+                .lift_pcode(&mut db, translator.address(address), &more_code[offset..])
                 .expect("ok");
             /*
             let mut delays = output.delay_slots();
@@ -854,7 +857,8 @@ mod test {
             }
             */
 
-            println!("{}", output.display(&translator));
+            //println!("{}", output.display(&translator));
+            println!("{}", output.display());
 
             offset += output.length();
         }

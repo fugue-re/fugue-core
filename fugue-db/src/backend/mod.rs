@@ -12,7 +12,7 @@ pub trait Backend {
         program: P,
         db_path: D,
         ndb_path: ND,
-        overwrite_ndb: bool,
+        overwrite_fdb: bool,
         rebase: Option<u64>,
         rebase_relative: i32,
     ) -> Result<(), Error>

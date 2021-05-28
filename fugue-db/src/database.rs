@@ -224,7 +224,6 @@ pub struct DatabaseImporter<'a, B: backend::Backend> {
     rebase: Option<u64>,
     rebase_relative: i32,
     overwrite_fdb: bool,
-    signatures: Vec<String>,
 }
 
 impl<'a, B> DatabaseImporter<'a, B> where B: backend::Backend {
@@ -237,7 +236,6 @@ impl<'a, B> DatabaseImporter<'a, B> where B: backend::Backend {
             rebase: None,
             rebase_relative: 0,
             overwrite_fdb: false,
-            signatures: Vec::new(),
         }
     }
 
@@ -270,16 +268,6 @@ impl<'a, B> DatabaseImporter<'a, B> where B: backend::Backend {
 
     pub fn overwrite(&mut self, overwrite: bool) -> &mut Self {
         self.overwrite_fdb = overwrite;
-        self
-    }
-
-    pub fn signature<S: AsRef<str>>(&mut self, signature: S) -> &mut Self {
-        self.signatures.push(signature.as_ref().to_owned());
-        self
-    }
-
-    pub fn signatures<I: Iterator<Item=S>, S: AsRef<str>>(&mut self, signatures: I) -> &mut Self {
-        self.signatures.extend(signatures.map(|v| v.as_ref().to_owned()));
         self
     }
 

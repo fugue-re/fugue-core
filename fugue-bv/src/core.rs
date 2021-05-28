@@ -52,10 +52,16 @@ impl BitVec {
     }
 
     pub fn zero(bits: usize) -> Self {
+        if bits == 0 || bits % 8 != 0 {
+            panic!("bits must be multiple of 8 and > 0")
+        }
         Self::from_bigint(BigInt::from(0), bits)
     }
 
     pub fn one(bits: usize) -> Self {
+        if bits == 0 || bits % 8 != 0 {
+            panic!("bits must be multiple of 8 and > 0")
+        }
         Self::from_bigint(BigInt::from(1), bits)
     }
 
@@ -534,6 +540,11 @@ impl Shl for BitVec {
     type Output = Self;
 
     fn shl(self, rhs: Self) -> Self::Output {
+        if self.3 != rhs.3 {
+            panic!("cannot use `<<` with bit vector of size {} and bit vector of size {}",
+                   self.3,
+                   rhs.3)
+        }
         if rhs.0 > self.bits() {
             Self::zero(self.bits())
         } else {
@@ -550,6 +561,11 @@ impl<'a> Shl for &'a BitVec {
     type Output = BitVec;
 
     fn shl(self, rhs: Self) -> Self::Output {
+        if self.3 != rhs.3 {
+            panic!("cannot use `<<` with bit vector of size {} and bit vector of size {}",
+                   self.3,
+                   rhs.3)
+        }
         if rhs.0 > self.bits() {
             BitVec::zero(self.bits())
         } else {
@@ -598,6 +614,11 @@ impl Shr for BitVec {
     type Output = Self;
 
     fn shr(self, rhs: Self) -> Self::Output {
+        if self.3 != rhs.3 {
+            panic!("cannot use `>>` with bit vector of size {} and bit vector of size {}",
+                   self.3,
+                   rhs.3)
+        }
         if rhs.0 >= self.bits() {
             Self::zero(self.bits())
         } else if self.is_signed() { // perform ASR
@@ -621,6 +642,11 @@ impl<'a> Shr for &'a BitVec {
     type Output = BitVec;
 
     fn shr(self, rhs: Self) -> Self::Output {
+        if self.3 != rhs.3 {
+            panic!("cannot use `>>` with bit vector of size {} and bit vector of size {}",
+                   self.3,
+                   rhs.3)
+        }
         if rhs.0 >= self.bits() {
             BitVec::zero(self.bits())
         } else if self.is_signed() { // perform ASR
@@ -664,6 +690,9 @@ macro_rules! impl_from_t_for {
         impl BitVec {
             ::paste::paste! {
                 pub fn [< from_ $t >](t: $t, bits: usize) -> Self {
+                    if bits == 0 || bits % 8 != 0 {
+                        panic!("bits must be multiple of 8 and > 0")
+                    }
                     BitVec::from_bigint(BigInt::from(t), bits)
                 }
             }
