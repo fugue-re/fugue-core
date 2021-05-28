@@ -90,7 +90,7 @@ impl ConstTpl {
                         handle.size as u64
                     },
                     HandleKind::OffsetPlus(value) => {
-                        if manager.constant_space().ok_or_else(|| Error::InvalidSpace)? != handle.space {
+                        if manager.constant_space() != handle.space {
                             if handle.offset_space.is_none() {
                                 handle.offset_offset + (*value & 0xffff)
                             } else {

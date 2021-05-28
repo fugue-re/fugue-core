@@ -253,7 +253,7 @@ pub struct PCodeBuilder<'a, 'b, 'c> {
 impl<'a, 'b, 'c> PCodeBuilder<'a, 'b, 'c> {
     pub fn new(walker: ParserWalker<'a, 'b, 'c>, delay_contexts: &'c mut Map<Address<'a>, ParserContext<'a, 'b>>, manager: &'a SpaceManager, float_formats: &'a [FloatFormat], user_ops: &'a [&'a str], unique_mask: u64) -> Result<Self, Error> {
         Ok(Self {
-            const_space: manager.constant_space().ok_or_else(|| Error::InvalidSpace)?,
+            const_space: manager.constant_space(),
             unique_mask,
             unique_offset: (walker.address().offset() & unique_mask).checked_shl(4).unwrap_or(0),
             issued: SmallVec::new(),

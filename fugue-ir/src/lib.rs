@@ -13,6 +13,6 @@ pub mod space_manager;
 pub mod translator;
 
 pub use address::Address;
-pub use disassembly::{PCode, Opcode, VarnodeData};
+pub use disassembly::{ECode, PCodeRaw, IRBuilder, Opcode, VarnodeData};
 pub use language::LanguageDB;
 pub use translator::Translator;

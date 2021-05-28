@@ -32,20 +32,20 @@ impl SpaceManager {
         self.spaces.iter().find(|space| space.name() == name)
     }
 
-    pub fn constant_space(&self) -> Option<&AddressSpace> {
-        self.spaces.get(self.constant_space)
+    pub fn constant_space(&self) -> &AddressSpace {
+        &self.spaces[self.constant_space]
     }
 
-    pub fn default_space(&self) -> Option<&AddressSpace> {
-        self.spaces.get(self.default_space)
+    pub fn default_space(&self) -> &AddressSpace {
+        &self.spaces[self.default_space]
     }
 
-    pub fn register_space(&self) -> Option<&AddressSpace> {
-        self.spaces.get(self.register_space)
+    pub fn register_space(&self) -> &AddressSpace {
+        &self.spaces[self.register_space]
     }
 
-    pub fn unique_space(&self) -> Option<&AddressSpace> {
-        self.spaces.get(self.unique_space)
+    pub fn unique_space(&self) -> &AddressSpace {
+        &self.spaces[self.unique_space]
     }
 
     pub fn from_xml(input: xml::Node) -> Result<Self, Error> {
@@ -87,6 +87,14 @@ impl SpaceManager {
             }
 
             spaces.push(space);
+        }
+
+        if default_space == 0 {
+            return Err(Error::Invariant("non-constant default space not defined"));
+        }
+
+        if register_space == 0 {
+            return Err(Error::Invariant("register space not defined"));
         }
 
         if unique_space == 0 {

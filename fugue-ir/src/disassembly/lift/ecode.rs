@@ -8,7 +8,7 @@ use crate::{Address, Opcode, Translator, VarnodeData};
 
 use fnv::FnvHashMap as Map;
 use fugue_bv::BitVec;
-use smallvec::SmallVec;
+use smallvec::{smallvec, SmallVec};
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Var<'space> {
@@ -1878,5 +1878,86 @@ impl<'space> Stmt<'space> {
         E: Into<Expr<'space>>,
     {
         Self::Intrinsic(name.into(), arguments.map(|e| Box::new(e.into())).collect())
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ECode<'space> {
+    pub address: Address<'space>,
+    pub operations: SmallVec<[Stmt<'space>; 16]>,
+    pub delay_slots: usize,
+    pub length: usize,
+}
+
+impl<'space> ECode<'space> {
+    pub fn nop(address: Address<'space>, length: usize) -> Self {
+        Self {
+            address,
+            operations: smallvec![Stmt::skip()],
+            delay_slots: 0,
+            length,
+        }
+    }
+
+    pub fn address(&self) -> &Address<'space> {
+        &self.address
+    }
+
+    pub fn operations(&self) -> &[Stmt<'space>] {
+        self.operations.as_ref()
+    }
+
+    pub fn delay_slots(&self) -> usize {
+        self.delay_slots
+    }
+
+    pub fn length(&self) -> usize {
+        self.length
+    }
+
+    pub fn display<'ecode>(&'ecode self, translator: &'space Translator) -> ECodeFormatter<'ecode, 'space> {
+        ECodeFormatter {
+            ecode: self,
+            translator,
+        }
+    }
+}
+
+impl<'space> fmt::Display for ECode<'space> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        let len =  self.operations.len();
+        if len > 0 {
+            for (i, op) in self.operations.iter().enumerate() {
+                write!(f, "{}.{:02}: {}{}",
+                       self.address,
+                       i,
+                       op,
+                       if i == len - 1 { "" } else { "\n" })?;
+            }
+            Ok(())
+        } else {
+            write!(f, "{}.00: skip", self.address)
+        }
+    }
+}
+
+pub struct ECodeFormatter<'ecode, 'space> {
+    ecode: &'ecode ECode<'space>,
+    translator: &'space Translator,
+}
+
+impl<'a, 'b> fmt::Display for ECodeFormatter<'a, 'b> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        let len =  self.ecode.operations.len();
+        if len > 0 {
+            for (i, op) in self.ecode.operations.iter().enumerate() {
+                write!(f, "{}.{:02}: {}{}", self.ecode.address, i,
+                       op.display(Some(self.translator)),
+                       if i == len - 1 { "" } else { "\n" })?;
+            }
+            Ok(())
+        } else {
+            write!(f, "{}.00: skip", self.ecode.address)
+        }
     }
 }

@@ -271,7 +271,7 @@ impl<'a> Symbol<'a> {
         Ok(match self {
             Self::Epsilon { .. } => {
                 FixedHandle {
-                    space: manager.constant_space().ok_or_else(|| Error::InvalidSpace)?,
+                    space: manager.constant_space(),
                     size: 0,
                     offset_space: None,
                     offset_offset: 0,
@@ -282,7 +282,7 @@ impl<'a> Symbol<'a> {
             },
             Self::Value { pattern_value, .. } => {
                 FixedHandle {
-                    space: manager.constant_space().ok_or_else(|| Error::InvalidSpace)?,
+                    space: manager.constant_space(),
                     size: 0,
                     offset_space: None,
                     offset_offset: pattern_value.value(walker, symbols)? as u64,
@@ -341,7 +341,7 @@ impl<'a> Symbol<'a> {
             },
             Self::ValueMap { pattern_value, value_table, .. } => {
                 FixedHandle {
-                    space: manager.constant_space().ok_or_else(|| Error::InvalidSpace)?,
+                    space: manager.constant_space(),
                     size: 0,
                     offset_space: None,
                     offset_offset: value_table[pattern_value.value(walker, symbols)? as usize] as u64,

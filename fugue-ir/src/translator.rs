@@ -14,7 +14,7 @@ use crate::deserialise::Error as DeserialiseError;
 use crate::disassembly::ContextDatabase;
 use crate::disassembly::Error as DisassemblyError;
 use crate::disassembly::PatternExpression;
-use crate::disassembly::{ParserContext, ParserState, ParserWalker, ECode, PCode, PCodeBuilder};
+use crate::disassembly::{ParserContext, ParserState, ParserWalker, ECode, PCodeRaw, IRBuilder};
 use crate::disassembly::VarnodeData;
 use crate::disassembly::symbol::{FixedHandle, Symbol, SymbolScope, SymbolTable};
 use crate::disassembly::walker::InstructionFormatter;
@@ -112,6 +112,11 @@ impl Translator {
         self.0.with_context_db_mut(|db| db.set_variable_default(name, value));
     }
 
+    pub fn address(&self, address: u64) -> Address {
+        let space = self.manager().default_space();
+        Address::new(space, address)
+    }
+
     pub fn manager(&self) -> &SpaceManager {
         self.0.borrow_manager()
     }
@@ -174,7 +179,7 @@ impl Translator {
             let mut pc = None;
 
             let pc_name = program_counter.as_ref();
-            let register_space = slf.manager.register_space().unwrap();
+            let register_space = slf.manager.register_space();
 
             for sym_id in slf.global_scope.iter() {
                 match slf.symbol_table.symbol(*sym_id) {
@@ -319,9 +324,7 @@ impl Translator {
             |_| Ok(Map::default()),
             |_| Ok(Map::default()),
             |manager| {
-                let register_space = manager
-                    .register_space()
-                    .ok_or_else(|| DeserialiseError::Invariant("missing register space"))?;
+                let register_space = manager.register_space();
                 Ok(VarnodeData::new(register_space, 0, 0))
             },
             |_| Ok(Vec::new()),
@@ -333,10 +336,7 @@ impl Translator {
         Ok(slf)
     }
 
-    pub fn format_instruction(&self, address: u64, bytes: &[u8]) -> Result<(String, String, usize), Error> {
-        let default_space = self.manager().default_space().ok_or_else(|| DisassemblyError::InvalidSpace)?;
-        let address = Address::new(default_space, address);
-
+    pub fn format_instruction(&self, address: Address, bytes: &[u8]) -> Result<(String, String, usize), Error> {
         let mut context = ParserContext::new(&self.context_database(), address, bytes);
         let mut walker = ParserWalker::new(&mut context);
 
@@ -354,21 +354,18 @@ impl Translator {
         Ok((mnemonic, operands, length))
     }
 
-    pub fn instruction<'a>(&'a self, db: &mut ContextDatabase<'a>, address: u64, bytes: &[u8]) -> Result<PCode<'a>, Error> {
+    pub fn instruction<'a>(&'a self, db: &mut ContextDatabase<'a>, address: Address<'a>, bytes: &[u8]) -> Result<PCodeRaw<'a>, Error> {
         self.0.with::<'a>(|slf| {
             if *slf.alignment != 1 {
-                if address % *slf.alignment as u64 != 0 {
+                if address.offset() % *slf.alignment as u64 != 0 {
                     return Err(DisassemblyError::IncorrectAlignment {
-                        address,
+                        address: address.offset(),
                         alignment: *slf.alignment,
                     })?
                 }
             }
 
             // Main instruction
-            let default_space = slf.manager.default_space()
-                .ok_or_else(|| DisassemblyError::InvalidSpace)?;
-            let address = Address::new(default_space, address);
             let mut context = ParserContext::new(db, address.clone(), bytes);
             let mut walker = ParserWalker::new(&mut context);
 
@@ -416,32 +413,29 @@ impl Translator {
                 let tmpl = ctor.template()
                     .ok_or_else(|| DisassemblyError::InconsistentState)?;
                 let mut builder =
-                    PCodeBuilder::new(ParserWalker::new(&mut context), &mut delay_contexts, &slf.manager, &slf.float_formats, &slf.user_ops, *slf.unique_mask)?;
+                    IRBuilder::new(ParserWalker::new(&mut context), &mut delay_contexts, &slf.manager, &slf.float_formats, &slf.user_ops, *slf.unique_mask)?;
 
                 builder.build(tmpl, None, &slf.symbol_table)?;
                 builder.resolve_relatives();
-                Ok(builder.emit(fall_offset))
+                Ok(builder.emit_raw(fall_offset))
             } else {
-                Ok(PCode::nop(address, walker.length()))
+                Ok(PCodeRaw::nop(address, walker.length()))
             }
         })
     }
 
-    pub fn lift<'a>(&'a self, db: &mut ContextDatabase<'a>, address: u64, bytes: &[u8]) -> Result<ECode<'a>, Error> {
+    pub fn lift<'a>(&'a self, db: &mut ContextDatabase<'a>, address: Address<'a>, bytes: &[u8]) -> Result<ECode<'a>, Error> {
         self.0.with::<'a>(|slf| {
             if *slf.alignment != 1 {
-                if address % *slf.alignment as u64 != 0 {
+                if address.offset() % *slf.alignment as u64 != 0 {
                     return Err(DisassemblyError::IncorrectAlignment {
-                        address,
+                        address: address.offset(),
                         alignment: *slf.alignment,
                     })?
                 }
             }
 
             // Main instruction
-            let default_space = slf.manager.default_space()
-                .ok_or_else(|| DisassemblyError::InvalidSpace)?;
-            let address = Address::new(default_space, address);
             let mut context = ParserContext::new(db, address.clone(), bytes);
             let mut walker = ParserWalker::new(&mut context);
 
@@ -483,13 +477,11 @@ impl Translator {
                 walker.set_next_address(address.clone() + fall_offset);
             }
 
-            // let mut delay_refs = delay_contexts.iter_mut().map(|(a, v)| (a.clone(), v)).collect::<Map<_, _>>();
-
             if let Some(ctor) = walker.constructor()? {
                 let tmpl = ctor.template()
                     .ok_or_else(|| DisassemblyError::InconsistentState)?;
                 let mut builder =
-                    PCodeBuilder::new(ParserWalker::new(&mut context), &mut delay_contexts, &slf.manager, &slf.float_formats, &slf.user_ops, *slf.unique_mask)?;
+                    IRBuilder::new(ParserWalker::new(&mut context), &mut delay_contexts, &slf.manager, &slf.float_formats, &slf.user_ops, *slf.unique_mask)?;
 
                 builder.build(tmpl, None, &slf.symbol_table)?;
                 builder.resolve_relatives();
@@ -531,7 +523,7 @@ impl Translator {
                 } else {
                     let pexp = operand.defining_expression()?.ok_or_else(|| DisassemblyError::InvalidPattern)?;
                     let res = pexp.value(walker, symbol_table)?;
-                    let const_space = manager.constant_space().ok_or_else(|| DisassemblyError::InvalidSpace)?;
+                    let const_space = manager.constant_space();
                     if let Some(handle) = walker.parent_handle_mut()? {
                         handle.space = const_space;
                         handle.offset_space = None;
@@ -778,7 +770,7 @@ mod test {
             let mut orig_len = output.1;
             */
             let output = translator
-                .lift(&mut db, address, &more_code[offset..])
+                .lift(&mut db, translator.address(address), &more_code[offset..])
                 .expect("ok");
             /*
             let mut delays = output.delay_slots();
