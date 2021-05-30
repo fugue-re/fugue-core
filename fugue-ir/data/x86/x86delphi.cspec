@@ -26,6 +26,9 @@
     <range space="ram"/>
   </global>
   <stackpointer register="ESP" space="ram"/>
+  <returnaddress>
+    <varnode space="stack" offset="0" size="4"/>
+  </returnaddress>
   <default_proto>
     <prototype name="__register" extrapop="unknown" stackshift="4">
       <input>

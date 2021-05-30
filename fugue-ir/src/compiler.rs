@@ -285,7 +285,11 @@ impl Prototype {
         }
 
         let name = input.attribute_string("name")?;
-        let extra_pop = input.attribute_int("extrapop")?;
+        let extra_pop = if matches!(input.attribute("extrapop"), Some("unknown")) {
+            0
+        } else {
+            input.attribute_int("extrapop")?
+        };
         let stack_shift = input.attribute_int("stackshift")?;
 
         let mut inputs = Vec::new();
@@ -323,6 +327,7 @@ impl Prototype {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Specification {
+    name: String,
     data_organisation: DataOrganisation,
     stack_pointer: StackPointer,
     return_address: ReturnAddress,
@@ -331,7 +336,7 @@ pub struct Specification {
 }
 
 impl Specification {
-    pub fn from_xml(input: xml::Node) -> Result<Self, DeserialiseError> {
+    pub fn named_from_xml<N: Into<String>>(name: N, input: xml::Node) -> Result<Self, DeserialiseError> {
         if input.tag_name().name() != "compiler_spec" {
             return Err(DeserialiseError::TagUnexpected(
                     input.tag_name().name().to_owned(),
@@ -356,7 +361,13 @@ impl Specification {
                     return_address = Some(ReturnAddress::from_xml(child)?);
                 },
                 "default_proto" => {
-                    default_prototype = Some(Prototype::from_xml(child)?);
+                    let proto = child.children().filter(xml::Node::is_element).next();
+                    if proto.is_none() {
+                        return Err(DeserialiseError::Invariant(
+                                "compiler specification does not define prototype for default prototype"
+                        ))
+                    }
+                    default_prototype = Some(Prototype::from_xml(proto.unwrap())?);
                 },
                 "prototype" => {
                     additional_prototypes.push(Prototype::from_xml(child)?);
@@ -384,6 +395,7 @@ impl Specification {
         }
 
         Ok(Self {
+            name: name.into(),
             data_organisation: data_organisation.unwrap(),
             stack_pointer: stack_pointer.unwrap(),
             return_address: return_address.unwrap(),
@@ -392,7 +404,7 @@ impl Specification {
         })
     }
 
-    pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, Error> {
+    pub fn named_from_file<N: Into<String>, P: AsRef<Path>>(name: N, path: P) -> Result<Self, Error> {
         let path = path.as_ref();
         let mut file = File::open(path).map_err(|error| Error::ParseFile {
             path: path.to_owned(),
@@ -406,15 +418,15 @@ impl Specification {
                 error,
             })?;
 
-        Self::from_str(&input).map_err(|error| Error::DeserialiseFile {
+        Self::named_from_str(name, &input).map_err(|error| Error::DeserialiseFile {
             path: path.to_owned(),
             error,
         })
     }
 
-    pub fn from_str<S: AsRef<str>>(input: S) -> Result<Self, DeserialiseError> {
+    pub fn named_from_str<N: Into<String>, S: AsRef<str>>(name: N, input: S) -> Result<Self, DeserialiseError> {
         let document = xml::Document::parse(input.as_ref()).map_err(DeserialiseError::Xml)?;
 
-        Self::from_xml(document.root_element())
+        Self::named_from_xml(name, document.root_element())
     }
 }

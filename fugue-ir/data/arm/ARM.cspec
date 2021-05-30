@@ -29,7 +29,9 @@
     <range space="ram"/>
   </global>
   <stackpointer register="sp" space="ram"/>
-  
+  <returnaddress>
+    <register name="lr"/>
+  </returnaddress>
   <funcptr align="2"/>     <!-- Function pointers are word aligned and leastsig bit may encode otherstuff -->
   <default_proto>
     <prototype name="__stdcall" extrapop="0" stackshift="0">

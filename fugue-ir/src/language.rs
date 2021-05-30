@@ -5,10 +5,12 @@ use crate::endian::Endian;
 
 use crate::error::Error;
 
+use crate::compiler::Specification as CSpec;
 use crate::processor::Specification as PSpec;
 use crate::Translator;
 
 use fnv::FnvHashMap as Map;
+use itertools::Itertools;
 
 use std::fs::File;
 use std::io::Read;
@@ -63,6 +65,7 @@ pub struct Language {
     version: String,
     sla_file: String,
     processor_spec: PSpec,
+    compiler_specs: Map<String, CSpec>,
     id: String,
 }
 
@@ -80,9 +83,26 @@ impl Language {
 
         let processor_spec =
             PSpec::from_file(&path).map_err(|e| DeserialiseError::DeserialiseDepends {
-                path: path.to_owned(),
+                path,
                 error: Box::new(e),
             })?;
+
+        let compiler_specs = input.children()
+            .filter(|e| e.is_element() && e.tag_name().name() == "compiler")
+            .map(|compiler| {
+                let id = compiler.attribute_string("id")?;
+                let name = compiler.attribute_string("name")?;
+
+                let mut path = root.as_ref().to_path_buf();
+                let cspec_path = compiler.attribute_string("spec")?;
+                path.push(cspec_path);
+
+                Ok((id, name, path))
+            })
+            .filter_map_ok(|(id, name, path)| {
+                CSpec::named_from_file(name, &path).ok().map(|cspec| (id, cspec))
+            })
+            .collect::<Result<Map<_, _>, DeserialiseError>>()?;
 
         Ok(Self {
             processor: input.attribute_processor("processor")?,
@@ -92,6 +112,7 @@ impl Language {
             version: input.attribute_string("version")?,
             sla_file: input.attribute_string("slafile")?,
             processor_spec,
+            compiler_specs,
             id: input.attribute_string("id")?,
         })
     }

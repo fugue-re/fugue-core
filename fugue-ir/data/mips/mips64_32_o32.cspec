@@ -39,6 +39,9 @@
      </size_alignment_map>
   </data_organization>
   <stackpointer register="sp" space="ram"/>
+  <returnaddress>
+    <register name="ra"/>
+  </returnaddress>
   <funcptr align="2"/>
   <spacebase name="gp" register="gp" space="ram"/>
   <global>
