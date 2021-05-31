@@ -2,7 +2,6 @@ use crate::deserialise::parse::XmlExt;
 use crate::deserialise::Error as DeserialiseError;
 
 use crate::endian::Endian;
-
 use crate::error::Error;
 
 use crate::compiler::Specification as CSpec;
@@ -58,6 +57,7 @@ impl<'a> From<&'a str> for Variant {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Language {
+    id: String,
     processor: Processor,
     endian: Endian,
     size: usize,
@@ -66,7 +66,6 @@ pub struct Language {
     sla_file: String,
     processor_spec: PSpec,
     compiler_specs: Map<String, CSpec>,
-    id: String,
 }
 
 impl Language {
@@ -105,6 +104,7 @@ impl Language {
             .collect::<Result<Map<_, _>, DeserialiseError>>()?;
 
         Ok(Self {
+            id: input.attribute_string("id")?,
             processor: input.attribute_processor("processor")?,
             endian: input.attribute_endian("endian")?,
             size: input.attribute_int("size")?,
@@ -113,7 +113,6 @@ impl Language {
             sla_file: input.attribute_string("slafile")?,
             processor_spec,
             compiler_specs,
-            id: input.attribute_string("id")?,
         })
     }
 }
@@ -129,7 +128,9 @@ impl<'a> LanguageBuilder<'a> {
         let mut path = self.root.to_path_buf();
         path.push(&self.language.sla_file);
         let mut translator =
-            Translator::from_file(self.language.processor_spec.program_counter(), path)?;
+            Translator::from_file(self.language.processor_spec.program_counter(),
+                                  &self.language.compiler_specs,
+                                  path)?;
         for (name, val) in self.language.processor_spec.context_set() {
             translator
                 .set_variable_default(name.as_ref(), val);

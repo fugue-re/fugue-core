@@ -2,6 +2,7 @@ mod bits;
 
 pub mod address;
 pub mod compiler;
+pub mod convention;
 pub mod deserialise;
 pub mod disassembly;
 pub mod endian;

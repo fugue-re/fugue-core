@@ -122,8 +122,8 @@ impl DataOrganisation {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StackPointer {
-    register: String,
-    space: String,
+    pub(crate) register: String,
+    pub(crate) space: String,
 }
 
 impl StackPointer {
@@ -220,12 +220,12 @@ impl PrototypeOperand {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PrototypeEntry {
-    min_size: usize,
-    max_size: usize,
-    alignment: u64,
-    meta_type: Option<String>,
-    extension: Option<String>,
-    operand: PrototypeOperand,
+    pub(crate) min_size: usize,
+    pub(crate) max_size: usize,
+    pub(crate) alignment: u64,
+    pub(crate) meta_type: Option<String>,
+    pub(crate) extension: Option<String>,
+    pub(crate) operand: PrototypeOperand,
 }
 
 impl PrototypeEntry {
@@ -269,11 +269,11 @@ impl PrototypeEntry {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Prototype {
-    name: String,
-    extra_pop: u64,
-    stack_shift: u64,
-    inputs: Vec<PrototypeEntry>,
-    outputs: Vec<PrototypeEntry>,
+    pub(crate) name: String,
+    pub(crate) extra_pop: u64,
+    pub(crate) stack_shift: u64,
+    pub(crate) inputs: Vec<PrototypeEntry>,
+    pub(crate) outputs: Vec<PrototypeEntry>,
 }
 
 impl Prototype {
@@ -327,12 +327,12 @@ impl Prototype {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Specification {
-    name: String,
-    data_organisation: DataOrganisation,
-    stack_pointer: StackPointer,
-    return_address: ReturnAddress,
-    default_prototype: Prototype,
-    additional_prototypes: Vec<Prototype>,
+    pub(crate) name: String,
+    pub(crate) data_organisation: DataOrganisation,
+    pub(crate) stack_pointer: StackPointer,
+    pub(crate) return_address: ReturnAddress,
+    pub(crate) default_prototype: Prototype,
+    pub(crate) additional_prototypes: Vec<Prototype>,
 }
 
 impl Specification {

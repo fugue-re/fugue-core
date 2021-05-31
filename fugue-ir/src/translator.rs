@@ -26,6 +26,8 @@ use crate::error::Error;
 
 use crate::float_format::FloatFormat;
 
+use crate::compiler;
+use crate::convention::Convention;
 use crate::space_manager::SpaceManager;
 
 #[ouroboros::self_referencing(chain_hack)]
@@ -74,6 +76,10 @@ pub struct TranslatorImpl {
     #[borrows(manager)]
     #[covariant]
     pub context_db: ContextDatabase<'this>,
+
+    #[borrows(manager)]
+    #[covariant]
+    pub compiler_conventions: Map<String, Convention<'this>>,
 }
 
 #[derive(Clone)]
@@ -143,6 +149,7 @@ impl Translator {
 
     pub fn from_file<PC: AsRef<str>, P: AsRef<Path>>(
         program_counter: PC,
+        compiler_specs: &Map<String, compiler::Specification>,
         path: P,
     ) -> Result<Self, Error> {
         let path = path.as_ref();
@@ -158,22 +165,24 @@ impl Translator {
                 error,
             })?;
 
-        Self::from_str(program_counter, &input).map_err(|error| Error::DeserialiseFile {
-            path: path.to_owned(),
-            error,
-        })
+        Self::from_str(program_counter, compiler_specs, &input)
+            .map_err(|error| Error::DeserialiseFile {
+                path: path.to_owned(),
+                error,
+            })
     }
 
     pub fn from_str<PC: AsRef<str>, S: AsRef<str>>(
         program_counter: PC,
+        compiler_specs: &Map<String, compiler::Specification>,
         input: S,
     ) -> Result<Self, DeserialiseError> {
         let document = xml::Document::parse(input.as_ref()).map_err(DeserialiseError::Xml)?;
 
-        Self::from_xml(program_counter, document.root_element())
+        Self::from_xml(program_counter, compiler_specs, document.root_element())
     }
 
-    fn build_xrefs<PC: AsRef<str>>(&mut self, program_counter: PC) -> Result<(), DeserialiseError> {
+    fn build_xrefs<PC: AsRef<str>>(&mut self, program_counter: PC, compiler_specs: &Map<String, compiler::Specification>) -> Result<(), DeserialiseError> {
         self.0.with_mut(|mut slf| {
             let registers = &mut slf.registers;
             let register_names = &mut slf.registers_by_name;
@@ -247,17 +256,26 @@ impl Translator {
             if let Some((pc_offset, pc_size)) = pc {
                 slf.program_counter.offset = pc_offset;
                 slf.program_counter.size = pc_size;
-                Ok(())
             } else {
-                Err(DeserialiseError::Invariant(
+                return Err(DeserialiseError::Invariant(
                     "program counter not defined as a register",
                 ))
             }
+
+            for (name, spec) in compiler_specs.iter() {
+                let conv = Convention::from_spec(spec,
+                                                 &slf.registers_by_name,
+                                                 &slf.manager)?;
+                slf.compiler_conventions.insert(name.clone(), conv);
+            }
+
+            Ok(())
         })
     }
 
     pub fn from_xml<PC: AsRef<str>>(
         program_counter: PC,
+        compiler_specs: &Map<String, compiler::Specification>,
         input: xml::Node,
     ) -> Result<Self, DeserialiseError> {
         if input.tag_name().name() != "sleigh" {
@@ -331,10 +349,11 @@ impl Translator {
                 Ok(VarnodeData::new(register_space, 0, 0))
             },
             |_| Ok(Vec::new()),
-            |_| Ok(ContextDatabase::new())
+            |_| Ok(ContextDatabase::new()),
+            |_| Ok(Map::default()),
         )?);
 
-        slf.build_xrefs(program_counter)?;
+        slf.build_xrefs(program_counter, compiler_specs)?;
 
         Ok(slf)
     }
@@ -790,7 +809,7 @@ mod test {
         //    0040617c 00 00 00 00     nop
         //    00406180 08 00 e0 03     jr         ra
         //    00406184 20 00 bd 27     _addiu     sp,sp,0x20
-        let mut translator = Translator::from_file("pc", "./data/mips32le.sla")?;
+        let mut translator = Translator::from_file("pc", &super::Map::default(), "./data/mips32le.sla")?;
 
         translator.set_variable_default("RELP", 1);
         translator.set_variable_default("PAIR_INSTRUCTION_FLAG", 0);
