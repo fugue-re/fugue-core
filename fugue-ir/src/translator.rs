@@ -65,6 +65,8 @@ pub struct TranslatorImpl {
     #[covariant]
     pub registers_by_name: Map<&'this str, VarnodeData<'this>>,
 
+    pub registers_size: usize,
+
     #[borrows(manager)]
     #[covariant]
     pub program_counter: VarnodeData<'this>,
@@ -97,6 +99,10 @@ impl Translator {
 
     pub fn alignment(&self) -> usize {
         *self.0.borrow_alignment()
+    }
+
+    pub fn unique_base(&self) -> u64 {
+        *self.0.borrow_unique_base()
     }
 
     pub fn unique_mask(&self) -> u64 {
@@ -137,6 +143,14 @@ impl Translator {
     pub fn register_by_name<S: AsRef<str>>(&self, name: S) -> Option<&VarnodeData> {
         self.0.borrow_registers_by_name()
             .get(name.as_ref())
+    }
+
+    pub fn register_space_size(&self) -> usize {
+        *self.0.borrow_registers_size()
+    }
+
+    pub fn unique_space_size(&self) -> usize {
+        *self.0.borrow_unique_mask() as usize
     }
 
     pub fn symbol_table(&self) -> &SymbolTable {
@@ -189,6 +203,7 @@ impl Translator {
 
             let user_ops = &mut slf.user_ops;
             let mut pc = None;
+            let mut registers_size = 0;
 
             let pc_name = program_counter.as_ref();
             let register_space = slf.manager.register_space();
@@ -213,6 +228,12 @@ impl Translator {
                             name,
                             VarnodeData::new(register_space, *offset, *size),
                         );
+
+                        if let Some(size) = size.checked_add(*offset as usize) {
+                            registers_size = registers_size.max(size);
+                        } else {
+                            return Err(DeserialiseError::Invariant("offset with size of varnode overflows"));
+                        }
 
                         if pc_name == name {
                             if pc.is_some() {
@@ -261,6 +282,8 @@ impl Translator {
                     "program counter not defined as a register",
                 ))
             }
+
+            *slf.registers_size = registers_size;
 
             for (name, spec) in compiler_specs.iter() {
                 let conv = Convention::from_spec(spec,
@@ -344,6 +367,7 @@ impl Translator {
             },
             |_| Ok(Map::default()),
             |_| Ok(Map::default()),
+            0,
             |manager| {
                 let register_space = manager.register_space();
                 Ok(VarnodeData::new(register_space, 0, 0))
