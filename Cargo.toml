@@ -3,6 +3,8 @@ members = [
   "fugue-bv",
   "fugue-db",
   "fugue-ir",
+
+  "fugue-core",
 ]
 
 [profile.bench]

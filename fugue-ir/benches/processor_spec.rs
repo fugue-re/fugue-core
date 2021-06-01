@@ -10,7 +10,7 @@ fn criterion_pspec_x86(c: &mut Criterion) {
 
 fn criterion_trans_x86(c: &mut Criterion) {
     c.bench_function("LanguageDB::from_file(\"x86.ldefs\")]",
-                     |b| b.iter(|| -> Result<(), fugue_lift::error::Error> {
+                     |b| b.iter(|| -> Result<(), fugue_ir::error::Error> {
                          let ldef = LanguageDB::from_file("./data/x86/x86.ldefs")?;
                          for builder in ldef.iter() {
                              builder.build()?;
