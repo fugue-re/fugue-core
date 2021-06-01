@@ -1,5 +1,5 @@
-use crate::VarnodeData;
 use crate::compiler::{self, Specification};
+use crate::disassembly::VarnodeData;
 use crate::deserialise::error::Error as DeserialiseError;
 use crate::space::AddressSpace;
 use crate::space_manager::SpaceManager;

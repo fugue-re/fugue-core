@@ -1,8 +1,8 @@
 use std::fmt;
 use fnv::FnvHashMap as Map;
 
-use crate::VarnodeData;
 use crate::address::Address;
+use crate::disassembly::VarnodeData;
 use crate::space::AddressSpace;
 use crate::space_manager::SpaceManager;
 

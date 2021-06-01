@@ -1,10 +1,11 @@
 use std::borrow::Cow;
 use std::fmt;
 
+use crate::disassembly::{Opcode, VarnodeData};
 use crate::float_format::FloatFormat;
 use crate::space::AddressSpace;
 use crate::space_manager::SpaceManager;
-use crate::{Address, Opcode, Translator, VarnodeData};
+use crate::{Address, Translator};
 
 use fnv::FnvHashMap as Map;
 use fugue_bv::BitVec;
