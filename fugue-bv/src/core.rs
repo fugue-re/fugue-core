@@ -121,6 +121,10 @@ impl BitVec {
         Self(self.0, self.1, true, self.3)
     }
 
+    pub fn is_zero(&self) -> bool {
+        self.0 == 0
+    }
+
     pub fn is_signed(&self) -> bool {
         self.2
     }
