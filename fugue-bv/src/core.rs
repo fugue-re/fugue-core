@@ -117,8 +117,8 @@ impl BitVec {
         self.3
     }
 
-    pub fn signed(&self) -> Self {
-        Self(self.0.clone(), self.1.clone(), true, self.3)
+    pub fn signed(self) -> Self {
+        Self(self.0, self.1, true, self.3)
     }
 
     pub fn is_signed(&self) -> bool {
@@ -129,8 +129,8 @@ impl BitVec {
         self.2 && self.msb()
     }
 
-    pub fn unsigned(&self) -> Self {
-        Self(self.0.clone(), self.1.clone(), false, self.3)
+    pub fn unsigned(self) -> Self {
+        Self(self.0, self.1, false, self.3)
     }
 
     pub fn is_unsigned(&self) -> bool {
@@ -263,7 +263,7 @@ impl BitVec {
         }
     }
 
-    pub fn convert(self, size: usize) -> Self {
+    pub fn cast(self, size: usize) -> Self {
         if self.is_signed() && size > self.bits() && self.msb() {
             let mask = Self::mask_value(size);
             let extm = BigInt::from(&*self.1 ^ &*mask);
@@ -897,13 +897,13 @@ mod test {
     fn test_compare() {
         let v1 = BitVec::from(0x8000_0000u32);
         let v2 = BitVec::from(0x8000_0001u32);
-        let v3 = BitVec::from(0xffff_ffffu32);
+        let v3 = BitVec::from(0xffff_ffffu32).signed();
 
         assert_eq!(v1 < v2, true);
-        assert_eq!(v1 < v3.signed(), false);
-        assert_eq!(v3.signed() < v1, true);
-        assert_eq!(v3.signed() < v2, true);
-        assert_eq!(v1.signed() == v1, true);
+        assert_eq!(v1 < v3, false);
+        assert_eq!(v3 < v1, true);
+        assert_eq!(v3 < v2, true);
+        assert_eq!(v1.clone().signed() == v1, true);
     }
 
     #[test]
