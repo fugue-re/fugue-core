@@ -751,6 +751,30 @@ macro_rules! impls_from_for {
     };
 }
 
+macro_rules! impl_to_u_for {
+    ($t:tt) => {
+        impl BitVec {
+            ::paste::paste! {
+                pub fn [< to_u $t >](&self) -> Option<[< u $t >]> {
+                    self.0.[< to_u $t >]()
+                }
+            }
+        }
+    };
+}
+
+macro_rules! impl_to_i_for {
+    ($t:tt) => {
+        impl BitVec {
+            ::paste::paste! {
+                pub fn [< to_i $t >](&self) -> Option<[< i $t >]> {
+                    self.0.[< to_u $t >]().map(|v| v as [< i $t >])
+                }
+            }
+        }
+    };
+}
+
 macro_rules! impl_from_t_for {
     ($t:ident) => {
         impl BitVec {
@@ -766,6 +790,22 @@ macro_rules! impl_from_t_for {
     };
 }
 
+macro_rules! impls_to_u_for {
+    ($($tname:tt),*) => {
+        $(
+            impl_to_u_for!($tname);
+        )*
+    };
+}
+
+macro_rules! impls_to_i_for {
+    ($($tname:tt),*) => {
+        $(
+            impl_to_i_for!($tname);
+        )*
+    };
+}
+
 macro_rules! impls_from_t_for {
     ($($tname:ident),*) => {
         $(
@@ -778,6 +818,9 @@ impls_from_for! { i8, i16, i32, i64, i128, isize }
 impls_from_for! { u8, u16, u32, u64, u128, usize }
 impls_from_t_for! { i8, i16, i32, i64, i128, isize }
 impls_from_t_for! { u8, u16, u32, u64, u128, usize }
+
+impls_to_i_for! { 8, 16, 32, 64, 128, size }
+impls_to_u_for! { 8, 16, 32, 64, 128, size }
 
 #[cfg(test)]
 mod test {
