@@ -650,7 +650,11 @@ impl Shr<u32> for BitVec {
     fn shr(self, rhs: u32) -> Self::Output {
         let size = self.3;
         if rhs as usize >= size {
-            Self::zero(size)
+            if self.is_signed() {
+                -Self::one(size)
+            } else {
+                Self::zero(size)
+            }
         } else if self.is_signed() { // perform ASR
             let mask = &*self.1 ^ ((BigInt::from(1) << (size - rhs as usize) as u32) - BigInt::from(1));
             Self::from_bigint_with((self.0 >> rhs) ^ mask, self.1.clone())
@@ -666,7 +670,11 @@ impl<'a> Shr<u32> for &'a BitVec {
     fn shr(self, rhs: u32) -> Self::Output {
         let size = self.3;
         if rhs as usize >= size {
-            BitVec::zero(size)
+            if self.is_signed() {
+                -BitVec::one(size)
+            } else {
+                BitVec::zero(size)
+            }
         } else if self.is_signed() { // perform ASR
             let mask = &*self.1 ^ ((BigInt::from(1) << (size - rhs as usize) as u32) - BigInt::from(1));
             BitVec::from_bigint_with(BigInt::from(&self.0 >> rhs) ^ mask, self.1.clone())
@@ -686,13 +694,17 @@ impl Shr for BitVec {
                    rhs.3)
         }
         if rhs.0 >= self.bits() {
-            Self::zero(self.bits())
+            if self.is_signed() {
+                -Self::one(self.bits())
+            } else {
+                Self::zero(self.bits())
+            }
         } else if self.is_signed() { // perform ASR
             if let Some(rhs) = rhs.0.to_u32() {
                 let mask = &*self.1 ^ ((BigInt::from(1) << (self.bits() - rhs as usize) as u32) - BigInt::from(1));
                 Self::from_bigint_with((self.0 >> rhs) ^ mask, self.1.clone())
             } else {
-                Self::zero(self.bits())
+                -Self::one(self.bits())
             }
         } else {
             if let Some(rhs) = rhs.0.to_u32() {
@@ -714,13 +726,17 @@ impl<'a> Shr for &'a BitVec {
                    rhs.3)
         }
         if rhs.0 >= self.bits() {
-            BitVec::zero(self.bits())
+            if self.is_signed() {
+                -BitVec::one(self.bits())
+            } else {
+                BitVec::zero(self.bits())
+            }
         } else if self.is_signed() { // perform ASR
             if let Some(rhs) = rhs.0.to_u32() {
                 let mask = &*self.1 ^ ((BigInt::from(1) << (self.bits() - rhs as usize) as u32) - BigInt::from(1));
                 BitVec::from_bigint_with(BigInt::from(&self.0 >> rhs) ^ mask, self.1.clone())
             } else {
-                BitVec::zero(self.bits())
+                -BitVec::one(self.bits())
             }
         } else {
             if let Some(rhs) = rhs.0.to_u32() {
