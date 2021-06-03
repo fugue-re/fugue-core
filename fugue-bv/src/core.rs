@@ -113,6 +113,14 @@ impl BitVec {
         Self::from_bigint(BigInt::from(1), bits)
     }
 
+    pub fn count_ones(&self) -> u32 {
+        self.0.count_ones().unwrap()
+    }
+
+    pub fn count_zeros(&self) -> u32 {
+        self.0.count_zeros().unwrap()
+    }
+
     pub fn bits(&self) -> usize {
         self.3
     }
