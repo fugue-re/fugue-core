@@ -9,6 +9,54 @@ use rug::integer::Order;
 #[derive(Debug, Clone, Hash)]
 pub struct BitVec(BigInt, Arc<BigInt>, bool, usize);
 
+#[derive(Debug, Clone, Hash)]
+enum BitVecImpl {
+    B(BitVecImplB),
+    N(BitVecImplN),
+}
+
+type BitVecImplB = (BigInt, Arc<BigInt>, bool, usize);
+type BitVecImplN = (u64, u64, bool, usize);
+
+impl BitVecImpl {
+    fn b_mask_value(bits: usize) -> Arc<BigInt> {
+        Arc::new((BigInt::from(1) << bits as u32) - BigInt::from(1))
+    }
+
+    fn n_mask_value(bits: usize) -> u64 {
+        1u64.checked_shl(bits as u32).unwrap_or(0).wrapping_sub(1)
+    }
+
+    fn from_bigint<I: Into<BigInt>>(v: I, bits: usize) -> Self {
+        Self::B(Self::impl_bigint_with(v, bits, false))
+    }
+
+    fn impl_bigint_with<I: Into<BigInt>>(v: I, bits: usize, sign: bool) -> BitVecImplB {
+        let mask = Self::b_mask_value(bits);
+        let v = v.into() & &*mask;
+        (v, mask, sign, bits)
+    }
+
+    fn from_u64(v: u64, bits: usize, sign: bool) -> Self {
+        Self::N((v, Self::n_mask_value(bits), sign, bits)).mask()
+    }
+
+    fn mask(self) -> Self {
+        todo!()
+    }
+
+    fn lift2<FB, FN, O>(l: Self, r: Self, bf: FB, nf: FN) -> O
+    where FB: FnOnce(BitVecImplB, BitVecImplB) -> O,
+          FN: FnOnce(BitVecImplN, BitVecImplN) -> O, {
+        match (l, r) {
+            (Self::B(l), Self::B(r)) => bf(l, r),
+            (Self::N(l), Self::N(r)) => nf(l, r),
+            (Self::B(l), Self::N((n, _, s, b))) => bf(l, Self::impl_bigint_with(n, b, s)),
+            (Self::N((n, _, s, b)), Self::B(r)) => bf(Self::impl_bigint_with(n, b, s), r),
+        }
+    }
+}
+
 impl fmt::Display for BitVec {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}:{}", self.0, self.3)
@@ -212,6 +260,16 @@ impl BitVec {
             Self::from_bigint_with(-(BigInt::from(1) << (self.3 - 1) as u32), self.1.clone()).signed()
         } else {
             Self::from_bigint_with(BigInt::from(0), self.1.clone())
+        }
+    }
+
+    pub fn convert(self, size: usize) -> Self {
+        if self.is_signed() && size > self.bits() && self.msb() {
+            let mask = Self::mask_value(size);
+            let extm = BigInt::from(&*self.1 ^ &*mask);
+            Self::from_bigint_with(self.0 | extm, mask)
+        } else {
+            Self::from_bigint(self.0, size)
         }
     }
 }
