@@ -264,10 +264,14 @@ impl BitVec {
     }
 
     pub fn cast(self, size: usize) -> Self {
-        if self.is_signed() && size > self.bits() && self.msb() {
-            let mask = Self::mask_value(size);
-            let extm = BigInt::from(&*self.1 ^ &*mask);
-            Self::from_bigint_with(self.0 | extm, mask)
+        if self.is_signed() {
+            if size > self.bits() && self.msb() {
+                let mask = Self::mask_value(size);
+                let extm = BigInt::from(&*self.1 ^ &*mask);
+                Self::from_bigint_with(self.0 | extm, mask)
+            } else {
+                Self::from_bigint(self.0, size)
+            }.signed()
         } else {
             Self::from_bigint(self.0, size)
         }
