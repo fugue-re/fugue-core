@@ -1,11 +1,11 @@
 [package]
-name = "fugue-core"
+name = "fugue-fp"
 version = "0.1.0"
 authors = ["Sam Thomas <st@xv.ax>"]
 edition = "2018"
 
 [dependencies]
 fugue-bv = { path = "../fugue-bv" }
-fugue-db = { path = "../fugue-db" }
-fugue-fp = { path = "../fugue-fp" }
 fugue-ir = { path = "../fugue-ir" }
+rug = { version = "1", features = ["float"] }
+thiserror = "1"

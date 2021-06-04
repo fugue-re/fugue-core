@@ -1,21 +1,21 @@
-use crate::bits;
+//use crate::bits;
 use crate::deserialise::error::Error;
 use crate::deserialise::parse::XmlExt;
 
-use std::num::FpCategory;
-use std::mem::size_of;
+//use std::num::FpCategory;
+//use std::mem::size_of;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct FloatFormat {
-    size: usize,
-    sign_pos: u32,
-    frac_pos: u32,
-    frac_size: u32,
-    exp_pos: u32,
-    exp_max: i32,
-    exp_size: u32,
-    bias: i32,
-    j_bit_implied: bool,
+    pub size: usize,
+    pub sign_pos: u32,
+    pub frac_pos: u32,
+    pub frac_size: u32,
+    pub exp_pos: u32,
+    pub exp_max: i32,
+    pub exp_size: u32,
+    pub bias: i32,
+    pub j_bit_implied: bool,
 }
 
 impl FloatFormat {
@@ -47,6 +47,7 @@ impl FloatFormat {
         }
     }
 
+    /*
     pub fn from_parts(sign: bool, signif: u64, exp: i32) -> f64 {
         let signif = signif.checked_shr(1).unwrap_or(0);
         let precis = 8 * size_of::<u64>() as i32 - 1;
@@ -329,6 +330,7 @@ impl FloatFormat {
         let (_, a1) = self.host_float(a);
         self.encoding(a1.round())
     }
+    */
 
     pub fn size(&self) -> usize {
         self.size
@@ -364,6 +366,7 @@ impl FloatFormat {
     }
 }
 
+/*
 fn frexp(x: f64) -> (f64, i32) {
     extern "C" {
         fn frexp(x: f64, exp: *mut i32) -> f64;
@@ -383,3 +386,4 @@ fn ldexp(x: f64, exp: i32) -> f64 {
         ldexp(x, exp)
     }
 }
+*/

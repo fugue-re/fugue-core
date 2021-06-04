@@ -2,6 +2,7 @@
 members = [
   "fugue-bv",
   "fugue-db",
+  "fugue-fp",
   "fugue-ir",
 
   "fugue-core",
