@@ -1161,9 +1161,9 @@ impl FloatFormatOps for FloatFormat {
     }
 
     fn from_bitvec(&self, bv: &BitVec) -> Float {
-        let sign = self.extract_sign(bv.as_bigint());
-        let exp = self.extract_exponent(bv.as_bigint());
-        let mut frac = self.extract_fractional(bv.as_bigint());
+        let sign = self.extract_sign(bv.as_raw());
+        let exp = self.extract_exponent(bv.as_raw());
+        let mut frac = self.extract_fractional(bv.as_raw());
 
         if exp == 0 {
             return if frac == 0 {

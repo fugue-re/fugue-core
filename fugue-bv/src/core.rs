@@ -51,8 +51,16 @@ impl BitVec {
         Self(self.0 & &*self.1, self.1, false, self.3)
     }
 
-    pub fn as_bigint(&self) -> &BigInt {
+    pub fn as_raw(&self) -> &BigInt {
         &self.0
+    }
+
+    pub fn into_bigint(self) -> BigInt {
+        if self.is_negative() {
+            -self.abs().0
+        } else {
+            self.0
+        }
     }
 
     pub fn zero(bits: usize) -> Self {
