@@ -722,6 +722,22 @@ impl Float {
         self.floor0_assign();
     }
 
+    pub fn trunc_to_bitvec(&self, bits: usize) -> BitVec {
+        let slf = self.clone();
+        slf.trunc_into_bitvec(bits)
+    }
+
+    pub fn trunc_into_bitvec(self, bits: usize) -> BitVec {
+        let sign = self.sign < 0;
+        let bint = self.unscaled >> self.frac_bits.wrapping_sub(self.scale as u32);
+        let bvec = BitVec::from_bigint(bint, bits);
+        if sign {
+            -bvec
+        } else {
+            bvec
+        }
+    }
+
     pub fn neg_assign(&mut self) {
         self.sign *= -1;
     }
