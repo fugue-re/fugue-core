@@ -2,14 +2,28 @@ pub use fugue_bv::BitVec;
 pub use fugue_ir::float_format::FloatFormat;
 
 use std::cmp::Ordering;
+use std::ops::Add;
 use std::ops::AddAssign;
+use std::ops::Div;
 use std::ops::DivAssign;
+use std::ops::Mul;
 use std::ops::MulAssign;
+use std::ops::Neg;
+use std::ops::Sub;
 use std::ops::SubAssign;
 use std::mem::take;
 
 use rug::Assign;
 use rug::Integer as BigInt;
+
+use thiserror::Error;
+
+#[derive(Debug, Error)]
+pub enum Error {
+    #[error("no corresponding float format representation for `{}` bits", .0 * 8)]
+    UnsupportedFloatFormat(usize),
+}
+
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Sign {
@@ -221,6 +235,26 @@ impl Float {
     }
 }
 
+impl Div<Self> for Float {
+    type Output = Self;
+
+    fn div(self, rhs: Self) -> Self::Output {
+        let mut slf = self;
+        slf.div_assign(rhs);
+        slf
+    }
+}
+
+impl Div<Self> for &'_ Float {
+    type Output = Float;
+
+    fn div(self, rhs: Self) -> Self::Output {
+        let mut slf = self.clone();
+        slf.div_assign(rhs.clone());
+        slf
+    }
+}
+
 impl DivAssign<Self> for Float {
     fn div_assign(&mut self, rhs: Self) {
         if self.is_nan() || rhs.is_nan() {
@@ -275,6 +309,26 @@ impl DivAssign<Self> for Float {
                 self.internal_round(r != 0);
             },
         }
+    }
+}
+
+impl Mul<Self> for Float {
+    type Output = Self;
+
+    fn mul(self, rhs: Self) -> Self::Output {
+        let mut slf = self;
+        slf.mul_assign(rhs);
+        slf
+    }
+}
+
+impl Mul<Self> for &'_ Float {
+    type Output = Float;
+
+    fn mul(self, rhs: Self) -> Self::Output {
+        let mut slf = self.clone();
+        slf.mul_assign(rhs.clone());
+        slf
     }
 }
 
@@ -427,6 +481,26 @@ impl Float {
     }
 }
 
+impl Add<Self> for Float {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        let mut slf = self;
+        slf.add_assign(rhs);
+        slf
+    }
+}
+
+impl Add<Self> for &'_ Float {
+    type Output = Float;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        let mut slf = self.clone();
+        slf.add_assign(rhs.clone());
+        slf
+    }
+}
+
 impl AddAssign<Self> for Float {
     fn add_assign(&mut self, rhs: Self) {
         if self.is_nan() || rhs.is_nan() {
@@ -470,6 +544,26 @@ impl AddAssign<Self> for Float {
     }
 }
 
+impl Sub<Self> for Float {
+    type Output = Self;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        let mut slf = self;
+        slf.sub_assign(rhs);
+        slf
+    }
+}
+
+impl Sub<Self> for &'_ Float {
+    type Output = Float;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        let mut slf = self.clone();
+        slf.sub_assign(rhs.clone());
+        slf
+    }
+}
+
 impl SubAssign<Self> for Float {
     fn sub_assign(&mut self, rhs: Self) {
         let mut rhs = rhs;
@@ -487,6 +581,12 @@ impl SubAssign<Self> for Float {
 }
 
 impl Float {
+    pub fn sqrt(&self) -> Self {
+        let mut slf = self.clone();
+        slf.sqrt_assign();
+        slf
+    }
+
     pub fn sqrt_assign(&mut self) {
         if self.is_zero() {
             return
@@ -566,6 +666,12 @@ impl Float {
         }
     }
 
+    pub fn floor(&self) -> Self {
+        let mut slf = self.clone();
+        slf.floor_assign();
+        slf
+    }
+
     pub fn floor_assign(&mut self) {
         match self.kind {
             FloatKind::Finite | FloatKind::QuietNaN => return,
@@ -581,6 +687,12 @@ impl Float {
         } else {
             self.ceil0_assign();
         }
+    }
+
+    pub fn ceil(&self) -> Self {
+        let mut slf = self.clone();
+        slf.ceil_assign();
+        slf
     }
 
     pub fn ceil_assign(&mut self) {
@@ -600,6 +712,12 @@ impl Float {
         }
     }
 
+    pub fn trunc(&self) -> Self {
+        let mut slf = self.clone();
+        slf.trunc_assign();
+        slf
+    }
+
     pub fn trunc_assign(&mut self) {
         self.floor0_assign();
     }
@@ -608,8 +726,20 @@ impl Float {
         self.sign *= -1;
     }
 
+    pub fn abs(&self) -> Self {
+        let mut slf = self.clone();
+        slf.abs_assign();
+        slf
+    }
+
     pub fn abs_assign(&mut self) {
         self.sign = 1;
+    }
+
+    pub fn round(&self) -> Self {
+        let mut slf = self.clone();
+        slf.round_assign();
+        slf
     }
 
     pub fn round_assign(&mut self) {
@@ -625,6 +755,15 @@ impl Float {
         self.floor_assign();
     }
 
+    pub fn into_bigint(self) -> BigInt {
+        let res = self.unscaled >> self.frac_bits.wrapping_sub(self.scale as u32);
+        if self.sign < 0 {
+            -res
+        } else {
+            res
+        }
+    }
+
     pub fn to_bigint(&self) -> BigInt {
         let res = BigInt::from(&self.unscaled >> self.frac_bits.wrapping_sub(self.scale as u32));
         if self.sign < 0 {
@@ -632,6 +771,32 @@ impl Float {
         } else {
             res
         }
+    }
+}
+
+impl From<Float> for BigInt {
+    fn from(f: Float) -> Self {
+        f.into_bigint()
+    }
+}
+
+impl Neg for Float {
+    type Output = Float;
+
+    fn neg(self) -> Self::Output {
+        let mut slf = self;
+        slf.neg_assign();
+        slf
+    }
+}
+
+impl Neg for &'_ Float {
+    type Output = Float;
+
+    fn neg(self) -> Self::Output {
+        let mut slf = self.clone();
+        slf.neg_assign();
+        slf
     }
 }
 
@@ -814,6 +979,78 @@ impl FloatFormatOpsInternal for FloatFormat {
 pub trait FloatFormatOps {
     fn into_bitvec(&self, fp: Float, bits: usize) -> BitVec;
     fn from_bitvec(&self, bv: &BitVec) -> Float;
+}
+
+pub const fn float_format_from_size(bytes: usize) -> Result<FloatFormat, Error> {
+    Ok(match bytes {
+        2 => FloatFormat {
+            size: 2,
+            sign_pos: 15,
+            exp_pos: 10,
+            exp_size: 5,
+            exp_max: (1 << 5) - 1,
+            frac_pos: 0,
+            frac_size: 10,
+            bias: 15,
+            j_bit_implied: true,
+        },
+        4 => FloatFormat {
+            size: 4,
+            sign_pos: 31,
+            exp_pos: 23,
+            exp_size: 8,
+            exp_max: (1 << 8) - 1,
+            frac_pos: 0,
+            frac_size: 23,
+            bias: 127,
+            j_bit_implied: true,
+        },
+        8 => FloatFormat {
+            size: 8,
+            sign_pos: 63,
+            exp_pos: 52,
+            exp_size: 11,
+            exp_max: (1 << 11) - 1,
+            frac_pos: 0,
+            frac_size: 52,
+            bias: 1023,
+            j_bit_implied: true,
+        },
+        10 => FloatFormat {
+            size: 10,
+            sign_pos: 79,
+            exp_pos: 64,
+            exp_size: 15,
+            exp_max: (1 << 15) - 1,
+            frac_pos: 0,
+            frac_size: 64,
+            bias: 16383,
+            j_bit_implied: true,
+        },
+        12 => FloatFormat {
+            size: 12,
+            sign_pos: 95,
+            exp_pos: 80,
+            exp_size: 15,
+            exp_max: (1 << 15) - 1,
+            frac_pos: 16,
+            frac_size: 64,
+            bias: 16383,
+            j_bit_implied: true,
+        },
+        16 => FloatFormat {
+            size: 16,
+            sign_pos: 127,
+            exp_pos: 112,
+            exp_size: 15,
+            exp_max: (1 << 15) - 1,
+            frac_pos: 0,
+            frac_size: 112,
+            bias: 16383,
+            j_bit_implied: true,
+        },
+        _ => return Err(Error::UnsupportedFloatFormat(bytes)),
+    })
 }
 
 impl FloatFormatOps for FloatFormat {
