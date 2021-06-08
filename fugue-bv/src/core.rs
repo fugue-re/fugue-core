@@ -227,11 +227,29 @@ impl BitVec {
         }
     }
 
+    pub fn max_value_with(bits: usize, signed: bool) -> Self {
+        let mask = Self::mask_value(bits);
+        if signed {
+            Self::from_bigint_with((BigInt::from(1) << (bits - 1) as u32) - BigInt::from(1), mask).signed()
+        } else {
+            Self::from_bigint_with((BigInt::from(1) << bits as u32) - BigInt::from(1), mask)
+        }
+    }
+
     pub fn max_value(&self) -> Self {
         if self.is_signed() {
             Self::from_bigint_with((BigInt::from(1) << (self.3 - 1) as u32) - BigInt::from(1), self.1.clone()).signed()
         } else {
             Self::from_bigint_with((BigInt::from(1) << self.3 as u32) - BigInt::from(1), self.1.clone())
+        }
+    }
+
+    pub fn min_value_with(bits: usize, signed: bool) -> Self {
+        let mask = Self::mask_value(bits);
+        if signed {
+            Self::from_bigint_with(-(BigInt::from(1) << (bits - 1) as u32), mask).signed()
+        } else {
+            Self::from_bigint_with(BigInt::from(0), mask)
         }
     }
 

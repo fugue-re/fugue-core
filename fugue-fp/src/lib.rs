@@ -728,6 +728,18 @@ impl Float {
     }
 
     pub fn trunc_into_bitvec(self, bits: usize) -> BitVec {
+        if self.is_nan() {
+            return BitVec::zero(bits)
+        }
+
+        if self.is_infinite() {
+            return if self.sign < 0 {
+                BitVec::min_value_with(bits, true)
+            } else {
+                BitVec::max_value_with(bits, true)
+            }
+        }
+
         let sign = self.sign < 0;
         let bint = self.unscaled >> self.frac_bits.wrapping_sub(self.scale as u32);
         let bvec = BitVec::from_bigint(bint, bits);
