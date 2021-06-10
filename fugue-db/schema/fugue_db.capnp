@@ -1,8 +1,5 @@
 @0xc9cbb65ef49adcf9;
 
-using Cxx = import "/capnp/c++.capnp";
-$Cxx.namespace("fugue::serialise");
-
 struct Architecture {
   name @0 :Text; # exporter specific
   endian @1 :Bool; # T if big, F if little
