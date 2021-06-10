@@ -9,4 +9,4 @@ rust-latest:
     - cargo test --verbose
 
 before_script:
-  - git config --global url."https://gitlab-ci-token:${CI_JOB_TOKEN}@git.simulacra.to/fugue/interval-tree.git".insteadOf git@git.simulacra.to:10222/fugue/interval-tree.git
+  - git config --global url."https://gitlab-ci-token:${CI_JOB_TOKEN}@git.simulacra.to/fugue/interval-tree.git".insteadOf "ssh://git@git.simulacra.to:10222/fugue/interval-tree"
