@@ -6,7 +6,9 @@ edition = "2018"
 
 [dependencies]
 fnv = "1"
+fugue-arch = { path = "../fugue-arch" }
 fugue-bv = { path = "../fugue-bv" }
+fugue-bytes = { path = "../fugue-bytes" }
 itertools = "0.10"
 ouroboros = "0.9"
 smallvec = "1"

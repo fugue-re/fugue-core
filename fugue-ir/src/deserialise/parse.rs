@@ -1,5 +1,4 @@
 use crate::endian::Endian;
-use crate::language::{Processor, Variant};
 
 use super::Error;
 
@@ -12,12 +11,16 @@ pub trait XmlExt {
     fn attribute_processor(
         &self,
         name: &'static str,
-    ) -> Result<Processor, Error>;
+    ) -> Result<String, Error> {
+        self.attribute_string(name)
+    }
 
     fn attribute_variant(
         &self,
         name: &'static str,
-    ) -> Result<Variant, Error>;
+    ) -> Result<String, Error> {
+        self.attribute_string(name)
+    }
 
     fn attribute_string(
         &self,
@@ -120,18 +123,6 @@ impl XmlExt for xml::Node<'_, '_> {
             "little" | "LITTLE" | "le" | "LE" => Ok(Endian::Little),
             _ => Err(Error::ParseEndian),
         }
-    }
-
-    fn attribute_processor(&self, name: &'static str) -> Result<Processor, Error> {
-        let n = self.attribute(name)
-            .ok_or_else(|| Error::AttributeExpected(name))?;
-        Ok(n.into())
-    }
-
-    fn attribute_variant(&self, name: &'static str) -> Result<Variant, Error> {
-        let n = self.attribute(name)
-            .ok_or_else(|| Error::AttributeExpected(name))?;
-        Ok(n.into())
     }
 
     fn attribute_string(

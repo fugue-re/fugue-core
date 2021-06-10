@@ -59,42 +59,6 @@ impl BasicBlock {
         &segment.bytes()[offset..offset+self.len()]
     }
 
-    /*
-    pub fn instructions(&self, project: &Database) -> Result<Vec<(u64, Instruction)>, sleigh::Error> {
-        let address = self.address();
-        let bytes = self.bytes(&project);
-        let lifter = self.architecture(&project).lifter_mut();
-        let mut instructions = Vec::new();
-        let mut size = 0;
-
-        while size < bytes.len() {
-            let addr = address + size as u64;
-            let insn = lifter.disassemble(addr, &bytes[size..])?;
-            size += insn.size();
-            instructions.push((addr, insn));
-        }
-
-        Ok(instructions)
-    }
-
-    pub fn pcode(&self, project: &Database) -> Result<Vec<(u64, Vec<PCode>)>, sleigh::Error> {
-        let address = self.address();
-        let bytes = self.bytes(&project);
-        let lifter = self.architecture(&project).lifter_mut();
-        let mut instructions = Vec::new();
-        let mut size = 0;
-
-        while size < bytes.len() {
-            let addr = address + &BitVec::from(size as u64);
-            let (insns, psize) = lifter.lift(addr, &bytes[size..])?;
-            size += psize;
-            instructions.push((addr, insns));
-        }
-
-        Ok(instructions)
-    }
-    */
-
     pub(crate) fn from_reader(reader: schema::basic_block::Reader, segments: &IntervalTree<u64, Segment>) -> Result<Self, Error> {
         Ok(Self {
             address: reader.get_address(),

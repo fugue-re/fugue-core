@@ -9,59 +9,17 @@ use crate::processor::Specification as PSpec;
 use crate::Translator;
 
 use fnv::FnvHashMap as Map;
+use fugue_arch::Architecture;
 use itertools::Itertools;
 
 use std::fs::File;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum Processor {
-    Aarch64,
-    Arm,
-    Mips,
-    Ppc,
-    V850,
-    X86,
-    Other(String),
-}
-
-impl<'a> From<&'a str> for Processor {
-    fn from(s: &'a str) -> Processor {
-        match s.to_uppercase().as_ref() {
-            "AARCH64" => Self::Aarch64,
-            "ARM" => Self::Arm,
-            "MIPS" => Self::Mips,
-            "PPC" => Self::Ppc,
-            "V850" => Self::V850,
-            "x86" => Self::X86,
-            _ => Self::Other(s.to_owned()),
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum Variant {
-    Default,
-    Other(String),
-}
-
-impl<'a> From<&'a str> for Variant {
-    fn from(s: &'a str) -> Variant {
-        match s {
-            "default" => Self::Default,
-            other => Self::Other(other.to_owned()),
-        }
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Language {
     id: String,
-    processor: Processor,
-    endian: Endian,
-    size: usize,
-    variant: Variant,
+    architecture: Architecture,
     version: String,
     sla_file: String,
     processor_spec: PSpec,
@@ -103,12 +61,16 @@ impl Language {
             })
             .collect::<Result<Map<_, _>, DeserialiseError>>()?;
 
+        let architecture = Architecture::new(
+            input.attribute_processor("processor")?,
+            input.attribute_endian("endian")?,
+            input.attribute_int("size")?,
+            input.attribute_variant("variant")?,
+        );
+
         Ok(Self {
             id: input.attribute_string("id")?,
-            processor: input.attribute_processor("processor")?,
-            endian: input.attribute_endian("endian")?,
-            size: input.attribute_int("size")?,
-            variant: input.attribute_variant("variant")?,
+            architecture,
             version: input.attribute_string("version")?,
             sla_file: input.attribute_string("slafile")?,
             processor_spec,
@@ -141,34 +103,34 @@ impl<'a> LanguageBuilder<'a> {
 
 #[derive(Debug, Clone)]
 pub struct LanguageDB {
-    db: Map<(Processor, Endian, usize, Variant), Language>,
+    db: Map<Architecture, Language>,
     root: PathBuf,
 }
 
 impl LanguageDB {
-    pub fn lookup_default<'a, P: Into<Processor>>(
+    pub fn lookup_default<'a, P: Into<String>>(
         &'a self,
         processor: P,
         endian: Endian,
-        size: usize,
+        bits: usize,
     ) -> Option<LanguageBuilder<'a>> {
         self.db
-            .get(&(processor.into(), endian, size, Variant::Default))
+            .get(&Architecture::new(processor, endian, bits, "default"))
             .map(|language| LanguageBuilder {
                 language,
                 root: &self.root,
             })
     }
 
-    pub fn lookup<'a, P: Into<Processor>, V: Into<Variant>>(
+    pub fn lookup<'a, P: Into<String>, V: Into<String>>(
         &'a self,
         processor: P,
         endian: Endian,
-        size: usize,
+        bits: usize,
         variant: V,
     ) -> Option<LanguageBuilder<'a>> {
         self.db
-            .get(&(processor.into(), endian, size, variant.into()))
+            .get(&Architecture::new(processor, endian, bits, variant))
             .map(|language| LanguageBuilder {
                 language,
                 root: &self.root,
@@ -202,15 +164,7 @@ impl LanguageDB {
                 .filter(|t| t.tag_name().name() == "language")
                 .map(|t| {
                     let ldef = Language::from_xml(&root, t)?;
-                    Ok((
-                        (
-                            ldef.processor.clone(),
-                            ldef.endian,
-                            ldef.size,
-                            ldef.variant.clone(),
-                        ),
-                        ldef,
-                    ))
+                    Ok((ldef.architecture.clone(), ldef))
                 })
                 .collect::<Result<_, DeserialiseError>>()?,
             root,

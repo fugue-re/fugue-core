@@ -6,8 +6,8 @@ edition = "2018"
 build = "build.rs"
 
 [dependencies]
-fugue-bv = { path = "../fugue-bv" }
-fugue-ir = { path = "../fugue-ir" }
+fugue-arch = { path = "../fugue-arch" }
+fugue-bytes = { path = "../fugue-bytes" }
 
 capnp = "0.14"
 chrono = "0.4"

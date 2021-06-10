@@ -5,6 +5,8 @@ members = [
   "fugue-fp",
   "fugue-ir",
 
+  "fugue-arch",
+  "fugue-bytes",
   "fugue-core",
 ]
 

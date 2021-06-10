@@ -9,10 +9,9 @@ use capnp::message::ReaderOptions;
 
 use interval_tree::{Interval, IntervalTree};
 
-use fugue_ir::endian::Endian;
-
-use crate::Architecture;
+use crate::architecture::{self, Architecture};
 use crate::BasicBlock;
+use crate::Endian;
 use crate::ExportInfo;
 use crate::Format;
 use crate::Function;
@@ -156,7 +155,7 @@ impl Database {
 
         let architectures = database.get_architectures().map_err(Error::Deserialisation)?
             .into_iter()
-            .map(Architecture::from_reader)
+            .map(architecture::from_reader)
             .collect::<Result<Vec<_>, _>>()?;
 
         let segments = database.get_segments().map_err(Error::Deserialisation)?
@@ -198,7 +197,7 @@ impl Database {
         let mut architectures = builder.reborrow().init_architectures(self.architectures.len() as u32);
         self.architectures.iter().enumerate().try_for_each(|(i, a)| {
             let mut builder = architectures.reborrow().get(i as u32);
-            a.to_builder(&mut builder)
+            architecture::to_builder(a, &mut builder)
         })?;
         let mut segments = builder.reborrow().init_segments(self.segments.len() as u32);
         self.segments.values().enumerate().try_for_each(|(i, s)| {
