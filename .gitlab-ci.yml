@@ -9,6 +9,6 @@ rust-latest:
     - cargo test --verbose
 
 before_script:
-  - apt-get update
-  - apt-get install capnproto
+  - apt-get update -y
+  - apt-get install capnproto -y
   - git config --global url."https://gitlab-ci-token:${CI_JOB_TOKEN}@git.simulacra.to/".insteadOf "ssh://git@git.simulacra.to:10022/"
