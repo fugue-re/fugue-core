@@ -1,7 +1,7 @@
 use interval_tree::IntervalTree;
 
+use crate::ArchitectureDef;
 use crate::Id;
-use crate::Architecture;
 use crate::IntraRef;
 use crate::Database;
 use crate::Segment;
@@ -13,7 +13,7 @@ use crate::schema;
 pub struct BasicBlock {
     address: u64,
     length: usize,
-    architecture: Id<Architecture>,
+    architecture: Id<ArchitectureDef>,
     segment: Id<Segment>,
     predecessors: Vec<IntraRef>,
     successors: Vec<IntraRef>,
@@ -28,11 +28,11 @@ impl BasicBlock {
         self.length
     }
 
-    pub fn architecture_id(&self) -> Id<Architecture> {
+    pub fn architecture_id(&self) -> Id<ArchitectureDef> {
         self.architecture.clone()
     }
 
-    pub fn architecture<'a>(&self, project: &'a Database) -> &'a Architecture {
+    pub fn architecture<'a>(&self, project: &'a Database) -> &'a ArchitectureDef {
         &project.architectures()[self.architecture.index()]
     }
 

@@ -6,3 +6,5 @@ edition = "2018"
 
 [dependencies]
 fugue-bytes = { path = "../fugue-bytes" }
+thiserror = "1"
+unicase = "2.6"

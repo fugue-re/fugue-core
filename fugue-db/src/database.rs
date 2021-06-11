@@ -9,7 +9,7 @@ use capnp::message::ReaderOptions;
 
 use interval_tree::{Interval, IntervalTree};
 
-use crate::architecture::{self, Architecture};
+use crate::architecture::{self, ArchitectureDef};
 use crate::BasicBlock;
 use crate::Endian;
 use crate::ExportInfo;
@@ -26,7 +26,7 @@ use crate::schema;
 pub struct Database {
     endian: Endian,
     format: Format,
-    architectures: Vec<Architecture>,
+    architectures: Vec<ArchitectureDef>,
     segments: IntervalTree<u64, Segment>,
     functions: Vec<Function>,
     export_info: ExportInfo,
@@ -61,7 +61,7 @@ impl Database {
         self.format
     }
 
-    pub fn architectures(&self) -> &[Architecture] {
+    pub fn architectures(&self) -> &[ArchitectureDef] {
         &self.architectures
     }
 
@@ -300,7 +300,8 @@ impl<'a, B> DatabaseImporter<'a, B> where B: backend::Backend {
                                  &fdb_path,
                                  self.overwrite_fdb,
                                  self.rebase,
-                                 self.rebase_relative)?;
+                                 self.rebase_relative)
+            .map_err(Error::from)?;
 
         Database::from_file(fdb_path)
     }

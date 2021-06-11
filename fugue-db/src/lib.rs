@@ -17,7 +17,7 @@ pub mod segment;
 pub use error::*;
 pub use id::Id;
 
-pub use architecture::{Architecture, Endian};
+pub use architecture::{ArchitectureDef, Endian};
 pub use basic_block::BasicBlock;
 pub use database::{Database, DatabaseImporter};
 pub use format::Format;

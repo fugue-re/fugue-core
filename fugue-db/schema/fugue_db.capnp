@@ -1,10 +1,10 @@
 @0xc9cbb65ef49adcf9;
 
-struct Architecture {
-  name @0 :Text; # exporter specific
+struct Architecture { # format follows Ghidra's ldefs
+  processor @0 :Text;
   endian @1 :Bool; # T if big, F if little
   bits @2 :UInt32;
-  variant @3 :Text; # simplified, if possible (could be, e.g., thumb)
+  variant @3 :Text;
 }
 
 struct Segment {

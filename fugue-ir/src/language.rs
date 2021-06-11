@@ -9,7 +9,7 @@ use crate::processor::Specification as PSpec;
 use crate::Translator;
 
 use fnv::FnvHashMap as Map;
-use fugue_arch::Architecture;
+use fugue_arch::ArchitectureDef;
 use itertools::Itertools;
 
 use std::fs::File;
@@ -19,7 +19,7 @@ use std::path::{Path, PathBuf};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Language {
     id: String,
-    architecture: Architecture,
+    architecture: ArchitectureDef,
     version: String,
     sla_file: String,
     processor_spec: PSpec,
@@ -61,7 +61,7 @@ impl Language {
             })
             .collect::<Result<Map<_, _>, DeserialiseError>>()?;
 
-        let architecture = Architecture::new(
+        let architecture = ArchitectureDef::new(
             input.attribute_processor("processor")?,
             input.attribute_endian("endian")?,
             input.attribute_int("size")?,
@@ -103,7 +103,7 @@ impl<'a> LanguageBuilder<'a> {
 
 #[derive(Debug, Clone)]
 pub struct LanguageDB {
-    db: Map<Architecture, Language>,
+    db: Map<ArchitectureDef, Language>,
     root: PathBuf,
 }
 
@@ -115,7 +115,7 @@ impl LanguageDB {
         bits: usize,
     ) -> Option<LanguageBuilder<'a>> {
         self.db
-            .get(&Architecture::new(processor, endian, bits, "default"))
+            .get(&ArchitectureDef::new(processor, endian, bits, "default"))
             .map(|language| LanguageBuilder {
                 language,
                 root: &self.root,
@@ -130,7 +130,7 @@ impl LanguageDB {
         variant: V,
     ) -> Option<LanguageBuilder<'a>> {
         self.db
-            .get(&Architecture::new(processor, endian, bits, variant))
+            .get(&ArchitectureDef::new(processor, endian, bits, variant))
             .map(|language| LanguageBuilder {
                 language,
                 root: &self.root,
