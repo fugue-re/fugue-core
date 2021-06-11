@@ -301,7 +301,7 @@ impl<'a, B> DatabaseImporter<'a, B> where B: backend::Backend {
                                  self.overwrite_fdb,
                                  self.rebase,
                                  self.rebase_relative)
-            .map_err(Error::from)?;
+            .map_err(B::Error::into)?;
 
         Database::from_file(fdb_path)
     }
