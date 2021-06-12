@@ -50,6 +50,21 @@ impl ExportInfo {
         self.file_size
     }
 
+    /// Get a reference to the export info's start time.
+    pub fn start_time(&self) -> &DateTime<Utc> {
+        &self.start_time
+    }
+
+    /// Get a reference to the export info's export time.
+    pub fn export_time(&self) -> &DateTime<Utc> {
+        &self.export_time
+    }
+
+    /// Get a reference to the export info's exporter.
+    pub fn exporter(&self) -> &str {
+        &self.exporter
+    }
+
     pub(crate) fn from_reader(reader: schema::export_info::Reader) -> Result<Self, Error> {
         let mut input_md5 = [0u8; 16];
         let mut input_sha256 = [0u8; 32];
@@ -77,20 +92,5 @@ impl ExportInfo {
         builder.set_finish_time(self.finish_time.timestamp_nanos() as u64);
         builder.set_exporter(&self.exporter);
         Ok(())
-    }
-
-    /// Get a reference to the export info's start time.
-    pub fn start_time(&self) -> &DateTime<Utc> {
-        &self.start_time
-    }
-
-    /// Get a reference to the export info's export time.
-    pub fn export_time(&self) -> &DateTime<Utc> {
-        &self.export_time
-    }
-
-    /// Get a reference to the export info's exporter.
-    pub fn exporter(&self) -> &String {
-        &self.exporter
     }
 }
