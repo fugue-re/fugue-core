@@ -225,6 +225,10 @@ pub struct DatabaseImporter {
 }
 
 impl DatabaseImporter {
+    pub fn available_backends() -> impl Iterator<Item=&'static str> {
+        inventory::iter::<DatabaseImporterBackend>().map(|b| b.name())
+    }
+
     pub fn new<P: AsRef<Path>>(program: P) -> DatabaseImporter {
         Self {
             program: program.as_ref().to_owned(),
