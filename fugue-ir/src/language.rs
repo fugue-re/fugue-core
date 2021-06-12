@@ -153,6 +153,10 @@ impl LanguageDB {
     }
 
     pub fn from_xml<P: AsRef<Path>>(root: P, input: xml::Node) -> Result<Self, DeserialiseError> {
+        Self::from_xml_with(root, input, false)
+    }
+
+    pub fn from_xml_with<P: AsRef<Path>>(root: P, input: xml::Node, ignore_errors: bool) -> Result<Self, DeserialiseError> {
         if input.tag_name().name() != "language_definitions" {
             return Err(DeserialiseError::TagUnexpected(
                 input.tag_name().name().to_owned(),
@@ -161,20 +165,28 @@ impl LanguageDB {
 
         let root = root.as_ref().to_path_buf();
 
+        let defs = input.children()
+            .filter(xml::Node::is_element)
+            .filter(|t| t.tag_name().name() == "language")
+            .map(|t| {
+                let ldef = Language::from_xml(&root, t)?;
+                Ok((ldef.architecture.clone(), ldef))
+            });
+
         Ok(Self {
-            db: input
-                .children()
-                .filter(xml::Node::is_element)
-                .filter(|t| t.tag_name().name() == "language")
-                .map(|t| {
-                    let ldef = Language::from_xml(&root, t)?;
-                    Ok((ldef.architecture.clone(), ldef))
-                })
-                .collect::<Result<_, DeserialiseError>>()?,
+            db: if ignore_errors {
+                defs.filter_map(|t| t.ok()).collect()
+            } else {
+                defs.collect::<Result<_, DeserialiseError>>()?
+            },
         })
     }
 
     pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, Error> {
+        Self::from_file_with(path, false)
+    }
+
+    pub fn from_file_with<P: AsRef<Path>>(path: P, ignore_errors: bool) -> Result<Self, Error> {
         let path = path.as_ref();
         let mut file = File::open(path).map_err(|error| Error::ParseFile {
             path: path.to_owned(),
@@ -198,33 +210,48 @@ impl LanguageDB {
                 error,
             })?;
 
-        Self::from_str(root, &input).map_err(|error| Error::DeserialiseFile {
+        Self::from_str_with(root, &input, ignore_errors).map_err(|error| Error::DeserialiseFile {
             path: path.to_owned(),
             error,
         })
-    }
-
-    pub fn from_directory<P: AsRef<Path>>(directory: P) -> Result<Self, Error> {
-        WalkDir::new(directory.as_ref())
-            .into_iter()
-            .filter_map(|e| e.ok())
-            .filter(|e| e.file_type().is_file() &&
-                    e.path().extension().map(|e| e == "ldefs").unwrap_or(false))
-            .try_fold(Self::default(), |mut acc, ldef| {
-                let db = Self::from_file(ldef.path())?;
-                acc.db.extend(db.into_iter());
-                Ok(acc)
-            })
     }
 
     pub fn from_str<P: AsRef<Path>, S: AsRef<str>>(
         root: P,
         input: S,
     ) -> Result<Self, DeserialiseError> {
+        Self::from_str_with(root, input, false)
+    }
+
+    pub fn from_str_with<P: AsRef<Path>, S: AsRef<str>>(
+        root: P,
+        input: S,
+        ignore_errors: bool,
+    ) -> Result<Self, DeserialiseError> {
         let document = xml::Document::parse(input.as_ref()).map_err(DeserialiseError::Xml)?;
 
-        Self::from_xml(root, document.root_element())
+        Self::from_xml_with(root, document.root_element(), ignore_errors)
     }
+
+    pub fn from_directory<P: AsRef<Path>>(directory: P) -> Result<Self, Error> {
+        Self::from_directory_with(directory, false)
+    }
+
+    pub fn from_directory_with<P: AsRef<Path>>(directory: P, ignore_errors: bool) -> Result<Self, Error> {
+        WalkDir::new(directory.as_ref())
+            .into_iter()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_type().is_file() &&
+                    e.path().extension().map(|e| e == "ldefs").unwrap_or(false))
+            .try_fold(Self::default(), |mut acc, ldef| {
+                match Self::from_file_with(ldef.path(), ignore_errors) {
+                    Ok(db) => { acc.db.extend(db.into_iter()); Ok(acc) },
+                    Err(_) if ignore_errors => Ok(acc),
+                    Err(e) => Err(e),
+                }
+            })
+    }
+
 }
 
 #[cfg(test)]
