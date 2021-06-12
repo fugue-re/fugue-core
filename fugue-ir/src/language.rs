@@ -138,6 +138,10 @@ impl LanguageDB {
             })
     }
 
+    pub fn definitions<'a>(&'a self) -> impl Iterator<Item = &'a ArchitectureDef> {
+        self.db.keys()
+    }
+
     pub fn iter<'a>(&'a self) -> impl Iterator<Item = LanguageBuilder<'a>> {
         self.db.iter().map(move |(_, language)| LanguageBuilder {
             language,
