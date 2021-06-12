@@ -7,6 +7,9 @@ use std::path::{Path, PathBuf};
 use capnp::serialize_packed::{read_message, write_message};
 use capnp::message::ReaderOptions;
 
+use fugue_ir::LanguageDB;
+
+use fugue_ir::Translator;
 use interval_tree::{Interval, IntervalTree};
 
 use crate::architecture::{self, ArchitectureDef};
@@ -22,11 +25,12 @@ use crate::backend::DatabaseImporterBackend;
 use crate::error::Error;
 use crate::schema;
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Clone)]
 pub struct Database {
     endian: Endian,
     format: Format,
     architectures: Vec<ArchitectureDef>,
+    translators: Vec<Translator>,
     segments: IntervalTree<u64, Segment>,
     functions: Vec<Function>,
     export_info: ExportInfo,
@@ -38,6 +42,7 @@ impl Default for Database {
             endian: Endian::Little,
             format: Format::ELF,
             architectures: Vec::new(),
+            translators: Vec::new(),
             segments: IntervalTree::from_iter(Vec::<(Interval<u64>, Segment)>::new()),
             functions: Vec::new(),
             export_info: ExportInfo::default(),
@@ -138,7 +143,7 @@ impl Database {
         &self.export_info
     }
 
-    pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, Error> {
+    pub fn from_file<P: AsRef<Path>>(path: P, language_db: &LanguageDB) -> Result<Self, Error> {
         let path = path.as_ref();
         let file = BufReader::new(File::open(path).map_err(Error::CannotReadFile)?);
         let mut options = ReaderOptions::new();
@@ -158,6 +163,18 @@ impl Database {
             .map(architecture::from_reader)
             .collect::<Result<Vec<_>, _>>()?;
 
+        let translators = architectures.iter().map(|arch| {
+            language_db.lookup(
+                arch.processor(),
+                arch.endian(),
+                arch.bits(),
+                arch.variant()
+            )
+            .ok_or_else(|| Error::UnsupportedArchitecture(arch.clone()))?
+            .build().map_err(Error::Translator)
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+
         let segments = database.get_segments().map_err(Error::Deserialisation)?
             .into_iter()
             .map(|r| {
@@ -175,6 +192,7 @@ impl Database {
             endian,
             format,
             architectures,
+            translators,
             segments,
             functions,
             export_info,
@@ -272,7 +290,7 @@ impl DatabaseImporter {
         self
     }
 
-    pub fn import(&self) -> Result<Database, Error> {
+    pub fn import(&self, language_db: &LanguageDB) -> Result<Database, Error> {
         if !self.program.exists() {
             return Err(Error::FileNotFound(self.program.clone()))
         }
@@ -299,7 +317,7 @@ impl DatabaseImporter {
 
         // importing from an existing database
         if self.program.extension().map(|e| e == "fdb").unwrap_or(false) {
-            if let Ok(db) = Database::from_file(&self.program) {
+            if let Ok(db) = Database::from_file(&self.program, language_db) {
                 return Ok(db)
             }
         };
@@ -331,6 +349,6 @@ impl DatabaseImporter {
             return Err(err)
         }
 
-        Database::from_file(fdb_path)
+        Database::from_file(fdb_path, language_db)
     }
 }

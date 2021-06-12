@@ -8,6 +8,7 @@ build = "build.rs"
 [dependencies]
 fugue-arch = { path = "../fugue-arch" }
 fugue-bytes = { path = "../fugue-bytes" }
+fugue-ir = { path = "../fugue-ir" }
 
 capnp = "0.14"
 chrono = "0.4"

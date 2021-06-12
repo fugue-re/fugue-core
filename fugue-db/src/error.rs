@@ -1,3 +1,4 @@
+use crate::architecture::ArchitectureDef;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -22,6 +23,10 @@ pub enum Error {
     FileNotFound(std::path::PathBuf),
     #[error(transparent)]
     Serialisation(capnp::Error),
+    #[error(transparent)]
+    Translator(fugue_ir::error::Error),
+    #[error("unsupported architecture: {0}")]
+    UnsupportedArchitecture(ArchitectureDef),
     #[error("unsupported format `{0}`")]
     UnsupportedFormat(String),
 }
