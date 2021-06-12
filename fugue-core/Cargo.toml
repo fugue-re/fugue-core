@@ -1,11 +1,12 @@
 [package]
-name = "fugue-core"
+name = "fugue"
 version = "0.1.0"
 authors = ["Sam Thomas <st@xv.ax>"]
 edition = "2018"
 
 [dependencies]
 fugue-bv = { path = "../fugue-bv" }
+fugue-bytes = { path = "../fugue-bytes" }
 fugue-db = { path = "../fugue-db" }
 fugue-fp = { path = "../fugue-fp" }
 fugue-ir = { path = "../fugue-ir" }
