@@ -18,7 +18,7 @@ use crate::Function;
 use crate::Id;
 use crate::Segment;
 
-use crate::backend;
+use crate::backend::DatabaseImporterBackend;
 use crate::error::Error;
 use crate::schema;
 
@@ -215,8 +215,7 @@ impl Database {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct DatabaseImporter<'a, B: backend::Backend> {
-    backend: &'a B,
+pub struct DatabaseImporter {
     program: PathBuf,
     idb_path: Option<PathBuf>,
     fdb_path: Option<PathBuf>,
@@ -225,10 +224,9 @@ pub struct DatabaseImporter<'a, B: backend::Backend> {
     overwrite_fdb: bool,
 }
 
-impl<'a, B> DatabaseImporter<'a, B> where B: backend::Backend {
-    pub fn new<P: AsRef<Path>>(backend: &'a B, program: P) -> DatabaseImporter<'a, B> {
+impl DatabaseImporter {
+    pub fn new<P: AsRef<Path>>(program: P) -> DatabaseImporter {
         Self {
-            backend,
             program: program.as_ref().to_owned(),
             idb_path: None,
             fdb_path: None,
@@ -295,13 +293,35 @@ impl<'a, B> DatabaseImporter<'a, B> where B: backend::Backend {
             (idb_path, fdb_path)
         };
 
-        self.backend.import_full(&self.program,
-                                 idb_path,
-                                 &fdb_path,
-                                 self.overwrite_fdb,
-                                 self.rebase,
-                                 self.rebase_relative)
-            .map_err(B::Error::into)?;
+        // importing from an existing database
+        if self.program.extension().map(|e| e == "fdb").unwrap_or(false) {
+            if let Ok(db) = Database::from_file(&self.program) {
+                return Ok(db)
+            }
+        };
+
+        let mut backends = inventory::iter::<DatabaseImporterBackend>()
+            .filter(|b| b.is_available())
+            .collect::<Vec<_>>();
+
+        backends.sort_by_key(|b| !b.is_preferred_for(&self.program));
+
+        let mut err = None;
+        for backend in backends {
+            match backend.import_full(&self.program,
+                                      &idb_path,
+                                      &fdb_path,
+                                      self.overwrite_fdb,
+                                      self.rebase,
+                                      self.rebase_relative) {
+                Ok(()) => { err = None; break },
+                Err(e) => if err.is_none() { err = Some(e); },
+            }
+        }
+
+        if let Some(err) = err {
+            return Err(err)
+        }
 
         Database::from_file(fdb_path)
     }
