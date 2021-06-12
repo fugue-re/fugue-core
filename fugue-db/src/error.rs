@@ -16,6 +16,8 @@ pub enum Error {
     NoFunctionSegment(u64),
     #[error("block at {0:#x} has no corresponding segment")]
     NoBlockSegment(u64),
+    #[error("no importer backends available")]
+    NoBackendsAvailable,
     #[error("file not found at `{}`", _0.display())]
     FileNotFound(std::path::PathBuf),
     #[error(transparent)]

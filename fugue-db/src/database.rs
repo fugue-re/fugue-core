@@ -304,6 +304,10 @@ impl DatabaseImporter {
             .filter(|b| b.is_available())
             .collect::<Vec<_>>();
 
+        if backends.is_empty() {
+            return Err(Error::NoBackendsAvailable)
+        }
+
         backends.sort_by_key(|b| !b.is_preferred_for(&self.program));
 
         let mut err = None;
