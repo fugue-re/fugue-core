@@ -11,6 +11,7 @@ use crate::Translator;
 use fnv::FnvHashMap as Map;
 use fugue_arch::ArchitectureDef;
 use itertools::Itertools;
+use walkdir::WalkDir;
 
 use std::fs::File;
 use std::io::Read;
@@ -21,7 +22,7 @@ pub struct Language {
     id: String,
     architecture: ArchitectureDef,
     version: String,
-    sla_file: String,
+    sla_file: PathBuf,
     processor_spec: PSpec,
     compiler_specs: Map<String, CSpec>,
 }
@@ -68,11 +69,15 @@ impl Language {
             input.attribute_variant("variant")?,
         );
 
+        let mut path = root.as_ref().to_path_buf();
+        let slafile_path = input.attribute_string("slafile")?;
+        path.push(slafile_path);
+
         Ok(Self {
             id: input.attribute_string("id")?,
             architecture,
             version: input.attribute_string("version")?,
-            sla_file: input.attribute_string("slafile")?,
+            sla_file: path,
             processor_spec,
             compiler_specs,
         })
@@ -80,19 +85,17 @@ impl Language {
 }
 
 #[derive(Debug, Clone)]
+#[repr(transparent)]
 pub struct LanguageBuilder<'a> {
     language: &'a Language,
-    root: &'a Path,
 }
 
 impl<'a> LanguageBuilder<'a> {
     pub fn build(&self) -> Result<Translator, Error> {
-        let mut path = self.root.to_path_buf();
-        path.push(&self.language.sla_file);
         let mut translator =
             Translator::from_file(self.language.processor_spec.program_counter(),
                                   &self.language.compiler_specs,
-                                  path)?;
+                                  &self.language.sla_file)?;
         for (name, val) in self.language.processor_spec.context_set() {
             translator
                 .set_variable_default(name.as_ref(), val);
@@ -101,10 +104,10 @@ impl<'a> LanguageBuilder<'a> {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Default, Clone)]
+#[repr(transparent)]
 pub struct LanguageDB {
     db: Map<ArchitectureDef, Language>,
-    root: PathBuf,
 }
 
 impl LanguageDB {
@@ -118,7 +121,6 @@ impl LanguageDB {
             .get(&ArchitectureDef::new(processor, endian, bits, "default"))
             .map(|language| LanguageBuilder {
                 language,
-                root: &self.root,
             })
     }
 
@@ -133,15 +135,17 @@ impl LanguageDB {
             .get(&ArchitectureDef::new(processor, endian, bits, variant))
             .map(|language| LanguageBuilder {
                 language,
-                root: &self.root,
             })
     }
 
     pub fn iter<'a>(&'a self) -> impl Iterator<Item = LanguageBuilder<'a>> {
         self.db.iter().map(move |(_, language)| LanguageBuilder {
             language,
-            root: &self.root,
         })
+    }
+
+    fn into_iter(self) -> impl Iterator<Item=(ArchitectureDef, Language)> {
+        self.db.into_iter()
     }
 
     pub fn len(&self) -> usize {
@@ -167,7 +171,6 @@ impl LanguageDB {
                     Ok((ldef.architecture.clone(), ldef))
                 })
                 .collect::<Result<_, DeserialiseError>>()?,
-            root,
         })
     }
 
@@ -201,6 +204,19 @@ impl LanguageDB {
         })
     }
 
+    pub fn from_directory<P: AsRef<Path>>(directory: P) -> Result<Self, Error> {
+        WalkDir::new(directory.as_ref())
+            .into_iter()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_type().is_file() &&
+                    e.path().extension().map(|e| e == "ldefs").unwrap_or(false))
+            .try_fold(Self::default(), |mut acc, ldef| {
+                let db = Self::from_file(ldef.path())?;
+                acc.db.extend(db.into_iter());
+                Ok(acc)
+            })
+    }
+
     pub fn from_str<P: AsRef<Path>, S: AsRef<str>>(
         root: P,
         input: S,
@@ -214,6 +230,13 @@ impl LanguageDB {
 #[cfg(test)]
 mod test {
     use super::*;
+
+    #[test]
+    fn test_language_db_full() -> Result<(), Error> {
+        let db = LanguageDB::from_directory("./data")?;
+        assert_eq!(db.len(), 43);
+        Ok(())
+    }
 
     #[test]
     fn test_language_def_arm() -> Result<(), Error> {

@@ -13,6 +13,7 @@ itertools = "0.10"
 ouroboros = "0.9"
 smallvec = "1"
 thiserror = "1"
+walkdir = "2"
 xml = { version = "0.14", package = "roxmltree" }
 
 [dev-dependencies]
