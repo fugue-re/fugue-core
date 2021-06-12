@@ -15,7 +15,7 @@ pub mod space;
 pub mod space_manager;
 pub mod translator;
 
-pub use address::Address;
+pub use address::{Address, IntoAddress};
 pub use disassembly::{IRBuilder, VarnodeData};
 pub use il::{PCode, PCodeFormatter};
 pub use language::LanguageDB;

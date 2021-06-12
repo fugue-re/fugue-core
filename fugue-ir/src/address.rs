@@ -9,6 +9,46 @@ pub struct Address<'a> {
     offset: u64,
 }
 
+pub trait IntoAddress {
+    fn into_address<'a>(self, space: &'a AddressSpace) -> Address<'a>;
+}
+
+impl IntoAddress for usize {
+    fn into_address<'a>(self, space: &'a AddressSpace) -> Address<'a> {
+        Address::new(space, self as u64)
+    }
+}
+
+impl IntoAddress for &'_ usize {
+    fn into_address<'a>(self, space: &'a AddressSpace) -> Address<'a> {
+        Address::new(space, *self as u64)
+    }
+}
+
+impl IntoAddress for u32 {
+    fn into_address<'a>(self, space: &'a AddressSpace) -> Address<'a> {
+        Address::new(space, self as u64)
+    }
+}
+
+impl IntoAddress for &'_ u32 {
+    fn into_address<'a>(self, space: &'a AddressSpace) -> Address<'a> {
+        Address::new(space, *self as u64)
+    }
+}
+
+impl IntoAddress for u64 {
+    fn into_address<'a>(self, space: &'a AddressSpace) -> Address<'a> {
+        Address::new(space, self)
+    }
+}
+
+impl IntoAddress for &'_ u64 {
+    fn into_address<'a>(self, space: &'a AddressSpace) -> Address<'a> {
+        Address::new(space, *self)
+    }
+}
+
 impl<'a> fmt::Display for Address<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         write!(f, "{:#x}", self.offset * self.space.word_size() as u64)
