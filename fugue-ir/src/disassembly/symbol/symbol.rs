@@ -387,7 +387,7 @@ impl<'a> Symbol<'a> {
                         .expect("expression should exist for operand in formatting context")
                         .value(walker, symbols).expect("value");
                     if value < 0 {
-                        write!(fmt, "-{:#x}", -value)?;
+                        write!(fmt, "-{:#x}", -(value as i128))?;
                     } else {
                         write!(fmt, "{:#x}", value)?;
                     }
@@ -421,7 +421,7 @@ impl<'a> Symbol<'a> {
             Self::Value { pattern_value, .. } => {
                 let value = pattern_value.value(walker, symbols).expect("value");
                 if value < 0 {
-                    write!(fmt, "-{:#x}", -value)
+                    write!(fmt, "-{:#x}", -(value as i128))
                 } else {
                     write!(fmt, "{:#x}", value)
                 }
@@ -430,7 +430,7 @@ impl<'a> Symbol<'a> {
                 let index = pattern_value.value(walker, symbols).expect("value") as usize;
                 let value = value_table[index];
                 if value < 0 {
-                    write!(fmt, "-{:#x}", -value)
+                    write!(fmt, "-{:#x}", -(value as i128))
                 } else {
                     write!(fmt, "{:#x}", value)
                 }
