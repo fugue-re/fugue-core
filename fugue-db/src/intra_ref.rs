@@ -7,13 +7,13 @@ use crate::schema;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[cfg_attr(feature = "serde_derive", derive(serde::Deserialize, serde::Serialize))]
-pub struct IntraRef {
-    source: Id<BasicBlock>,
-    target: Id<BasicBlock>,
-    function: Id<Function>,
+pub struct IntraRef<'db> {
+    source: Id<BasicBlock<'db>>,
+    target: Id<BasicBlock<'db>>,
+    function: Id<Function<'db>>,
 }
 
-impl IntraRef {
+impl<'db> IntraRef<'db> {
     pub fn source_id(&self) -> Id<BasicBlock> {
         self.source.clone()
     }

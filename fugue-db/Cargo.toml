@@ -12,8 +12,10 @@ fugue-ir = { path = "../fugue-ir" }
 
 capnp = "0.14"
 chrono = "0.4"
+educe = "0.4"
 interval-tree = { git = "ssh://git@git.simulacra.to:10022/fugue/interval-tree" }
 inventory = "0.1"
+ouroboros = "0.9"
 
 tempfile = "3"
 thiserror = "1"

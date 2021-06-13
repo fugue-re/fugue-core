@@ -1,3 +1,4 @@
+use fugue_ir::Translator;
 use interval_tree::IntervalTree;
 
 use crate::Id;
@@ -10,16 +11,16 @@ use crate::schema;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[cfg_attr(feature = "serde_derive", derive(serde::Deserialize, serde::Serialize))]
-pub struct Function {
+pub struct Function<'db> {
     symbol: String,
-    entry: Id<BasicBlock>,
+    entry: Id<BasicBlock<'db>>,
     address: u64,
     segment: Id<Segment>,
-    blocks: Vec<BasicBlock>,
-    references: Vec<InterRef>,
+    blocks: Vec<BasicBlock<'db>>,
+    references: Vec<InterRef<'db>>,
 }
 
-impl Function {
+impl<'db> Function<'db> {
     pub fn name(&self) -> &str {
         &self.symbol
     }
@@ -44,7 +45,7 @@ impl Function {
         &self.references
     }
 
-    pub(crate) fn from_reader(reader: schema::function::Reader, segments: &IntervalTree<u64, Segment>) -> Result<Self, Error> {
+    pub(crate) fn from_reader(reader: schema::function::Reader, segments: &'db IntervalTree<u64, Segment>, translators: &'db [Translator]) -> Result<Self, Error> {
         Ok(Self {
             symbol: reader.get_symbol().map_err(Error::Deserialisation)?.to_string(),
             entry: Id::from(reader.get_entry()),
@@ -53,7 +54,7 @@ impl Function {
                 .ok_or_else(|| Error::NoFunctionSegment(reader.get_address()))?.index().into(),
             blocks: reader.get_blocks().map_err(Error::Deserialisation)?
                 .into_iter()
-                .map(|b| BasicBlock::from_reader(b, segments))
+                .map(|b| BasicBlock::from_reader(b, segments, translators))
                 .collect::<Result<Vec<_>, _>>()?,
             references: reader.get_references().map_err(Error::Deserialisation)?
                 .into_iter()

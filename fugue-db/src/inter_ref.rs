@@ -6,14 +6,14 @@ use crate::schema;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[cfg_attr(feature = "serde_derive", derive(serde::Deserialize, serde::Serialize))]
-pub struct InterRef {
+pub struct InterRef<'db> {
     address: u64,
-    source: Id<Function>,
-    target: Id<Function>,
+    source: Id<Function<'db>>,
+    target: Id<Function<'db>>,
     call: bool,
 }
 
-impl InterRef {
+impl<'db> InterRef<'db> {
     pub fn address(&self) -> u64 {
         self.address
     }

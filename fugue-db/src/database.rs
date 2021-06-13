@@ -4,8 +4,8 @@ use std::io::BufReader;
 use std::iter::FromIterator;
 use std::path::{Path, PathBuf};
 
-use capnp::serialize_packed::{read_message, write_message};
 use capnp::message::ReaderOptions;
+use capnp::serialize_packed::{read_message, write_message};
 
 use fugue_ir::LanguageDB;
 
@@ -25,53 +25,71 @@ use crate::backend::DatabaseImporterBackend;
 use crate::error::Error;
 use crate::schema;
 
-#[derive(Clone)]
-pub struct Database {
+#[ouroboros::self_referencing(chain_hack)]
+#[derive(educe::Educe)]
+#[educe(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct DatabaseImpl {
     endian: Endian,
     format: Format,
     architectures: Vec<ArchitectureDef>,
-    translators: Vec<Translator>,
-    segments: IntervalTree<u64, Segment>,
-    functions: Vec<Function>,
+    #[educe(Debug(ignore), PartialEq(ignore), Eq(ignore), Hash(ignore))]
+    translators: Box<Vec<Translator>>,
+    segments: Box<IntervalTree<u64, Segment>>,
+    #[borrows(segments, translators)]
+    #[covariant]
+    functions: Vec<Function<'this>>,
     export_info: ExportInfo,
 }
 
-impl Default for Database {
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
+#[repr(transparent)]
+pub struct Database(DatabaseImpl);
+
+impl Default for DatabaseImpl {
     fn default() -> Self {
-        Self {
-            endian: Endian::Little,
-            format: Format::ELF,
-            architectures: Vec::new(),
-            translators: Vec::new(),
-            segments: IntervalTree::from_iter(Vec::<(Interval<u64>, Segment)>::new()),
-            functions: Vec::new(),
-            export_info: ExportInfo::default(),
-        }
+        DatabaseImpl::new(
+            Endian::Little,
+            Format::ELF,
+            Vec::new(),
+            Box::new(Vec::new()),
+            Box::new(IntervalTree::from_iter(
+                Vec::<(Interval<u64>, Segment)>::new(),
+            )),
+            |_, _| Vec::new(),
+            ExportInfo::default(),
+        )
     }
 }
 
 impl Database {
     pub fn default_with(endian: Endian) -> Self {
-        Self {
+        Self(DatabaseImpl::new(
             endian,
-            ..Default::default()
-        }
+            Format::ELF,
+            Vec::new(),
+            Box::new(Vec::new()),
+            Box::new(IntervalTree::from_iter(
+                Vec::<(Interval<u64>, Segment)>::new(),
+            )),
+            |_, _| Vec::new(),
+            ExportInfo::default(),
+        ))
     }
 
     pub fn endian(&self) -> Endian {
-        self.endian
+        *self.0.borrow_endian()
     }
 
     pub fn format(&self) -> Format {
-        self.format
+        *self.0.borrow_format()
     }
 
     pub fn architectures(&self) -> &[ArchitectureDef] {
-        &self.architectures
+        self.0.borrow_architectures()
     }
 
     pub fn segments(&self) -> &IntervalTree<u64, Segment> {
-        &self.segments
+        self.0.borrow_segments()
     }
 
     pub fn segment<S: AsRef<str>>(&self, name: S) -> Option<&Segment> {
@@ -80,37 +98,46 @@ impl Database {
     }
 
     pub fn functions(&self) -> &[Function] {
-        &self.functions
+        self.0.borrow_functions()
     }
 
-    pub fn functions_in<S: AsRef<str>>(&self, segment: S) -> Option<impl Iterator<Item=&Function>> {
+    pub fn functions_in<S: AsRef<str>>(
+        &self,
+        segment: S,
+    ) -> Option<impl Iterator<Item = &Function>> {
         let name = segment.as_ref();
         if let Some(id) = self.segments().values().position(|s| s.name() == name) {
             let id = Id::from(id);
-            Some(self.functions().iter().filter(move |f| f.segment_id() == id))
+            Some(
+                self.functions()
+                    .iter()
+                    .filter(move |f| f.segment_id() == id),
+            )
         } else {
             None
         }
     }
 
     pub fn function_with<F>(&self, f: F) -> Option<&Function>
-    where F: FnMut(&Function) -> bool {
+    where
+        F: FnMut(&Function) -> bool,
+    {
         let mut f = f;
-        self.functions.iter().find(|&fun| f(fun))
+        self.0.borrow_functions().iter().find(|&fun| f(fun))
     }
 
     pub fn function<S: AsRef<str>>(&self, name: S) -> Option<&Function> {
         let name = name.as_ref();
-        self.functions.iter().find(|f| f.name() == name)
+        self.0.borrow_functions().iter().find(|f| f.name() == name)
     }
 
-    pub fn externals(&self) -> Option<impl Iterator<Item=&Function>> {
+    pub fn externals(&self) -> Option<impl Iterator<Item = &Function>> {
         self.functions_in(".extern") // Binary Ninja
             .or_else(|| self.functions_in("extern")) // IDA Pro
             .or_else(|| self.functions_in("EXTERNAL")) // Ghidra
     }
 
-    pub fn blocks(&self) -> impl Iterator<Item=&BasicBlock> {
+    pub fn blocks(&self) -> impl Iterator<Item = &BasicBlock> {
         self.functions().iter().map(Function::blocks).flatten()
     }
 
@@ -121,18 +148,28 @@ impl Database {
     pub fn edge_count(&self) -> usize {
         self.functions()
             .iter()
-            .map(|f| f.blocks().iter().map(|b| b.predecessors().len()).sum::<usize>() + f.references().len())
+            .map(|f| {
+                f.blocks()
+                    .iter()
+                    .map(|b| b.predecessors().len())
+                    .sum::<usize>()
+                    + f.references().len()
+            })
             .sum()
     }
 
-    pub fn blocks_in<S: AsRef<str>>(&self, name: S) -> Option<impl Iterator<Item=(&BasicBlock, &[u8])>> {
+    pub fn blocks_in<S: AsRef<str>>(
+        &self,
+        name: S,
+    ) -> Option<impl Iterator<Item = (&BasicBlock, &[u8])>> {
         let name = name.as_ref();
-        if let Some(id) = self.segments().values().position(|s| s.name() == name) {
-            let id = Id::from(id);
-            Some(self.blocks().filter_map(move |b| if b.segment_id() == id {
-                Some((b, b.bytes(self)))
-            } else {
-                None
+        if let Some(segment) = self.segments().values().find(|s| s.name() == name) {
+            Some(self.blocks().filter_map(move |b| {
+                if b.segment() == segment {
+                    Some((b, b.bytes()))
+                } else {
+                    None
+                }
             }))
         } else {
             None
@@ -140,7 +177,7 @@ impl Database {
     }
 
     pub fn export_info(&self) -> &ExportInfo {
-        &self.export_info
+        self.0.borrow_export_info()
     }
 
     pub fn from_file<P: AsRef<Path>>(path: P, language_db: &LanguageDB) -> Result<Self, Error> {
@@ -150,32 +187,44 @@ impl Database {
         options.traversal_limit_in_words(None);
 
         let reader = read_message(file, options).map_err(Error::Deserialisation)?;
-        let database = reader.get_root::<schema::database::Reader>()
+        let database = reader
+            .get_root::<schema::database::Reader>()
             .map_err(Error::Deserialisation)?;
 
-        let endian = Endian::from(if database.get_endian() { Endian::Big } else { Endian::Little });
-        let format = database.get_format().map_err(Error::Deserialisation)?.try_into()?;
+        let endian = Endian::from(if database.get_endian() {
+            Endian::Big
+        } else {
+            Endian::Little
+        });
+        let format = database
+            .get_format()
+            .map_err(Error::Deserialisation)?
+            .try_into()?;
 
-        let export_info = ExportInfo::from_reader(database.get_export_info().map_err(Error::Deserialisation)?)?;
+        let export_info =
+            ExportInfo::from_reader(database.get_export_info().map_err(Error::Deserialisation)?)?;
 
-        let architectures = database.get_architectures().map_err(Error::Deserialisation)?
+        let architectures = database
+            .get_architectures()
+            .map_err(Error::Deserialisation)?
             .into_iter()
             .map(architecture::from_reader)
             .collect::<Result<Vec<_>, _>>()?;
 
-        let translators = architectures.iter().map(|arch| {
-            language_db.lookup(
-                arch.processor(),
-                arch.endian(),
-                arch.bits(),
-                arch.variant()
-            )
-            .ok_or_else(|| Error::UnsupportedArchitecture(arch.clone()))?
-            .build().map_err(Error::Translator)
-        })
-        .collect::<Result<Vec<_>, _>>()?;
+        let translators = architectures
+            .iter()
+            .map(|arch| {
+                language_db
+                    .lookup(arch.processor(), arch.endian(), arch.bits(), arch.variant())
+                    .ok_or_else(|| Error::UnsupportedArchitecture(arch.clone()))?
+                    .build()
+                    .map_err(Error::Translator)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
 
-        let segments = database.get_segments().map_err(Error::Deserialisation)?
+        let segments = database
+            .get_segments()
+            .map_err(Error::Deserialisation)?
             .into_iter()
             .map(|r| {
                 let seg = Segment::from_reader(r)?;
@@ -183,20 +232,22 @@ impl Database {
             })
             .collect::<Result<IntervalTree<_, _>, Error>>()?;
 
-        let functions = database.get_functions().map_err(Error::Deserialisation)?
-            .into_iter()
-            .map(|r| Function::from_reader(r, &segments))
-            .collect::<Result<Vec<_>, _>>()?;
-
-        Ok(Self {
+        Ok(Self(DatabaseImpl::try_new(
             endian,
             format,
             architectures,
-            translators,
-            segments,
-            functions,
+            Box::new(translators),
+            Box::new(segments),
+            |segments, translators| {
+                database
+                    .get_functions()
+                    .map_err(Error::Deserialisation)?
+                    .into_iter()
+                    .map(|r| Function::from_reader(r, segments, translators))
+                    .collect::<Result<Vec<_>, _>>()
+            },
             export_info,
-        })
+        )?))
     }
 
     pub fn to_file<P: AsRef<Path>>(&self, path: P) -> Result<(), Error> {
@@ -212,22 +263,35 @@ impl Database {
     pub(crate) fn to_builder(&self, builder: &mut schema::database::Builder) -> Result<(), Error> {
         builder.set_endian(self.endian().is_big());
         builder.set_format(self.format().into());
-        let mut architectures = builder.reborrow().init_architectures(self.architectures.len() as u32);
-        self.architectures.iter().enumerate().try_for_each(|(i, a)| {
-            let mut builder = architectures.reborrow().get(i as u32);
-            architecture::to_builder(a, &mut builder)
-        })?;
-        let mut segments = builder.reborrow().init_segments(self.segments.len() as u32);
-        self.segments.values().enumerate().try_for_each(|(i, s)| {
-            let mut builder = segments.reborrow().get(i as u32);
-            s.to_builder(&mut builder)
-        })?;
-        let mut functions = builder.reborrow().init_functions(self.functions.len() as u32);
-        self.functions.iter().enumerate().try_for_each(|(i, f)| {
+        let mut architectures = builder
+            .reborrow()
+            .init_architectures(self.architectures().len() as u32);
+        self.architectures()
+            .iter()
+            .enumerate()
+            .try_for_each(|(i, a)| {
+                let mut builder = architectures.reborrow().get(i as u32);
+                architecture::to_builder(a, &mut builder)
+            })?;
+        let mut segments = builder
+            .reborrow()
+            .init_segments(self.segments().len() as u32);
+        self.segments()
+            .values()
+            .enumerate()
+            .try_for_each(|(i, s)| {
+                let mut builder = segments.reborrow().get(i as u32);
+                s.to_builder(&mut builder)
+            })?;
+        let mut functions = builder
+            .reborrow()
+            .init_functions(self.functions().len() as u32);
+        self.functions().iter().enumerate().try_for_each(|(i, f)| {
             let mut builder = functions.reborrow().get(i as u32);
             f.to_builder(&mut builder)
         })?;
-        self.export_info().to_builder(&mut builder.reborrow().init_export_info())?;
+        self.export_info()
+            .to_builder(&mut builder.reborrow().init_export_info())?;
         Ok(())
     }
 }
@@ -243,7 +307,7 @@ pub struct DatabaseImporter {
 }
 
 impl DatabaseImporter {
-    pub fn available_backends() -> impl Iterator<Item=&'static DatabaseImporterBackend> {
+    pub fn available_backends() -> impl Iterator<Item = &'static DatabaseImporterBackend> {
         inventory::iter::<DatabaseImporterBackend>()
     }
 
@@ -292,11 +356,13 @@ impl DatabaseImporter {
 
     pub fn import(&self, language_db: &LanguageDB) -> Result<Database, Error> {
         if !self.program.exists() {
-            return Err(Error::FileNotFound(self.program.clone()))
+            return Err(Error::FileNotFound(self.program.clone()));
         }
 
         let (idb_path, fdb_path) = if self.idb_path.is_none() || self.fdb_path.is_none() {
-            let tmpdir = tempfile::tempdir().map_err(Error::CannotCreateTempDir)?.into_path();
+            let tmpdir = tempfile::tempdir()
+                .map_err(Error::CannotCreateTempDir)?
+                .into_path();
             let idb_path = if let Some(idb_path) = &self.idb_path {
                 idb_path.to_owned()
             } else {
@@ -316,9 +382,14 @@ impl DatabaseImporter {
         };
 
         // importing from an existing database
-        if self.program.extension().map(|e| e == "fdb").unwrap_or(false) {
+        if self
+            .program
+            .extension()
+            .map(|e| e == "fdb")
+            .unwrap_or(false)
+        {
             if let Ok(db) = Database::from_file(&self.program, language_db) {
-                return Ok(db)
+                return Ok(db);
             }
         };
 
@@ -327,26 +398,35 @@ impl DatabaseImporter {
             .collect::<Vec<_>>();
 
         if backends.is_empty() {
-            return Err(Error::NoBackendsAvailable)
+            return Err(Error::NoBackendsAvailable);
         }
 
         backends.sort_by_key(|b| !b.is_preferred_for(&self.program));
 
         let mut err = None;
         for backend in backends {
-            match backend.import_full(&self.program,
-                                      &idb_path,
-                                      &fdb_path,
-                                      self.overwrite_fdb,
-                                      self.rebase,
-                                      self.rebase_relative) {
-                Ok(()) => { err = None; break },
-                Err(e) => if err.is_none() { err = Some(e); },
+            match backend.import_full(
+                &self.program,
+                &idb_path,
+                &fdb_path,
+                self.overwrite_fdb,
+                self.rebase,
+                self.rebase_relative,
+            ) {
+                Ok(()) => {
+                    err = None;
+                    break;
+                }
+                Err(e) => {
+                    if err.is_none() {
+                        err = Some(e);
+                    }
+                }
             }
         }
 
         if let Some(err) = err {
-            return Err(err)
+            return Err(err);
         }
 
         Database::from_file(fdb_path, language_db)

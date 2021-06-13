@@ -770,8 +770,8 @@ impl<'space> PCode<'space> {
         }
     }
 
-    pub fn address(&self) -> &Address<'space> {
-        &self.address
+    pub fn address(&self) -> Address<'space> {
+        self.address.clone()
     }
 
     pub fn operations(&self) -> &[PCodeOp<'space>] {

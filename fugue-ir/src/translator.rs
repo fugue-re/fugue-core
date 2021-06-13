@@ -19,6 +19,7 @@ use crate::disassembly::VarnodeData;
 use crate::disassembly::symbol::{FixedHandle, Symbol, SymbolScope, SymbolTable};
 use crate::disassembly::walker::InstructionFormatter;
 
+use crate::il::Instruction;
 use crate::il::ecode::ECode;
 use crate::il::pcode::PCode;
 
@@ -382,14 +383,25 @@ impl Translator {
         Ok(slf)
     }
 
-    pub fn format_instruction(&self, address: Address, bytes: &[u8]) -> Result<(String, String, usize), Error> {
-        let mut context = ParserContext::new(&self.context_database(), address, bytes);
+    pub fn disassemble<'a>(&'a self, db: &mut ContextDatabase, address: Address<'a>, bytes: &[u8]) -> Result<Instruction<'a>, Error> {
+        if self.alignment() != 1 {
+            if address.offset() % self.alignment() as u64 != 0 {
+                return Err(DisassemblyError::IncorrectAlignment {
+                    address: address.offset(),
+                    alignment: self.alignment(),
+                })?
+            }
+        }
+
+        let mut context = ParserContext::new(db, address.clone(), bytes);
         let mut walker = ParserWalker::new(&mut context);
 
         Translator::resolve(&mut walker, self.0.borrow_root().id(), self.0.borrow_symbol_table())?;
         walker.base_state();
 
+        let delay_slots = walker.delay_slot();
         let length = walker.length();
+
         let ctor = walker.constructor()?.ok_or_else(|| DisassemblyError::InvalidConstructor)?;
 
         let fmt = InstructionFormatter::new(walker, self.0.borrow_symbol_table(), ctor);
@@ -397,10 +409,16 @@ impl Translator {
         let mnemonic = format!("{}", fmt.mnemonic());
         let operands = format!("{}", fmt.operands());
 
-        Ok((mnemonic, operands, length))
+        Ok(Instruction {
+            address,
+            mnemonic,
+            operands,
+            delay_slots,
+            length,
+        })
     }
 
-    pub fn instruction<'a>(&'a self, db: &mut ContextDatabase<'a>, address: Address<'a>, bytes: &[u8]) -> Result<PCodeRaw<'a>, Error> {
+    pub fn lift_pcode_raw<'a>(&'a self, db: &mut ContextDatabase<'a>, address: Address<'a>, bytes: &[u8]) -> Result<PCodeRaw<'a>, Error> {
         self.0.with::<'a>(|slf| {
             if *slf.alignment != 1 {
                 if address.offset() % *slf.alignment as u64 != 0 {

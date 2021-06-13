@@ -21,6 +21,8 @@ pub enum Error {
     NoBackendsAvailable,
     #[error("file not found at `{}`", _0.display())]
     FileNotFound(std::path::PathBuf),
+    #[error("could not lift instruction at {address:#x}: {source}")]
+    Lifting { address: u64, source: fugue_ir::error::Error },
     #[error(transparent)]
     Serialisation(capnp::Error),
     #[error(transparent)]
