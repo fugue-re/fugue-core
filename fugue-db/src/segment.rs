@@ -2,7 +2,6 @@ use crate::error::Error;
 use crate::schema;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[cfg_attr(feature = "serde_derive", derive(serde::Deserialize, serde::Serialize))]
 pub struct Segment {
     name: String,
     address: u64,

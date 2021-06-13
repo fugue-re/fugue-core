@@ -4,6 +4,7 @@ use std::io::Read;
 use std::path::Path;
 
 use fnv::FnvHashMap as Map;
+use fugue_arch::ArchitectureDef;
 use itertools::Itertools;
 
 use crate::address::Address;
@@ -79,6 +80,9 @@ pub struct TranslatorImpl {
     #[borrows(manager)]
     #[covariant]
     pub context_db: ContextDatabase<'this>,
+
+    #[covariant]
+    pub architecture: ArchitectureDef,
 
     #[borrows(manager)]
     #[covariant]
@@ -162,8 +166,13 @@ impl Translator {
         self.0.borrow_user_ops()
     }
 
+    pub fn architecture(&self) -> &ArchitectureDef {
+        self.0.borrow_architecture()
+    }
+
     pub fn from_file<PC: AsRef<str>, P: AsRef<Path>>(
         program_counter: PC,
+        architecture: &ArchitectureDef,
         compiler_specs: &Map<String, compiler::Specification>,
         path: P,
     ) -> Result<Self, Error> {
@@ -180,7 +189,7 @@ impl Translator {
                 error,
             })?;
 
-        Self::from_str(program_counter, compiler_specs, &input)
+        Self::from_str(program_counter, architecture, compiler_specs, &input)
             .map_err(|error| Error::DeserialiseFile {
                 path: path.to_owned(),
                 error,
@@ -189,12 +198,13 @@ impl Translator {
 
     pub fn from_str<PC: AsRef<str>, S: AsRef<str>>(
         program_counter: PC,
+        architecture: &ArchitectureDef,
         compiler_specs: &Map<String, compiler::Specification>,
         input: S,
     ) -> Result<Self, DeserialiseError> {
         let document = xml::Document::parse(input.as_ref()).map_err(DeserialiseError::Xml)?;
 
-        Self::from_xml(program_counter, compiler_specs, document.root_element())
+        Self::from_xml(program_counter, architecture, compiler_specs, document.root_element())
     }
 
     fn build_xrefs<PC: AsRef<str>>(&mut self, program_counter: PC, compiler_specs: &Map<String, compiler::Specification>) -> Result<(), DeserialiseError> {
@@ -299,6 +309,7 @@ impl Translator {
 
     pub fn from_xml<PC: AsRef<str>>(
         program_counter: PC,
+        architecture: &ArchitectureDef,
         compiler_specs: &Map<String, compiler::Specification>,
         input: xml::Node,
     ) -> Result<Self, DeserialiseError> {
@@ -375,6 +386,7 @@ impl Translator {
             },
             |_| Ok(Vec::new()),
             |_| Ok(ContextDatabase::new()),
+            architecture.clone(),
             |_| Ok(Map::default()),
         )?);
 
@@ -744,6 +756,8 @@ impl Translator {
 
 #[cfg(test)]
 mod test {
+    use fugue_bytes::Endian;
+
     use super::{Error, Translator};
 
     /*
@@ -851,7 +865,11 @@ mod test {
         //    0040617c 00 00 00 00     nop
         //    00406180 08 00 e0 03     jr         ra
         //    00406184 20 00 bd 27     _addiu     sp,sp,0x20
-        let mut translator = Translator::from_file("pc", &super::Map::default(), "./data/mips32le.sla")?;
+        let mut translator = Translator::from_file(
+            "pc",
+            &super::ArchitectureDef::new("MIPS", Endian::Little, 32, "default"),
+            &super::Map::default(),
+            "./data/mips32le.sla")?;
 
         translator.set_variable_default("RELP", 1);
         translator.set_variable_default("PAIR_INSTRUCTION_FLAG", 0);

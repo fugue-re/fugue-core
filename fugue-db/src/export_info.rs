@@ -6,7 +6,6 @@ use crate::error::Error;
 use crate::schema;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[cfg_attr(feature = "serde_derive", derive(serde::Deserialize, serde::Serialize))]
 pub struct ExportInfo {
     input_path: String,
     input_md5: [u8; 16],
@@ -50,17 +49,14 @@ impl ExportInfo {
         self.file_size
     }
 
-    /// Get a reference to the export info's start time.
     pub fn start_time(&self) -> &DateTime<Utc> {
         &self.start_time
     }
 
-    /// Get a reference to the export info's export time.
     pub fn export_time(&self) -> &DateTime<Utc> {
         &self.export_time
     }
 
-    /// Get a reference to the export info's exporter.
     pub fn exporter(&self) -> &str {
         &self.exporter
     }

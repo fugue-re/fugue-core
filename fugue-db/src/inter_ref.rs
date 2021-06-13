@@ -5,11 +5,10 @@ use crate::error::Error;
 use crate::schema;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[cfg_attr(feature = "serde_derive", derive(serde::Deserialize, serde::Serialize))]
 pub struct InterRef<'db> {
     address: u64,
-    source: Id<Function<'db>>,
-    target: Id<Function<'db>>,
+    source_id: Id<Function<'db>>,
+    target_id: Id<Function<'db>>,
     call: bool,
 }
 
@@ -18,12 +17,12 @@ impl<'db> InterRef<'db> {
         self.address
     }
 
-    pub fn source_id(&self) -> Id<Function> {
-        self.source.clone()
+    pub fn source_id(&self) -> Id<Function<'db>> {
+        self.source_id.clone()
     }
 
-    pub fn target_id(&self) -> Id<Function> {
-        self.target.clone()
+    pub fn target_id(&self) -> Id<Function<'db>> {
+        self.target_id.clone()
     }
 
     pub fn is_call(&self) -> bool {
@@ -37,8 +36,8 @@ impl<'db> InterRef<'db> {
     pub(crate) fn from_reader(reader: schema::inter_ref::Reader) -> Result<Self, Error> {
         Ok(Self {
             address: reader.get_address(),
-            source: reader.get_source().into(),
-            target: reader.get_target().into(),
+            source_id: reader.get_source().into(),
+            target_id: reader.get_target().into(),
             call: reader.get_call(),
         })
     }

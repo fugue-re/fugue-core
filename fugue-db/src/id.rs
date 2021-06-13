@@ -1,7 +1,6 @@
 use std::marker::PhantomData;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[cfg_attr(feature = "serde_derive", derive(serde::Deserialize, serde::Serialize))]
 #[repr(transparent)]
 pub struct Id<T>(u64, PhantomData<T>);
 

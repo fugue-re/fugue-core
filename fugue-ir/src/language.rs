@@ -94,6 +94,7 @@ impl<'a> LanguageBuilder<'a> {
     pub fn build(&self) -> Result<Translator, Error> {
         let mut translator =
             Translator::from_file(self.language.processor_spec.program_counter(),
+                                  &self.language.architecture,
                                   &self.language.compiler_specs,
                                   &self.language.sla_file)?;
         for (name, val) in self.language.processor_spec.context_set() {

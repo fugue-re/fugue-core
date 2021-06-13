@@ -11,6 +11,7 @@ use fugue_ir::LanguageDB;
 
 use fugue_ir::Translator;
 use interval_tree::{Interval, IntervalTree};
+use unicase::UniCase;
 
 use crate::architecture::{self, ArchitectureDef};
 use crate::BasicBlock;
@@ -31,7 +32,6 @@ use crate::schema;
 pub struct DatabaseImpl {
     endian: Endian,
     format: Format,
-    architectures: Vec<ArchitectureDef>,
     #[educe(Debug(ignore), PartialEq(ignore), Eq(ignore), Hash(ignore))]
     translators: Box<Vec<Translator>>,
     segments: Box<IntervalTree<u64, Segment>>,
@@ -50,7 +50,6 @@ impl Default for DatabaseImpl {
         DatabaseImpl::new(
             Endian::Little,
             Format::ELF,
-            Vec::new(),
             Box::new(Vec::new()),
             Box::new(IntervalTree::from_iter(
                 Vec::<(Interval<u64>, Segment)>::new(),
@@ -66,7 +65,6 @@ impl Database {
         Self(DatabaseImpl::new(
             endian,
             Format::ELF,
-            Vec::new(),
             Box::new(Vec::new()),
             Box::new(IntervalTree::from_iter(
                 Vec::<(Interval<u64>, Segment)>::new(),
@@ -84,8 +82,8 @@ impl Database {
         *self.0.borrow_format()
     }
 
-    pub fn architectures(&self) -> &[ArchitectureDef] {
-        self.0.borrow_architectures()
+    pub fn architectures(&self) -> impl Iterator<Item=&ArchitectureDef> {
+        self.0.borrow_translators().iter().map(Translator::architecture)
     }
 
     pub fn segments(&self) -> &IntervalTree<u64, Segment> {
@@ -212,11 +210,11 @@ impl Database {
             .collect::<Result<Vec<_>, _>>()?;
 
         let translators = architectures
-            .iter()
+            .into_iter()
             .map(|arch| {
                 language_db
                     .lookup(arch.processor(), arch.endian(), arch.bits(), arch.variant())
-                    .ok_or_else(|| Error::UnsupportedArchitecture(arch.clone()))?
+                    .ok_or_else(|| Error::UnsupportedArchitecture(arch))?
                     .build()
                     .map_err(Error::Translator)
             })
@@ -235,7 +233,6 @@ impl Database {
         Ok(Self(DatabaseImpl::try_new(
             endian,
             format,
-            architectures,
             Box::new(translators),
             Box::new(segments),
             |segments, translators| {
@@ -265,9 +262,8 @@ impl Database {
         builder.set_format(self.format().into());
         let mut architectures = builder
             .reborrow()
-            .init_architectures(self.architectures().len() as u32);
+            .init_architectures(self.0.borrow_translators().len() as u32);
         self.architectures()
-            .iter()
             .enumerate()
             .try_for_each(|(i, a)| {
                 let mut builder = architectures.reborrow().get(i as u32);
@@ -304,6 +300,7 @@ pub struct DatabaseImporter {
     rebase: Option<u64>,
     rebase_relative: i32,
     overwrite_fdb: bool,
+    backend_pref: Option<String>,
 }
 
 impl DatabaseImporter {
@@ -319,7 +316,13 @@ impl DatabaseImporter {
             rebase: None,
             rebase_relative: 0,
             overwrite_fdb: false,
+            backend_pref: None,
         }
+    }
+
+    pub fn prefer_backend<N: Into<String>>(&mut self, backend: N) -> &mut Self {
+        self.backend_pref = Some(backend.into());
+        self
     }
 
     pub fn program<P: AsRef<Path>>(&mut self, program: P) -> &mut Self {
@@ -401,7 +404,14 @@ impl DatabaseImporter {
             return Err(Error::NoBackendsAvailable);
         }
 
-        backends.sort_by_key(|b| !b.is_preferred_for(&self.program));
+        backends.sort_by_key(|b| {
+            let base_score = if b.is_preferred_for(&self.program) { 5 } else { 1 };
+            if let Some(ref pref) = self.backend_pref {
+                base_score + if UniCase::new(pref) == UniCase::new(b.name()) { 1 } else { 0 }
+            } else {
+                base_score
+            }
+        });
 
         let mut err = None;
         for backend in backends {
