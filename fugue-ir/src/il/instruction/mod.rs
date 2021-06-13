@@ -1,3 +1,5 @@
+use std::fmt;
+
 use crate::Address;
 
 #[derive(Debug, Clone)]
@@ -28,5 +30,23 @@ impl<'space> Instruction<'space> {
 
     pub fn length(&self) -> usize {
         self.length
+    }
+
+    pub fn display<'insn>(&'insn self) -> InstructionFormatter<'insn, 'space> {
+        InstructionFormatter { insn: self }
+    }
+}
+
+pub struct InstructionFormatter<'insn, 'space> {
+    insn: &'insn Instruction<'space>,
+}
+
+impl<'insn, 'space> fmt::Display for InstructionFormatter<'insn, 'space> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        write!(f, "{} {}", self.insn.address, self.insn.mnemonic.trim())?;
+        if !self.insn.operands.is_empty() {
+            write!(f, " {}", self.insn.operands.trim())?;
+        }
+        Ok(())
     }
 }
