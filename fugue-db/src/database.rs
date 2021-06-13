@@ -406,7 +406,7 @@ impl DatabaseImporter {
 
         backends.sort_by_key(|b| {
             let base_score = if b.is_preferred_for(&self.program) { 5 } else { 1 };
-            if let Some(ref pref) = self.backend_pref {
+            -if let Some(ref pref) = self.backend_pref {
                 base_score + if UniCase::new(pref) == UniCase::new(b.name()) { 1 } else { 0 }
             } else {
                 base_score
