@@ -49,7 +49,7 @@ impl<'db> Function<'db> {
             symbol: reader.get_symbol().map_err(Error::Deserialisation)?.to_string(),
             entry: Id::from(reader.get_entry()),
             address: reader.get_address(),
-            segment: segments.find_one(&reader.get_address())
+            segment: segments.find(&reader.get_address())
                 .ok_or_else(|| Error::NoFunctionSegment(reader.get_address()))?.index().into(),
             blocks: reader.get_blocks().map_err(Error::Deserialisation)?
                 .into_iter()

@@ -119,7 +119,7 @@ impl<'db> BasicBlock<'db> {
             length: reader.get_length() as usize,
             architecture_id,
             segment: segments
-                .find_one(&reader.get_address())
+                .find(&reader.get_address())
                 .ok_or_else(|| Error::NoBlockSegment(reader.get_address()))?
                 .value(),
             predecessors: reader
