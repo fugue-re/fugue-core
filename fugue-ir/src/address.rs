@@ -13,6 +13,18 @@ pub trait IntoAddress {
     fn into_address<'a>(self, space: &'a AddressSpace) -> Address<'a>;
 }
 
+impl IntoAddress for Address<'_> {
+    fn into_address<'a>(self, space: &'a AddressSpace) -> Address<'a> {
+        Address::new(space, self.offset())
+    }
+}
+
+impl IntoAddress for &'_ Address<'_> {
+    fn into_address<'a>(self, space: &'a AddressSpace) -> Address<'a> {
+        Address::new(space, self.offset())
+    }
+}
+
 impl IntoAddress for usize {
     fn into_address<'a>(self, space: &'a AddressSpace) -> Address<'a> {
         Address::new(space, self as u64)
