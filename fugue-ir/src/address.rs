@@ -49,6 +49,42 @@ impl IntoAddress for &'_ u64 {
     }
 }
 
+impl<'space> From<Address<'space>> for usize {
+    fn from(t: Address<'space>) -> Self {
+        t.offset as _
+    }
+}
+
+impl<'space> From<&'_ Address<'space>> for usize {
+    fn from(t: &'_ Address<'space>) -> Self {
+        t.offset as _
+    }
+}
+
+impl<'space> From<Address<'space>> for u64 {
+    fn from(t: Address<'space>) -> Self {
+        t.offset as _
+    }
+}
+
+impl<'space> From<&'_ Address<'space>> for u64 {
+    fn from(t: &'_ Address<'space>) -> Self {
+        t.offset as _
+    }
+}
+
+impl<'space> From<Address<'space>> for u32 {
+    fn from(t: Address<'space>) -> Self {
+        t.offset as _
+    }
+}
+
+impl<'space> From<&'_ Address<'space>> for u32 {
+    fn from(t: &'_ Address<'space>) -> Self {
+        t.offset as _
+    }
+}
+
 impl<'a> fmt::Display for Address<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         write!(f, "{:#x}", self.offset * self.space.word_size() as u64)
