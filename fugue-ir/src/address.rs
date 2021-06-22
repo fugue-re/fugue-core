@@ -3,7 +3,7 @@ use std::ops::{Add, Sub};
 
 use crate::space::{AddressSpace, SpaceKind};
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Address<'a> {
     space: &'a AddressSpace,
     offset: u64,
