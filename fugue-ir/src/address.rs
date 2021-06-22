@@ -103,6 +103,50 @@ impl<'a> fmt::Display for Address<'a> {
     }
 }
 
+impl<'a> Add<Address<'a>> for Address<'a> {
+    type Output = Self;
+
+    fn add(self, rhs: Address<'a>) -> Self {
+        Self {
+            offset: self.space.wrap_offset(self.offset.wrapping_add(rhs.offset)),
+            space: self.space,
+        }
+    }
+}
+
+impl<'a> Sub<Address<'a>> for Address<'a> {
+    type Output = Self;
+
+    fn sub(self, rhs: Address<'a>) -> Self {
+        Self {
+            offset: self.space.wrap_offset(self.offset.wrapping_sub(rhs.offset)),
+            space: self.space,
+        }
+    }
+}
+
+impl<'a> Add<&'_ Address<'a>> for Address<'a> {
+    type Output = Self;
+
+    fn add(self, rhs: &Address<'a>) -> Self {
+        Self {
+            offset: self.space.wrap_offset(self.offset.wrapping_add(rhs.offset)),
+            space: self.space,
+        }
+    }
+}
+
+impl<'a> Sub<&'_ Address<'a>> for Address<'a> {
+    type Output = Self;
+
+    fn sub(self, rhs: &Address<'a>) -> Self {
+        Self {
+            offset: self.space.wrap_offset(self.offset.wrapping_sub(rhs.offset)),
+            space: self.space,
+        }
+    }
+}
+
 impl<'a> Add<usize> for Address<'a> {
     type Output = Self;
 
