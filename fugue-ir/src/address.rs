@@ -125,6 +125,12 @@ impl<'a> Address<'a> {
         self.offset
     }
 
+    pub fn difference(&self, other: &Address<'a>) -> Address<'a> {
+        // reinterpret other as if it were in `self's` space
+        self.offset.wrapping_sub(self.space.wrap_offset(other.offset()))
+            .into_address(self.space)
+    }
+
     pub fn is_constant(&self) -> bool {
         self.space.kind() == SpaceKind::Constant
     }
