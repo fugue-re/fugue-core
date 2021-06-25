@@ -27,11 +27,16 @@ impl From<AddressValue> for Address {
 
 pub trait IntoAddress {
     fn into_address(self, space: &AddressSpace) -> Address;
+    fn into_address_value(self, space: Arc<AddressSpace>) -> AddressValue;
 }
 
 impl IntoAddress for Address {
     fn into_address(self, space: &AddressSpace) -> Address {
         Address::new(space, self.0)
+    }
+
+    fn into_address_value(self, space: Arc<AddressSpace>) -> AddressValue {
+        AddressValue::new(space, self.0)
     }
 }
 
@@ -39,11 +44,19 @@ impl IntoAddress for &'_ Address {
     fn into_address(self, space: &AddressSpace) -> Address {
         Address::new(space, self.0)
     }
+
+    fn into_address_value(self, space: Arc<AddressSpace>) -> AddressValue {
+        AddressValue::new(space, self.0)
+    }
 }
 
 impl IntoAddress for usize {
     fn into_address(self, space: &AddressSpace) -> Address {
         Address::new(space, self as u64)
+    }
+
+    fn into_address_value(self, space: Arc<AddressSpace>) -> AddressValue {
+        AddressValue::new(space, self as u64)
     }
 }
 
@@ -51,11 +64,19 @@ impl IntoAddress for &'_ usize {
     fn into_address(self, space: &AddressSpace) -> Address {
         Address::new(space, *self as u64)
     }
+
+    fn into_address_value(self, space: Arc<AddressSpace>) -> AddressValue {
+        AddressValue::new(space, *self as u64)
+    }
 }
 
 impl IntoAddress for u32 {
     fn into_address(self, space: &AddressSpace) -> Address {
         Address::new(space, self as u64)
+    }
+
+    fn into_address_value(self, space: Arc<AddressSpace>) -> AddressValue {
+        AddressValue::new(space, self as u64)
     }
 }
 
@@ -63,17 +84,29 @@ impl IntoAddress for &'_ u32 {
     fn into_address(self, space: &AddressSpace) -> Address {
         Address::new(space, *self as u64)
     }
+
+    fn into_address_value(self, space: Arc<AddressSpace>) -> AddressValue {
+        AddressValue::new(space, *self as u64)
+    }
 }
 
 impl IntoAddress for u64 {
     fn into_address(self, space: &AddressSpace) -> Address {
         Address::new(space, self)
     }
+
+    fn into_address_value(self, space: Arc<AddressSpace>) -> AddressValue {
+        AddressValue::new(space, self)
+    }
 }
 
 impl IntoAddress for &'_ u64 {
     fn into_address(self, space: &AddressSpace) -> Address {
         Address::new(space, *self)
+    }
+
+    fn into_address_value(self, space: Arc<AddressSpace>) -> AddressValue {
+        AddressValue::new(space, *self)
     }
 }
 
