@@ -50,6 +50,26 @@ impl IntoAddress for &'_ Address {
     }
 }
 
+impl IntoAddress for AddressValue {
+    fn into_address(self, space: &AddressSpace) -> Address {
+        Address::new(space, self.offset)
+    }
+
+    fn into_address_value(self, space: Arc<AddressSpace>) -> AddressValue {
+        AddressValue::new(space, self.offset)
+    }
+}
+
+impl IntoAddress for &'_ AddressValue {
+    fn into_address(self, space: &AddressSpace) -> Address {
+        Address::new(space, self.offset)
+    }
+
+    fn into_address_value(self, space: Arc<AddressSpace>) -> AddressValue {
+        AddressValue::new(space, self.offset)
+    }
+}
+
 impl IntoAddress for usize {
     fn into_address(self, space: &AddressSpace) -> Address {
         Address::new(space, self as u64)
