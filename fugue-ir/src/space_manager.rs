@@ -1,7 +1,7 @@
 use std::fmt::Debug;
 use std::sync::Arc;
 
-use crate::address::Address;
+use crate::address::AddressValue;
 use crate::deserialise::Error;
 use crate::space::AddressSpace;
 
@@ -15,9 +15,9 @@ pub struct SpaceManager {
 }
 
 impl SpaceManager {
-    pub fn address_from<S: AsRef<str>>(&self, space: S, offset: u64) -> Option<Address> {
+    pub fn address_from<S: AsRef<str>>(&self, space: S, offset: u64) -> Option<AddressValue> {
         let space = self.space_by_name(space)?;
-        Some(Address::new(space, offset))
+        Some(AddressValue::new(space, offset))
     }
 
     pub fn address_size(&self) -> usize {

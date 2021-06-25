@@ -1,4 +1,4 @@
-use crate::address::Address;
+use crate::address::AddressValue;
 use crate::bits;
 use crate::disassembly::{Error, ParserContext, ParserWalker};
 use crate::disassembly::construct::{ConstructTpl, OpTpl, VarnodeTpl};
@@ -21,7 +21,7 @@ use crate::il::ecode::{self, ECode};
 
 #[derive(Debug, Clone)]
 pub struct PCodeRaw {
-    pub address: Address,
+    pub address: AddressValue,
     pub operations: SmallVec<[PCodeData; 16]>,
     pub delay_slots: usize,
     pub length: usize,
@@ -62,7 +62,7 @@ impl PCodeRaw {
         PCodeRawFormatter::new(self, translator)
     }
 
-    pub fn nop(address: Address, length: usize) -> Self {
+    pub fn nop(address: AddressValue, length: usize) -> Self {
         Self {
             address,
             operations: SmallVec::new(),
@@ -71,7 +71,7 @@ impl PCodeRaw {
         }
     }
 
-    pub fn address(&self) -> Address {
+    pub fn address(&self) -> AddressValue {
         self.address.clone()
     }
 
@@ -160,7 +160,7 @@ pub struct IRBuilder<'a, 'b, 'c> {
     label_refs: SmallVec<[RelativeRecord; 16]>,
     labels: SmallVec<[u64; 16]>,
 
-    delay_contexts: Map<Address, &'c mut ParserContext<'b>>,
+    delay_contexts: Map<AddressValue, &'c mut ParserContext<'b>>,
 
     manager: &'a SpaceManager,
     float_formats: Map<usize, Arc<FloatFormat>>,
@@ -171,7 +171,7 @@ pub struct IRBuilder<'a, 'b, 'c> {
 }
 
 impl<'a, 'b, 'c> IRBuilder<'a, 'b, 'c> {
-    pub fn new(walker: ParserWalker<'b, 'c>, delay_contexts: &'c mut Map<Address, ParserContext<'b>>, manager: &'a SpaceManager, float_formats: &'a [Arc<FloatFormat>], registers: &'a Map<(u64, usize), Arc<str>>, user_ops: &'a [Arc<str>], unique_mask: u64) -> Result<Self, Error> {
+    pub fn new(walker: ParserWalker<'b, 'c>, delay_contexts: &'c mut Map<AddressValue, ParserContext<'b>>, manager: &'a SpaceManager, float_formats: &'a [Arc<FloatFormat>], registers: &'a Map<(u64, usize), Arc<str>>, user_ops: &'a [Arc<str>], unique_mask: u64) -> Result<Self, Error> {
         Ok(Self {
             const_space: manager.constant_space(),
             unique_mask,

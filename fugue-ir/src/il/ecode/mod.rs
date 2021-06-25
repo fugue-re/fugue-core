@@ -2,11 +2,12 @@ use std::borrow::Cow;
 use std::fmt;
 use std::sync::Arc;
 
+use crate::address::AddressValue;
 use crate::disassembly::{Opcode, VarnodeData};
 use crate::float_format::FloatFormat;
 use crate::space::AddressSpace;
 use crate::space_manager::SpaceManager;
-use crate::{Address, Translator};
+use crate::Translator;
 
 use fnv::FnvHashMap as Map;
 use fugue_bv::BitVec;
@@ -89,7 +90,7 @@ impl From<VarnodeData> for Var {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Location {
-    address: Address,
+    address: AddressValue,
     position: usize,
 }
 
@@ -100,7 +101,7 @@ impl fmt::Display for Location {
 }
 
 impl Location {
-    pub fn address(&self) -> Cow<Address> {
+    pub fn address(&self) -> Cow<AddressValue> {
         Cow::Borrowed(&self.address)
     }
 
@@ -122,7 +123,7 @@ impl Location {
 
     pub(crate) fn absolute_from<A>(&mut self, address: A, position: usize)
     where
-        A: Into<Address>,
+        A: Into<AddressValue>,
     {
         if self.is_absolute() {
             return;
@@ -147,7 +148,7 @@ impl Location {
 impl From<VarnodeData> for Location {
     fn from(vnd: VarnodeData) -> Self {
         Self {
-            address: Address::new(vnd.space(), vnd.offset()),
+            address: AddressValue::new(vnd.space(), vnd.offset()),
             position: 0,
         }
     }
@@ -1310,7 +1311,7 @@ impl Stmt {
         manager: &SpaceManager,
         float_formats: &Map<usize, Arc<FloatFormat>>,
         user_ops: &[Arc<str>],
-        address: &Address,
+        address: &AddressValue,
         position: usize,
         opcode: Opcode,
         inputs: SmallVec<[VarnodeData; 16]>,
@@ -1884,14 +1885,14 @@ impl Stmt {
 
 #[derive(Debug, Clone)]
 pub struct ECode {
-    pub address: Address,
+    pub address: AddressValue,
     pub operations: SmallVec<[Stmt; 16]>,
     pub delay_slots: usize,
     pub length: usize,
 }
 
 impl ECode {
-    pub fn nop(address: Address, length: usize) -> Self {
+    pub fn nop(address: AddressValue, length: usize) -> Self {
         Self {
             address,
             operations: smallvec![Stmt::skip()],
@@ -1900,8 +1901,8 @@ impl ECode {
         }
     }
 
-    pub fn address(&self) -> &Address {
-        &self.address
+    pub fn address(&self) -> AddressValue {
+        self.address.clone()
     }
 
     pub fn operations(&self) -> &[Stmt] {

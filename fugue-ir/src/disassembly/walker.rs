@@ -1,4 +1,4 @@
-use crate::address::Address;
+use crate::address::AddressValue;
 use crate::disassembly::Error;
 use crate::disassembly::context::ContextDatabase;
 use crate::disassembly::pattern::PatternExpression;
@@ -122,8 +122,8 @@ pub struct ParserContext<'b> {
 
     backing: [u8; 16],
 
-    address: Address,
-    next_address: Option<Address>,
+    address: AddressValue,
+    next_address: Option<AddressValue>,
 
     delay_slot: usize,
 
@@ -132,7 +132,7 @@ pub struct ParserContext<'b> {
 }
 
 impl<'b> ParserContext<'b> {
-    pub fn new(context_db: &ContextDatabase, address: Address, buffer: &[u8]) -> Self {
+    pub fn new(context_db: &ContextDatabase, address: AddressValue, buffer: &[u8]) -> Self {
         let mut backing = [0u8; 16];
         let length = buffer.len().min(backing.len());
         &mut backing[..length].copy_from_slice(&buffer[..length]);
@@ -313,15 +313,15 @@ impl<'b> ParserContext<'b> {
             let mut address = if let Symbol::Operand { handle_index, .. } = symbol {
                 let handle = nwalker.handle(*handle_index)?
                     .ok_or_else(|| Error::InvalidHandle)?;
-                Address::new(handle.space, handle.offset_offset)
+                AddressValue::new(handle.space, handle.offset_offset)
             } else {
                 let handle = symbol.fixed_handle(&mut nwalker, manager, symbols)?;
-                Address::new(handle.space, handle.offset_offset)
+                AddressValue::new(handle.space, handle.offset_offset)
             };
 
             if address.is_constant() {
                 let noffset = address.offset() * address.space().word_size() as u64;
-                address = Address::new(address.space(), noffset);
+                address = AddressValue::new(address.space(), noffset);
             }
 
             if commit.flow {
@@ -343,7 +343,7 @@ impl<'b> ParserContext<'b> {
         self.state[point].constructor
     }
 
-    pub fn set_next_address(&mut self, address: Address) {
+    pub fn set_next_address(&mut self, address: AddressValue) {
         self.next_address = Some(address);
     }
 
@@ -384,11 +384,11 @@ impl<'b, 'c> ParserWalker<'b, 'c> {
         self.point.is_some()
     }
 
-    pub fn address(&self) -> Address {
+    pub fn address(&self) -> AddressValue {
         self.ctx.address.clone()
     }
 
-    pub fn next_address(&self) -> Option<Address> {
+    pub fn next_address(&self) -> Option<AddressValue> {
         self.ctx.next_address.clone()
     }
 
@@ -421,7 +421,7 @@ impl<'b, 'c> ParserWalker<'b, 'c> {
         Ok(self.ctx.handle(ph).map(|v| v.clone()))
     }
 
-    pub fn set_next_address(&mut self, address: Address) {
+    pub fn set_next_address(&mut self, address: AddressValue) {
         self.ctx.set_next_address(address);
     }
 

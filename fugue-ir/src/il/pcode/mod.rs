@@ -4,7 +4,7 @@ use fnv::FnvHashMap as Map;
 use smallvec::{smallvec, SmallVec};
 
 use crate::disassembly::{Opcode, VarnodeData};
-use crate::address::Address;
+use crate::address::AddressValue;
 use crate::space::AddressSpace;
 use crate::space_manager::SpaceManager;
 
@@ -755,14 +755,14 @@ impl PCodeOp {
 
 #[derive(Debug, Clone)]
 pub struct PCode {
-    pub address: Address,
+    pub address: AddressValue,
     pub operations: SmallVec<[PCodeOp; 16]>,
     pub delay_slots: usize,
     pub length: usize,
 }
 
 impl PCode {
-    pub fn nop(address: Address, length: usize) -> Self {
+    pub fn nop(address: AddressValue, length: usize) -> Self {
         Self {
             address,
             operations: smallvec![PCodeOp::skip()],
@@ -771,7 +771,7 @@ impl PCode {
         }
     }
 
-    pub fn address(&self) -> Address {
+    pub fn address(&self) -> AddressValue {
         self.address.clone()
     }
 

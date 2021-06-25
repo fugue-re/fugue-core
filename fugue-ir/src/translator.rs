@@ -8,7 +8,7 @@ use fnv::FnvHashMap as Map;
 use fugue_arch::ArchitectureDef;
 use itertools::Itertools;
 
-use crate::address::Address;
+use crate::address::AddressValue;
 
 use crate::deserialise::parse::XmlExt;
 use crate::deserialise::Error as DeserialiseError;
@@ -133,9 +133,9 @@ impl Translator {
         self.0.with_context_db_mut(|db| db.set_variable_default(name, value));
     }
 
-    pub fn address(&self, address: u64) -> Address {
+    pub fn address(&self, address: u64) -> AddressValue {
         let space = self.manager().default_space();
-        Address::new(space, address)
+        AddressValue::new(space, address)
     }
 
     pub fn manager(&self) -> &SpaceManager {
@@ -395,7 +395,7 @@ impl Translator {
         Ok(slf)
     }
 
-    pub fn disassemble<'a>(&'a self, db: &mut ContextDatabase, address: Address, bytes: &[u8]) -> Result<Instruction, Error> {
+    pub fn disassemble<'a>(&'a self, db: &mut ContextDatabase, address: AddressValue, bytes: &[u8]) -> Result<Instruction, Error> {
         if self.alignment() != 1 {
             if address.offset() % self.alignment() as u64 != 0 {
                 return Err(DisassemblyError::IncorrectAlignment {
@@ -430,7 +430,7 @@ impl Translator {
         })
     }
 
-    pub fn lift_pcode_raw(&self, db: &mut ContextDatabase, address: Address, bytes: &[u8]) -> Result<PCodeRaw, Error> {
+    pub fn lift_pcode_raw(&self, db: &mut ContextDatabase, address: AddressValue, bytes: &[u8]) -> Result<PCodeRaw, Error> {
         self.0.with(|slf| {
             if *slf.alignment != 1 {
                 if address.offset() % *slf.alignment as u64 != 0 {
@@ -500,7 +500,7 @@ impl Translator {
         })
     }
 
-    pub fn lift_pcode(&self, db: &mut ContextDatabase, address: Address, bytes: &[u8]) -> Result<PCode, Error> {
+    pub fn lift_pcode(&self, db: &mut ContextDatabase, address: AddressValue, bytes: &[u8]) -> Result<PCode, Error> {
         self.0.with(|slf| {
             if *slf.alignment != 1 {
                 if address.offset() % *slf.alignment as u64 != 0 {
@@ -568,7 +568,7 @@ impl Translator {
         })
     }
 
-    pub fn lift_ecode(&self, db: &mut ContextDatabase, address: Address, bytes: &[u8]) -> Result<ECode, Error> {
+    pub fn lift_ecode(&self, db: &mut ContextDatabase, address: AddressValue, bytes: &[u8]) -> Result<ECode, Error> {
         self.0.with(|slf| {
             if *slf.alignment != 1 {
                 if address.offset() % *slf.alignment as u64 != 0 {

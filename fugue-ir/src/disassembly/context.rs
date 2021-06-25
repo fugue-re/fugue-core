@@ -5,7 +5,7 @@ use std::ops::{Deref, DerefMut};
 
 use itertools::Itertools;
 
-use crate::address::Address;
+use crate::address::AddressValue;
 use crate::disassembly::partmap::{BoundKind, PartMap};
 use crate::disassembly::VarnodeData;
 
@@ -291,8 +291,8 @@ impl ContextCache {
 pub struct ContextDatabase {
     size: usize,
     variables: Map<String, ContextBitRange>,
-    database: PartMap<Address, FreeArray>,
-    trackbase: PartMap<Address, TrackedSet>,
+    database: PartMap<AddressValue, FreeArray>,
+    trackbase: PartMap<AddressValue, TrackedSet>,
 }
 
 impl ContextDatabase {
@@ -309,13 +309,13 @@ impl ContextDatabase {
         self.size
     }
 
-    pub fn new_tracked_set(&mut self, addr1: Address, addr2: Address) -> &mut TrackedSet {
+    pub fn new_tracked_set(&mut self, addr1: AddressValue, addr2: AddressValue) -> &mut TrackedSet {
         let range = self.trackbase.clear_range(&addr1, &addr2);
         range.clear();
         range
     }
 
-    pub fn tracked_set(&self, address: Address) -> &TrackedSet {
+    pub fn tracked_set(&self, address: AddressValue) -> &TrackedSet {
         self.trackbase.get_or_default(&address)
     }
 
@@ -335,7 +335,7 @@ impl ContextDatabase {
         self.variables.get_mut(name.borrow())
     }
 
-    pub fn get_variable<S: Borrow<str>>(&self, name: S, address: Address) -> Option<u32> {
+    pub fn get_variable<S: Borrow<str>>(&self, name: S, address: AddressValue) -> Option<u32> {
         self.variable(name.borrow())
             .map(|context| context.get(&self.database.get_or_default(&address).values))
     }
@@ -343,7 +343,7 @@ impl ContextDatabase {
     pub fn set_variable<S: Borrow<str>>(
         &mut self,
         name: S,
-        address: Address,
+        address: AddressValue,
         value: u32,
     ) -> Option<()> {
         let context = self.variables.get(name.borrow())?;
@@ -397,11 +397,11 @@ impl ContextDatabase {
         Some(())
     }
 
-    pub fn get_context(&self, address: &Address) -> &Vec<u32> {
+    pub fn get_context(&self, address: &AddressValue) -> &Vec<u32> {
         &self.database.get_or_default(address).values
     }
 
-    pub fn get_context_bounds(&self, address: &Address) -> (&Vec<u32>, u64, u64) {
+    pub fn get_context_bounds(&self, address: &AddressValue) -> (&Vec<u32>, u64, u64) {
         match self.database.bounds(address) {
             BoundKind::None(fa) => (&fa.values, 0, address.space().highest_offset()),
             BoundKind::Lower(l, fa) => {
@@ -436,7 +436,7 @@ impl ContextDatabase {
 
     pub fn set_context_change_point(
         &mut self,
-        address: Address,
+        address: AddressValue,
         num: usize,
         mask: u32,
         value: u32,
@@ -450,8 +450,8 @@ impl ContextDatabase {
 
     pub fn set_context_region(
         &mut self,
-        addr1: Address,
-        addr2: Option<Address>,
+        addr1: AddressValue,
+        addr2: Option<AddressValue>,
         num: usize,
         mask: u32,
         value: u32,
@@ -464,8 +464,8 @@ impl ContextDatabase {
     pub fn set_variable_region<S: Borrow<str>>(
         &mut self,
         name: S,
-        addr1: Address,
-        addr2: Option<Address>,
+        addr1: AddressValue,
+        addr2: Option<AddressValue>,
         value: u32,
     ) -> Option<()> {
         let context = self.variables.get(name.borrow())?;
@@ -484,8 +484,8 @@ impl ContextDatabase {
 }
 
 fn get_region_to_change_point<'a, F>(
-    db: &'a mut PartMap<Address, FreeArray>,
-    addr: Address,
+    db: &'a mut PartMap<AddressValue, FreeArray>,
+    addr: AddressValue,
     num: usize,
     mask: u32,
     mut f: F
@@ -512,9 +512,9 @@ fn get_region_to_change_point<'a, F>(
 }
 
 fn get_region_for_set<'a, F>(
-    db: &'a mut PartMap<Address, FreeArray>,
-    addr1: Address,
-    addr2: Option<Address>,
+    db: &'a mut PartMap<AddressValue, FreeArray>,
+    addr1: AddressValue,
+    addr2: Option<AddressValue>,
     num: usize,
     mask: u32,
     mut f: F

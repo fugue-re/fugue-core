@@ -1,10 +1,10 @@
 use std::fmt;
 
-use crate::Address;
+use crate::AddressValue;
 
 #[derive(Debug, Clone)]
 pub struct Instruction {
-    pub address: Address,
+    pub address: AddressValue,
     pub mnemonic: String,
     pub operands: String,
     pub delay_slots: usize,
@@ -12,7 +12,7 @@ pub struct Instruction {
 }
 
 impl Instruction {
-    pub fn address(&self) -> Address {
+    pub fn address(&self) -> AddressValue {
         self.address.clone()
     }
 

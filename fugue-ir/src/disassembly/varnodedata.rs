@@ -1,7 +1,7 @@
 use std::fmt;
 use std::sync::Arc;
 
-use crate::address::Address;
+use crate::address::AddressValue;
 use crate::space::AddressSpace;
 use crate::Translator;
 
@@ -69,8 +69,8 @@ impl VarnodeData {
         }
     }
 
-    pub fn address(&self) -> Address {
-        Address::new(self.space.clone(), self.offset)
+    pub fn address(&self) -> AddressValue {
+        AddressValue::new(self.space.clone(), self.offset)
     }
 
     pub fn space(&self) -> Arc<AddressSpace> {

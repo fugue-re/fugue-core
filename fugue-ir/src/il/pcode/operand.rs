@@ -2,7 +2,7 @@ use std::fmt;
 use std::sync::Arc;
 use fnv::FnvHashMap as Map;
 
-use crate::address::Address;
+use crate::address::AddressValue;
 use crate::disassembly::VarnodeData;
 use crate::space::AddressSpace;
 use crate::space_manager::SpaceManager;
@@ -15,7 +15,7 @@ use super::Register;
 pub enum Operand {
     // RAM
     Address {
-        value: Address,
+        value: AddressValue,
         size: usize,
     },
     Constant {
@@ -45,7 +45,7 @@ impl Operand {
 
         if space == manager.default_space() { // address
             Operand::Address {
-                value: Address::new(space, offset),
+                value: AddressValue::new(space, offset),
                 size,
             }
         } else if space == manager.constant_space() { // constant
@@ -70,7 +70,7 @@ impl Operand {
         }
     }
 
-    pub fn address(&self) -> Option<Address> {
+    pub fn address(&self) -> Option<AddressValue> {
         if let Self::Address { value, .. } = self {
             Some(value.clone())
         } else {
