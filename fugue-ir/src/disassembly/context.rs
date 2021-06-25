@@ -69,29 +69,29 @@ impl ContextBitRange {
 }
 
 #[derive(Debug, Clone)]
-pub struct TrackedContext<'space> {
-    location: VarnodeData<'space>,
+pub struct TrackedContext {
+    location: VarnodeData,
     value: u32,
 }
 
 #[derive(Debug, Clone)]
-pub struct TrackedSet<'space>(Vec<TrackedContext<'space>>);
+pub struct TrackedSet(Vec<TrackedContext>);
 
-impl<'space> Default for TrackedSet<'space> {
+impl Default for TrackedSet {
     fn default() -> Self {
         Self(Vec::new())
     }
 }
 
-impl<'space> Deref for TrackedSet<'space> {
-    type Target = Vec<TrackedContext<'space>>;
+impl Deref for TrackedSet {
+    type Target = Vec<TrackedContext>;
 
     fn deref(&self) -> &Self::Target {
         &self.0
     }
 }
 
-impl<'space> DerefMut for TrackedSet<'space> {
+impl DerefMut for TrackedSet {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
     }
@@ -288,14 +288,14 @@ impl ContextCache {
 */
 
 #[derive(Debug, Clone)]
-pub struct ContextDatabase<'space> {
+pub struct ContextDatabase {
     size: usize,
     variables: Map<String, ContextBitRange>,
-    database: PartMap<Address<'space>, FreeArray>,
-    trackbase: PartMap<Address<'space>, TrackedSet<'space>>,
+    database: PartMap<Address, FreeArray>,
+    trackbase: PartMap<Address, TrackedSet>,
 }
 
-impl<'space> ContextDatabase<'space> {
+impl ContextDatabase {
     pub fn new() -> Self {
         Self {
             size: 0,
@@ -309,13 +309,13 @@ impl<'space> ContextDatabase<'space> {
         self.size
     }
 
-    pub fn new_tracked_set(&mut self, addr1: Address<'space>, addr2: Address<'space>) -> &mut TrackedSet<'space> {
+    pub fn new_tracked_set(&mut self, addr1: Address, addr2: Address) -> &mut TrackedSet {
         let range = self.trackbase.clear_range(&addr1, &addr2);
         range.clear();
         range
     }
 
-    pub fn tracked_set(&self, address: Address<'space>) -> &TrackedSet<'space> {
+    pub fn tracked_set(&self, address: Address) -> &TrackedSet {
         self.trackbase.get_or_default(&address)
     }
 
@@ -323,7 +323,7 @@ impl<'space> ContextDatabase<'space> {
         self.trackbase.default_value()
     }
 
-    pub fn tracked_default_mut(&mut self) -> &mut TrackedSet<'space> {
+    pub fn tracked_default_mut(&mut self) -> &mut TrackedSet {
         self.trackbase.default_value_mut()
     }
 
@@ -343,7 +343,7 @@ impl<'space> ContextDatabase<'space> {
     pub fn set_variable<S: Borrow<str>>(
         &mut self,
         name: S,
-        address: Address<'space>,
+        address: Address,
         value: u32,
     ) -> Option<()> {
         let context = self.variables.get(name.borrow())?;
@@ -397,11 +397,11 @@ impl<'space> ContextDatabase<'space> {
         Some(())
     }
 
-    pub fn get_context(&self, address: &Address<'space>) -> &Vec<u32> {
+    pub fn get_context(&self, address: &Address) -> &Vec<u32> {
         &self.database.get_or_default(address).values
     }
 
-    pub fn get_context_bounds(&self, address: &Address<'space>) -> (&Vec<u32>, u64, u64) {
+    pub fn get_context_bounds(&self, address: &Address) -> (&Vec<u32>, u64, u64) {
         match self.database.bounds(address) {
             BoundKind::None(fa) => (&fa.values, 0, address.space().highest_offset()),
             BoundKind::Lower(l, fa) => {
@@ -436,7 +436,7 @@ impl<'space> ContextDatabase<'space> {
 
     pub fn set_context_change_point(
         &mut self,
-        address: Address<'space>,
+        address: Address,
         num: usize,
         mask: u32,
         value: u32,
@@ -450,8 +450,8 @@ impl<'space> ContextDatabase<'space> {
 
     pub fn set_context_region(
         &mut self,
-        addr1: Address<'space>,
-        addr2: Option<Address<'space>>,
+        addr1: Address,
+        addr2: Option<Address>,
         num: usize,
         mask: u32,
         value: u32,
@@ -464,8 +464,8 @@ impl<'space> ContextDatabase<'space> {
     pub fn set_variable_region<S: Borrow<str>>(
         &mut self,
         name: S,
-        addr1: Address<'space>,
-        addr2: Option<Address<'space>>,
+        addr1: Address,
+        addr2: Option<Address>,
         value: u32,
     ) -> Option<()> {
         let context = self.variables.get(name.borrow())?;
@@ -483,9 +483,9 @@ impl<'space> ContextDatabase<'space> {
     }
 }
 
-fn get_region_to_change_point<'a, 'b, F>(
-    db: &'a mut PartMap<Address<'b>, FreeArray>,
-    addr: Address<'b>,
+fn get_region_to_change_point<'a, F>(
+    db: &'a mut PartMap<Address, FreeArray>,
+    addr: Address,
     num: usize,
     mask: u32,
     mut f: F
@@ -511,10 +511,10 @@ fn get_region_to_change_point<'a, 'b, F>(
     }
 }
 
-fn get_region_for_set<'a, 'b, F>(
-    db: &'a mut PartMap<Address<'b>, FreeArray>,
-    addr1: Address<'b>,
-    addr2: Option<Address<'b>>,
+fn get_region_for_set<'a, F>(
+    db: &'a mut PartMap<Address, FreeArray>,
+    addr1: Address,
+    addr2: Option<Address>,
     num: usize,
     mask: u32,
     mut f: F

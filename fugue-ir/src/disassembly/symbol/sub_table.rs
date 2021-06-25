@@ -27,7 +27,7 @@ pub enum Context {
 }
 
 impl Context {
-    pub fn apply<'a, 'b, 'c>(&'b self, walker: &mut ParserWalker<'a, 'b, 'c>, symbols: &'b SymbolTable<'a>) -> Result<(), Error> {
+    pub fn apply<'b, 'c>(&'b self, walker: &mut ParserWalker<'b, 'c>, symbols: &'b SymbolTable) -> Result<(), Error> {
         match self {
             Self::Operator { num, shift, mask, pattern_value } => {
                 let value = pattern_value.value(walker, symbols)? as u32;
@@ -80,7 +80,7 @@ pub struct Constructor {
 }
 
 impl Constructor {
-    pub fn apply_context<'a, 'b, 'c>(&'b self, walker: &mut ParserWalker<'a, 'b, 'c>, symbols: &'b SymbolTable<'a>) -> Result<(), Error> {
+    pub fn apply_context<'b, 'c>(&'b self, walker: &mut ParserWalker<'b, 'c>, symbols: &'b SymbolTable) -> Result<(), Error> {
         for context in &self.context {
             context.apply(walker, symbols)?;
         }
@@ -91,7 +91,7 @@ impl Constructor {
         self.min_length
     }
 
-    pub fn format<'a, 'b, 'c>(&'b self, fmt: &mut fmt::Formatter, walker: &mut ParserWalker<'a, 'b, 'c>, symbols: &'b SymbolTable<'a>) -> Result<(), fmt::Error> {
+    pub fn format<'b, 'c>(&'b self, fmt: &mut fmt::Formatter, walker: &mut ParserWalker<'b, 'c>, symbols: &'b SymbolTable) -> Result<(), fmt::Error> {
         for p in &self.print_pieces {
             if p.as_bytes()[0] == b'\n' {
                 let index = (p.as_bytes()[1] - b'A') as usize;
@@ -103,7 +103,7 @@ impl Constructor {
         Ok(())
     }
 
-    pub fn format_mnemonic<'a, 'b, 'c>(&'b self, fmt: &mut fmt::Formatter, walker: &mut ParserWalker<'a, 'b, 'c>, symbols: &'b SymbolTable<'a>) -> Result<(), fmt::Error> {
+    pub fn format_mnemonic<'b, 'c>(&'b self, fmt: &mut fmt::Formatter, walker: &mut ParserWalker<'b, 'c>, symbols: &'b SymbolTable) -> Result<(), fmt::Error> {
         if let Some(index) = self.flow_through_index {
             match symbols.symbol(self.operands[index]).expect("symbol").defining_symbol(symbols).expect("state is consistent") {
                 None | Some(Symbol::Subtable { .. }) => (),
@@ -129,7 +129,7 @@ impl Constructor {
         Ok(())
     }
 
-    pub fn format_body<'a, 'b, 'c>(&'b self, fmt: &mut fmt::Formatter, walker: &mut ParserWalker<'a, 'b, 'c>, symbols: &'b SymbolTable<'a>) -> Result<(), fmt::Error> {
+    pub fn format_body<'b, 'c>(&'b self, fmt: &mut fmt::Formatter, walker: &mut ParserWalker<'b, 'c>, symbols: &'b SymbolTable) -> Result<(), fmt::Error> {
         if let Some(index) = self.flow_through_index {
             match symbols.symbol(self.operands[index]).expect("symbol").defining_symbol(symbols).expect("state is consistent") {
                 None | Some(Symbol::Subtable { .. }) => (),
@@ -282,7 +282,7 @@ impl DecisionNode {
         })
     }
 
-    pub fn resolve<'a, 'b, 'c>(&'b self, walker: &mut ParserWalker<'a, 'b, 'c>, ctors: &'b [Constructor]) -> Result<&'b Constructor, Error> {
+    pub fn resolve<'b, 'c>(&'b self, walker: &mut ParserWalker<'b, 'c>, ctors: &'b [Constructor]) -> Result<&'b Constructor, Error> {
         if self.size == 0 {
             for pattern in self.patterns.iter() {
                 if pattern.is_match(walker)? {
@@ -309,7 +309,7 @@ pub struct DecisionPair {
 }
 
 impl DecisionPair {
-    pub fn is_match<'a, 'b, 'c>(&'b self, walker: &ParserWalker<'a, 'b, 'c>) -> Result<bool, Error> {
+    pub fn is_match<'b, 'c>(&'b self, walker: &ParserWalker<'b, 'c>) -> Result<bool, Error> {
         self.pattern.is_match(walker)
     }
 }
@@ -325,7 +325,7 @@ pub enum DisjointPattern {
 }
 
 impl DisjointPattern {
-    pub fn is_match<'a, 'b, 'c>(&'b self, walker: &ParserWalker<'a, 'b, 'c>) -> Result<bool, Error> {
+    pub fn is_match<'b, 'c>(&'b self, walker: &ParserWalker<'b, 'c>) -> Result<bool, Error> {
         Ok(match self {
             Self::Instruction(ref pat) => pat.is_match(walker)?,
             Self::Context(ref pat) => pat.is_match(walker),
@@ -376,7 +376,7 @@ impl InstructionPattern {
         })
     }
 
-    pub fn is_match<'a, 'b, 'c>(&'b self, walker: &ParserWalker<'a, 'b, 'c>) -> Result<bool, Error> {
+    pub fn is_match<'b, 'c>(&'b self, walker: &ParserWalker<'b, 'c>) -> Result<bool, Error> {
         self.mask_value.is_instruction_match(walker)
     }
 }
@@ -398,7 +398,7 @@ impl ContextPattern {
         })
     }
 
-    pub fn is_match<'a, 'b, 'c>(&'b self, walker: &ParserWalker<'a, 'b, 'c>) -> bool {
+    pub fn is_match<'b, 'c>(&'b self, walker: &ParserWalker<'b, 'c>) -> bool {
         self.mask_value.is_context_match(walker)
     }
 }
@@ -432,7 +432,7 @@ impl PatternBlock {
         self.non_zero_size == Self::ALWAYS_FALSE
     }
 
-    pub fn is_context_match<'a, 'b, 'c>(&'b self, walker: &ParserWalker<'a, 'b, 'c>) -> bool {
+    pub fn is_context_match<'b, 'c>(&'b self, walker: &ParserWalker<'b, 'c>) -> bool {
         match self.non_zero_size {
             Self::ALWAYS_FALSE => false,
             Self::ALWAYS_TRUE => true,
@@ -450,7 +450,7 @@ impl PatternBlock {
         }
     }
 
-    pub fn is_instruction_match<'a, 'b, 'c>(&'b self, walker: &ParserWalker<'a, 'b, 'c>) -> Result<bool, Error> {
+    pub fn is_instruction_match<'b, 'c>(&'b self, walker: &ParserWalker<'b, 'c>) -> Result<bool, Error> {
         Ok(match self.non_zero_size {
             Self::ALWAYS_FALSE => false,
             Self::ALWAYS_TRUE => true,

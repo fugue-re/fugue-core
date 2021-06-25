@@ -1,4 +1,5 @@
 use std::fmt;
+use std::sync::Arc;
 use fnv::FnvHashMap as Map;
 use smallvec::{smallvec, SmallVec};
 
@@ -14,260 +15,260 @@ pub mod register;
 pub use register::Register;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum PCodeOp<'space> {
+pub enum PCodeOp {
     Copy {
-        source: Operand<'space>,
-        destination: Operand<'space>,
+        source: Operand,
+        destination: Operand,
     },
     Load {
-        source: Operand<'space>,
-        destination: Operand<'space>,
-        space: &'space AddressSpace,
+        source: Operand,
+        destination: Operand,
+        space: Arc<AddressSpace>,
     },
     Store {
-        source: Operand<'space>,
-        destination: Operand<'space>,
-        space: &'space AddressSpace,
+        source: Operand,
+        destination: Operand,
+        space: Arc<AddressSpace>,
     },
 
     Branch {
-        destination: Operand<'space>,
+        destination: Operand,
     },
     CBranch {
-        destination: Operand<'space>,
-        condition: Operand<'space>,
+        destination: Operand,
+        condition: Operand,
     },
     IBranch {
-        destination: Operand<'space>,
+        destination: Operand,
     },
 
     Call {
-        destination: Operand<'space>,
+        destination: Operand,
     },
     ICall {
-        destination: Operand<'space>,
+        destination: Operand,
     },
     Intrinsic {
-        name: &'space str,
-        operands: SmallVec<[Operand<'space>; 4]>,
-        result: Option<Operand<'space>>,
+        name: Arc<str>,
+        operands: SmallVec<[Operand; 4]>,
+        result: Option<Operand>,
     },
     Return {
-        destination: Operand<'space>,
+        destination: Operand,
     },
 
     IntEq {
-        result: Operand<'space>,
-        operands: [Operand<'space>; 2],
+        result: Operand,
+        operands: [Operand; 2],
     },
     IntNotEq {
-        result: Operand<'space>,
-        operands: [Operand<'space>; 2],
+        result: Operand,
+        operands: [Operand; 2],
     },
     IntLess {
-        result: Operand<'space>,
-        operands: [Operand<'space>; 2],
+        result: Operand,
+        operands: [Operand; 2],
     },
     IntLessEq {
-        result: Operand<'space>,
-        operands: [Operand<'space>; 2],
+        result: Operand,
+        operands: [Operand; 2],
     },
     IntSLess {
-        result: Operand<'space>,
-        operands: [Operand<'space>; 2],
+        result: Operand,
+        operands: [Operand; 2],
     },
     IntSLessEq {
-        result: Operand<'space>,
-        operands: [Operand<'space>; 2],
+        result: Operand,
+        operands: [Operand; 2],
     },
     IntZExt {
-        result: Operand<'space>,
-        operand: Operand<'space>,
+        result: Operand,
+        operand: Operand,
     },
     IntSExt {
-        result: Operand<'space>,
-        operand: Operand<'space>,
+        result: Operand,
+        operand: Operand,
     },
     IntAdd {
-        result: Operand<'space>,
-        operands: [Operand<'space>; 2],
+        result: Operand,
+        operands: [Operand; 2],
     },
     IntSub {
-        result: Operand<'space>,
-        operands: [Operand<'space>; 2],
+        result: Operand,
+        operands: [Operand; 2],
     },
     IntCarry {
-        result: Operand<'space>,
-        operands: [Operand<'space>; 2],
+        result: Operand,
+        operands: [Operand; 2],
     },
     IntSCarry {
-        result: Operand<'space>,
-        operands: [Operand<'space>; 2],
+        result: Operand,
+        operands: [Operand; 2],
     },
     IntSBorrow {
-        result: Operand<'space>,
-        operands: [Operand<'space>; 2],
+        result: Operand,
+        operands: [Operand; 2],
     },
     IntNeg {
-        result: Operand<'space>,
-        operand: Operand<'space>,
+        result: Operand,
+        operand: Operand,
     },
     IntNot {
-        result: Operand<'space>,
-        operand: Operand<'space>,
+        result: Operand,
+        operand: Operand,
     },
     IntXor {
-        result: Operand<'space>,
-        operands: [Operand<'space>; 2],
+        result: Operand,
+        operands: [Operand; 2],
     },
     IntAnd {
-        result: Operand<'space>,
-        operands: [Operand<'space>; 2],
+        result: Operand,
+        operands: [Operand; 2],
     },
     IntOr {
-        result: Operand<'space>,
-        operands: [Operand<'space>; 2],
+        result: Operand,
+        operands: [Operand; 2],
     },
     IntLeftShift {
-        result: Operand<'space>,
-        operands: [Operand<'space>; 2],
+        result: Operand,
+        operands: [Operand; 2],
     },
     IntRightShift {
-        result: Operand<'space>,
-        operands: [Operand<'space>; 2],
+        result: Operand,
+        operands: [Operand; 2],
     },
     IntSRightShift {
-        result: Operand<'space>,
-        operands: [Operand<'space>; 2],
+        result: Operand,
+        operands: [Operand; 2],
     },
     IntMul {
-        result: Operand<'space>,
-        operands: [Operand<'space>; 2],
+        result: Operand,
+        operands: [Operand; 2],
     },
     IntDiv {
-        result: Operand<'space>,
-        operands: [Operand<'space>; 2],
+        result: Operand,
+        operands: [Operand; 2],
     },
     IntSDiv {
-        result: Operand<'space>,
-        operands: [Operand<'space>; 2],
+        result: Operand,
+        operands: [Operand; 2],
     },
     IntRem {
-        result: Operand<'space>,
-        operands: [Operand<'space>; 2],
+        result: Operand,
+        operands: [Operand; 2],
     },
     IntSRem {
-        result: Operand<'space>,
-        operands: [Operand<'space>; 2],
+        result: Operand,
+        operands: [Operand; 2],
     },
 
     BoolNot {
-        result: Operand<'space>,
-        operand: Operand<'space>,
+        result: Operand,
+        operand: Operand,
     },
     BoolXor {
-        result: Operand<'space>,
-        operands: [Operand<'space>; 2],
+        result: Operand,
+        operands: [Operand; 2],
     },
     BoolAnd {
-        result: Operand<'space>,
-        operands: [Operand<'space>; 2],
+        result: Operand,
+        operands: [Operand; 2],
     },
     BoolOr {
-        result: Operand<'space>,
-        operands: [Operand<'space>; 2],
+        result: Operand,
+        operands: [Operand; 2],
     },
 
     FloatEq {
-        result: Operand<'space>,
-        operands: [Operand<'space>; 2],
+        result: Operand,
+        operands: [Operand; 2],
     },
     FloatNotEq {
-        result: Operand<'space>,
-        operands: [Operand<'space>; 2],
+        result: Operand,
+        operands: [Operand; 2],
     },
     FloatLess {
-        result: Operand<'space>,
-        operands: [Operand<'space>; 2],
+        result: Operand,
+        operands: [Operand; 2],
     },
     FloatLessEq {
-        result: Operand<'space>,
-        operands: [Operand<'space>; 2],
+        result: Operand,
+        operands: [Operand; 2],
     },
 
     FloatIsNaN {
-        result: Operand<'space>,
-        operand: Operand<'space>,
+        result: Operand,
+        operand: Operand,
     },
 
     FloatAdd {
-        result: Operand<'space>,
-        operands: [Operand<'space>; 2],
+        result: Operand,
+        operands: [Operand; 2],
     },
     FloatDiv {
-        result: Operand<'space>,
-        operands: [Operand<'space>; 2],
+        result: Operand,
+        operands: [Operand; 2],
     },
     FloatMul {
-        result: Operand<'space>,
-        operands: [Operand<'space>; 2],
+        result: Operand,
+        operands: [Operand; 2],
     },
     FloatSub {
-        result: Operand<'space>,
-        operands: [Operand<'space>; 2],
+        result: Operand,
+        operands: [Operand; 2],
     },
     FloatNeg {
-        result: Operand<'space>,
-        operand: Operand<'space>,
+        result: Operand,
+        operand: Operand,
     },
     FloatAbs {
-        result: Operand<'space>,
-        operand: Operand<'space>,
+        result: Operand,
+        operand: Operand,
     },
     FloatSqrt {
-        result: Operand<'space>,
-        operand: Operand<'space>,
+        result: Operand,
+        operand: Operand,
     },
 
     FloatOfInt {
-        result: Operand<'space>,
-        operand: Operand<'space>,
+        result: Operand,
+        operand: Operand,
     },
     FloatOfFloat {
-        result: Operand<'space>,
-        operand: Operand<'space>,
+        result: Operand,
+        operand: Operand,
     },
     FloatTruncate {
-        result: Operand<'space>,
-        operand: Operand<'space>,
+        result: Operand,
+        operand: Operand,
     },
     FloatCeiling {
-        result: Operand<'space>,
-        operand: Operand<'space>,
+        result: Operand,
+        operand: Operand,
     },
     FloatFloor {
-        result: Operand<'space>,
-        operand: Operand<'space>,
+        result: Operand,
+        operand: Operand,
     },
     FloatRound {
-        result: Operand<'space>,
-        operand: Operand<'space>,
+        result: Operand,
+        operand: Operand,
     },
 
     Subpiece {
-        result: Operand<'space>,
-        operand: Operand<'space>,
-        amount: Operand<'space>,
+        result: Operand,
+        operand: Operand,
+        amount: Operand,
     },
     PopCount {
-        result: Operand<'space>,
-        operand: Operand<'space>,
+        result: Operand,
+        operand: Operand,
     },
 
     Skip,
 }
 
-impl<'space> fmt::Display for PCodeOp<'space> {
+impl fmt::Display for PCodeOp {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Copy { destination, source } => write!(f, "{} ← {}", destination, source)?,
@@ -364,14 +365,14 @@ impl<'space> fmt::Display for PCodeOp<'space> {
     }
 }
 
-impl<'space> PCodeOp<'space> {
+impl PCodeOp {
     pub fn from_parts(
-        manager: &'space SpaceManager,
-        registers: &'space Map<(u64, usize), &'space str>,
-        user_ops: &'space [&'space str],
+        manager: &SpaceManager,
+        registers: &Map<(u64, usize), Arc<str>>,
+        user_ops: &[Arc<str>],
         opcode: Opcode,
-        inputs: SmallVec<[VarnodeData<'space>; 16]>,
-        output: Option<VarnodeData<'space>>,
+        inputs: SmallVec<[VarnodeData; 16]>,
+        output: Option<VarnodeData>,
     ) -> Self {
         let mut inputs = inputs.into_iter();
         let spaces = manager.spaces();
@@ -388,7 +389,7 @@ impl<'space> PCodeOp<'space> {
                 PCodeOp::Load {
                     destination: Operand::from_varnodedata(manager, registers, destination),
                     source: Operand::from_varnodedata(manager, registers, source),
-                    space,
+                    space: space.clone(),
                 }
             },
             Opcode::Store => {
@@ -399,7 +400,7 @@ impl<'space> PCodeOp<'space> {
                 PCodeOp::Store {
                     destination: Operand::from_varnodedata(manager, registers, destination),
                     source: Operand::from_varnodedata(manager, registers, source),
-                    space,
+                    space: space.clone(),
                 }
             },
             Opcode::Branch => PCodeOp::Branch {
@@ -419,7 +420,7 @@ impl<'space> PCodeOp<'space> {
                 destination: Operand::from_varnodedata(manager, registers, inputs.next().unwrap()),
             },
             Opcode::CallOther => {
-                let name = user_ops[inputs.next().unwrap().offset() as usize];
+                let name = user_ops[inputs.next().unwrap().offset() as usize].clone();
                 let result = output.map(|output| Operand::from_varnodedata(manager, registers, output));
 
                 PCodeOp::Intrinsic {
@@ -753,15 +754,15 @@ impl<'space> PCodeOp<'space> {
 }
 
 #[derive(Debug, Clone)]
-pub struct PCode<'space> {
-    pub address: Address<'space>,
-    pub operations: SmallVec<[PCodeOp<'space>; 16]>,
+pub struct PCode {
+    pub address: Address,
+    pub operations: SmallVec<[PCodeOp; 16]>,
     pub delay_slots: usize,
     pub length: usize,
 }
 
-impl<'space> PCode<'space> {
-    pub fn nop(address: Address<'space>, length: usize) -> Self {
+impl PCode {
+    pub fn nop(address: Address, length: usize) -> Self {
         Self {
             address,
             operations: smallvec![PCodeOp::skip()],
@@ -770,11 +771,11 @@ impl<'space> PCode<'space> {
         }
     }
 
-    pub fn address(&self) -> Address<'space> {
+    pub fn address(&self) -> Address {
         self.address.clone()
     }
 
-    pub fn operations(&self) -> &[PCodeOp<'space>] {
+    pub fn operations(&self) -> &[PCodeOp] {
         self.operations.as_ref()
     }
 
@@ -786,16 +787,16 @@ impl<'space> PCode<'space> {
         self.length
     }
 
-    pub fn display<'pcode>(&'pcode self) -> PCodeFormatter<'pcode, 'space> {
+    pub fn display<'pcode>(&'pcode self) -> PCodeFormatter<'pcode> {
         PCodeFormatter { pcode: self }
     }
 }
 
-pub struct PCodeFormatter<'pcode, 'space> {
-    pcode: &'pcode PCode<'space>,
+pub struct PCodeFormatter<'pcode> {
+    pcode: &'pcode PCode,
 }
 
-impl<'pcode, 'space> fmt::Display for PCodeFormatter<'pcode, 'space> {
+impl<'pcode> fmt::Display for PCodeFormatter<'pcode> {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         let len =  self.pcode.operations.len();
         if len > 0 {

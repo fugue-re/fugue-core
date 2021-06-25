@@ -1,4 +1,5 @@
 use std::fmt::Debug;
+use std::sync::Arc;
 
 use crate::address::Address;
 use crate::deserialise::Error;
@@ -6,7 +7,7 @@ use crate::space::AddressSpace;
 
 #[derive(Debug, Clone)]
 pub struct SpaceManager {
-    spaces: Vec<AddressSpace>,
+    spaces: Vec<Arc<AddressSpace>>,
     constant_space: usize,
     default_space: usize,
     register_space: usize,
@@ -23,29 +24,29 @@ impl SpaceManager {
         self.spaces[self.default_space].address_size()
     }
 
-    pub fn spaces(&self) -> &[AddressSpace] {
+    pub fn spaces(&self) -> &[Arc<AddressSpace>] {
         self.spaces.as_ref()
     }
 
-    pub fn space_by_name<S: AsRef<str>>(&self, name: S) -> Option<&AddressSpace> {
+    pub fn space_by_name<S: AsRef<str>>(&self, name: S) -> Option<Arc<AddressSpace>> {
         let name = name.as_ref();
-        self.spaces.iter().find(|space| space.name() == name)
+        self.spaces.iter().find_map(|space| if space.name() == name { Some(space.clone()) } else { None })
     }
 
-    pub fn constant_space(&self) -> &AddressSpace {
-        &self.spaces[self.constant_space]
+    pub fn constant_space(&self) -> Arc<AddressSpace> {
+        self.spaces[self.constant_space].clone()
     }
 
-    pub fn default_space(&self) -> &AddressSpace {
-        &self.spaces[self.default_space]
+    pub fn default_space(&self) -> Arc<AddressSpace> {
+        self.spaces[self.default_space].clone()
     }
 
-    pub fn register_space(&self) -> &AddressSpace {
-        &self.spaces[self.register_space]
+    pub fn register_space(&self) -> Arc<AddressSpace> {
+        self.spaces[self.register_space].clone()
     }
 
-    pub fn unique_space(&self) -> &AddressSpace {
-        &self.spaces[self.unique_space]
+    pub fn unique_space(&self) -> Arc<AddressSpace> {
+        self.spaces[self.unique_space].clone()
     }
 
     pub fn from_xml(input: xml::Node) -> Result<Self, Error> {
@@ -53,7 +54,7 @@ impl SpaceManager {
             return Err(Error::TagUnexpected(input.tag_name().name().to_owned()));
         }
 
-        let mut spaces = vec![AddressSpace::constant("const", 0)];
+        let mut spaces = vec![Arc::new(AddressSpace::constant("const", 0))];
         let mut default_space = 0;
         let mut register_space = 0;
         let mut unique_space = 0;
@@ -86,7 +87,7 @@ impl SpaceManager {
                 unique_space = index;
             }
 
-            spaces.push(space);
+            spaces.push(Arc::new(space));
         }
 
         if default_space == 0 {

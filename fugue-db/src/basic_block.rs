@@ -59,8 +59,8 @@ impl<'db> BasicBlock<'db> {
         &self.segment.bytes()[offset..offset + self.len()]
     }
 
-    pub fn translate_with<F, O>(&self, context: &mut ContextDatabase<'db>, mut f: F) -> Result<Vec<O>, Error>
-    where F: FnMut(&'db Translator, &mut ContextDatabase<'db>, u64, &[u8]) -> Result<(O, usize), Error> {
+    pub fn translate_with<F, O>(&self, context: &mut ContextDatabase, mut f: F) -> Result<Vec<O>, Error>
+    where F: FnMut(&'db Translator, &mut ContextDatabase, u64, &[u8]) -> Result<(O, usize), Error> {
         let mut offset = 0;
         let mut outputs = Vec::with_capacity(16);
 
@@ -78,7 +78,7 @@ impl<'db> BasicBlock<'db> {
         Ok(outputs)
     }
 
-    pub fn disassemble_with(&self, context: &mut ContextDatabase<'db>) -> Result<Vec<Instruction<'db>>, Error> {
+    pub fn disassemble_with(&self, context: &mut ContextDatabase) -> Result<Vec<Instruction>, Error> {
         self.translate_with(context, |translator, context, address, bytes| {
             let insn = translator.disassemble(context, translator.address(address), bytes)
                 .map_err(|source| Error::Lifting { address, source })?;
@@ -87,13 +87,13 @@ impl<'db> BasicBlock<'db> {
         })
     }
 
-    pub fn disassemble(&self) -> Result<Vec<Instruction<'db>>, Error> {
+    pub fn disassemble(&self) -> Result<Vec<Instruction>, Error> {
         let mut context = self.translator.context_database();
         self.disassemble_with(&mut context)
     }
 
 
-    pub fn lift_with(&self, context: &mut ContextDatabase<'db>) -> Result<Vec<PCode<'db>>, Error> {
+    pub fn lift_with(&self, context: &mut ContextDatabase) -> Result<Vec<PCode>, Error> {
         self.translate_with(context, |translator, context, address, bytes| {
             let pcode = translator.lift_pcode(context, translator.address(address), bytes)
                 .map_err(|source| Error::Lifting { address, source })?;
@@ -102,7 +102,7 @@ impl<'db> BasicBlock<'db> {
         })
     }
 
-    pub fn lift(&self) -> Result<Vec<PCode<'db>>, Error> {
+    pub fn lift(&self) -> Result<Vec<PCode>, Error> {
         let mut context = self.translator.context_database();
         self.lift_with(&mut context)
     }

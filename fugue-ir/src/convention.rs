@@ -4,31 +4,33 @@ use crate::deserialise::error::Error as DeserialiseError;
 use crate::space::AddressSpace;
 use crate::space_manager::SpaceManager;
 
+use std::sync::Arc;
+
 use fnv::FnvHashMap as Map;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum PrototypeOperand<'space> {
+pub enum PrototypeOperand { // TODO: should these just be Registers?
     Register {
-        name: &'space str,
-        varnode: VarnodeData<'space>,
+        name: Arc<str>,
+        varnode: VarnodeData,
     },
     RegisterJoin {
-        first_name: &'space str,
-        first_varnode: VarnodeData<'space>,
-        second_name: &'space str,
-        second_varnode: VarnodeData<'space>,
+        first_name: Arc<str>,
+        first_varnode: VarnodeData,
+        second_name: Arc<str>,
+        second_varnode: VarnodeData,
     },
     StackRelative(u64),
 }
 
-impl<'space> PrototypeOperand<'space> {
-    pub fn from_spec(spec: &compiler::PrototypeOperand, registers: &Map<&'space str, VarnodeData<'space>>) -> Result<Self, DeserialiseError> {
+impl PrototypeOperand {
+    pub fn from_spec(spec: &compiler::PrototypeOperand, registers: &Map<Arc<str>, VarnodeData>) -> Result<Self, DeserialiseError> {
         match spec {
             compiler::PrototypeOperand::Register(ref name) => {
                 let (name, varnode) = registers.get_key_value(&**name)
                     .ok_or_else(|| DeserialiseError::Invariant("register for prototype operand invalid"))?;
                 Ok(Self::Register {
-                    name: *name,
+                    name: name.clone(),
                     varnode: varnode.clone(),
                 })
             },
@@ -40,9 +42,9 @@ impl<'space> PrototypeOperand<'space> {
                     .ok_or_else(|| DeserialiseError::Invariant("register for prototype operand invalid"))?;
 
                 Ok(Self::RegisterJoin {
-                    first_name: *first_name,
+                    first_name: first_name.clone(),
                     first_varnode: first_varnode.clone(),
-                    second_name: *second_name,
+                    second_name: second_name.clone(),
                     second_varnode: second_varnode.clone(),
                 })
             },
@@ -54,17 +56,17 @@ impl<'space> PrototypeOperand<'space> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PrototypeEntry<'space> {
+pub struct PrototypeEntry {
     min_size: usize,
     max_size: usize,
     alignment: u64,
     meta_type: Option<String>,
     extension: Option<String>,
-    operand: PrototypeOperand<'space>,
+    operand: PrototypeOperand,
 }
 
-impl<'space> PrototypeEntry<'space> {
-    pub fn from_spec(spec: &compiler::PrototypeEntry, registers: &Map<&'space str, VarnodeData<'space>>) -> Result<Self, DeserialiseError> {
+impl PrototypeEntry {
+    pub fn from_spec(spec: &compiler::PrototypeEntry, registers: &Map<Arc<str>, VarnodeData>) -> Result<Self, DeserialiseError> {
         Ok(Self {
             min_size: spec.min_size,
             max_size: spec.max_size,
@@ -77,16 +79,16 @@ impl<'space> PrototypeEntry<'space> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Prototype<'space> {
+pub struct Prototype {
     name: String,
     extra_pop: u64,
     stack_shift: u64,
-    inputs: Vec<PrototypeEntry<'space>>,
-    outputs: Vec<PrototypeEntry<'space>>,
+    inputs: Vec<PrototypeEntry>,
+    outputs: Vec<PrototypeEntry>,
 }
 
-impl<'space> Prototype<'space> {
-    pub fn from_spec(spec: &compiler::Prototype, registers: &Map<&'space str, VarnodeData<'space>>) -> Result<Self, DeserialiseError> {
+impl Prototype {
+    pub fn from_spec(spec: &compiler::Prototype, registers: &Map<Arc<str>, VarnodeData>) -> Result<Self, DeserialiseError> {
         Ok(Self {
             name: spec.name.clone(),
             extra_pop:spec.extra_pop,
@@ -98,10 +100,10 @@ impl<'space> Prototype<'space> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ReturnAddress<'space> {
+pub enum ReturnAddress {
     Register {
-        name: &'space str,
-        varnode: VarnodeData<'space>,
+        name: Arc<str>,
+        varnode: VarnodeData,
     },
     StackRelative {
         offset: u64,
@@ -109,14 +111,14 @@ pub enum ReturnAddress<'space> {
     },
 }
 
-impl<'space> ReturnAddress<'space> {
-    pub fn from_spec(spec: &compiler::ReturnAddress, registers: &Map<&'space str, VarnodeData<'space>>) -> Result<Self, DeserialiseError> {
+impl ReturnAddress {
+    pub fn from_spec(spec: &compiler::ReturnAddress, registers: &Map<Arc<str>, VarnodeData>) -> Result<Self, DeserialiseError> {
         match spec {
             compiler::ReturnAddress::Register(ref name) => {
                 let (name, varnode) = registers.get_key_value(&**name)
                     .ok_or_else(|| DeserialiseError::Invariant("register for return address invalid"))?;
                 Ok(Self::Register {
-                    name: *name,
+                    name: name.clone(),
                     varnode: varnode.clone(),
                 })
             },
@@ -131,21 +133,21 @@ impl<'space> ReturnAddress<'space> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct StackPointer<'space> {
-    name: &'space str,
-    varnode: VarnodeData<'space>,
-    space: &'space AddressSpace,
+pub struct StackPointer {
+    name: Arc<str>,
+    varnode: VarnodeData,
+    space: Arc<AddressSpace>,
 }
 
-impl<'space> StackPointer<'space> {
-    pub fn from_spec(spec: &compiler::StackPointer, registers: &Map<&'space str, VarnodeData<'space>>, manager: &'space SpaceManager) -> Result<Self, DeserialiseError> {
+impl StackPointer {
+    pub fn from_spec(spec: &compiler::StackPointer, registers: &Map<Arc<str>, VarnodeData>, manager: &SpaceManager) -> Result<Self, DeserialiseError> {
         let space = manager.space_by_name(&spec.space)
             .ok_or_else(|| DeserialiseError::Invariant("stack pointer space for convention invalid"))?;
         let (name, varnode) = registers.get_key_value(&*spec.register)
             .ok_or_else(|| DeserialiseError::Invariant("named stack pointer invalid"))?;
 
         Ok(Self {
-            name: *name,
+            name: name.clone(),
             varnode: varnode.clone(),
             space,
         })
@@ -153,20 +155,20 @@ impl<'space> StackPointer<'space> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Convention<'space> {
+pub struct Convention {
     name: String,
     data_organisation: compiler::DataOrganisation,
-    stack_pointer: StackPointer<'space>,
-    return_address: ReturnAddress<'space>,
-    default_prototype: Prototype<'space>,
-    additional_prototypes: Vec<Prototype<'space>>,
+    stack_pointer: StackPointer,
+    return_address: ReturnAddress,
+    default_prototype: Prototype,
+    additional_prototypes: Vec<Prototype>,
 }
 
-impl<'space> Convention<'space> {
+impl Convention {
     pub fn from_spec(
         spec: &Specification,
-        registers_by_name: &Map<&'space str, VarnodeData<'space>>,
-        manager: &'space SpaceManager
+        registers_by_name: &Map<Arc<str>, VarnodeData>,
+        manager: &SpaceManager
     ) -> Result<Self, DeserialiseError> {
         Ok(Self {
             name: spec.name.clone(),

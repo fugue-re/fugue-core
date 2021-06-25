@@ -1,112 +1,113 @@
 use std::fmt;
 use std::ops::{Add, Sub};
+use std::sync::Arc;
 
 use crate::space::{AddressSpace, SpaceKind};
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Address<'a> {
-    space: &'a AddressSpace,
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Address {
+    space: Arc<AddressSpace>,
     offset: u64,
 }
 
 pub trait IntoAddress {
-    fn into_address<'a>(self, space: &'a AddressSpace) -> Address<'a>;
+    fn into_address(self, space: Arc<AddressSpace>) -> Address;
 }
 
-impl IntoAddress for Address<'_> {
-    fn into_address<'a>(self, space: &'a AddressSpace) -> Address<'a> {
+impl IntoAddress for Address {
+    fn into_address(self, space: Arc<AddressSpace>) -> Address {
         Address::new(space, self.offset())
     }
 }
 
-impl IntoAddress for &'_ Address<'_> {
-    fn into_address<'a>(self, space: &'a AddressSpace) -> Address<'a> {
+impl IntoAddress for &'_ Address {
+    fn into_address(self, space: Arc<AddressSpace>) -> Address {
         Address::new(space, self.offset())
     }
 }
 
 impl IntoAddress for usize {
-    fn into_address<'a>(self, space: &'a AddressSpace) -> Address<'a> {
+    fn into_address(self, space: Arc<AddressSpace>) -> Address {
         Address::new(space, self as u64)
     }
 }
 
 impl IntoAddress for &'_ usize {
-    fn into_address<'a>(self, space: &'a AddressSpace) -> Address<'a> {
+    fn into_address(self, space: Arc<AddressSpace>) -> Address {
         Address::new(space, *self as u64)
     }
 }
 
 impl IntoAddress for u32 {
-    fn into_address<'a>(self, space: &'a AddressSpace) -> Address<'a> {
+    fn into_address(self, space: Arc<AddressSpace>) -> Address {
         Address::new(space, self as u64)
     }
 }
 
 impl IntoAddress for &'_ u32 {
-    fn into_address<'a>(self, space: &'a AddressSpace) -> Address<'a> {
+    fn into_address(self, space: Arc<AddressSpace>) -> Address {
         Address::new(space, *self as u64)
     }
 }
 
 impl IntoAddress for u64 {
-    fn into_address<'a>(self, space: &'a AddressSpace) -> Address<'a> {
+    fn into_address(self, space: Arc<AddressSpace>) -> Address {
         Address::new(space, self)
     }
 }
 
 impl IntoAddress for &'_ u64 {
-    fn into_address<'a>(self, space: &'a AddressSpace) -> Address<'a> {
+    fn into_address(self, space: Arc<AddressSpace>) -> Address {
         Address::new(space, *self)
     }
 }
 
-impl<'space> From<Address<'space>> for usize {
-    fn from(t: Address<'space>) -> Self {
+impl<'space> From<Address> for usize {
+    fn from(t: Address) -> Self {
         t.offset as _
     }
 }
 
-impl<'space> From<&'_ Address<'space>> for usize {
-    fn from(t: &'_ Address<'space>) -> Self {
+impl<'space> From<&'_ Address> for usize {
+    fn from(t: &'_ Address) -> Self {
         t.offset as _
     }
 }
 
-impl<'space> From<Address<'space>> for u64 {
-    fn from(t: Address<'space>) -> Self {
+impl<'space> From<Address> for u64 {
+    fn from(t: Address) -> Self {
         t.offset as _
     }
 }
 
-impl<'space> From<&'_ Address<'space>> for u64 {
-    fn from(t: &'_ Address<'space>) -> Self {
+impl<'space> From<&'_ Address> for u64 {
+    fn from(t: &'_ Address) -> Self {
         t.offset as _
     }
 }
 
-impl<'space> From<Address<'space>> for u32 {
-    fn from(t: Address<'space>) -> Self {
+impl<'space> From<Address> for u32 {
+    fn from(t: Address) -> Self {
         t.offset as _
     }
 }
 
-impl<'space> From<&'_ Address<'space>> for u32 {
-    fn from(t: &'_ Address<'space>) -> Self {
+impl<'space> From<&'_ Address> for u32 {
+    fn from(t: &'_ Address) -> Self {
         t.offset as _
     }
 }
 
-impl<'a> fmt::Display for Address<'a> {
+impl fmt::Display for Address {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         write!(f, "{:#x}", self.offset * self.space.word_size() as u64)
     }
 }
 
-impl<'a> Add<Address<'a>> for Address<'a> {
+impl Add<Address> for Address {
     type Output = Self;
 
-    fn add(self, rhs: Address<'a>) -> Self {
+    fn add(self, rhs: Address) -> Self {
         Self {
             offset: self.space.wrap_offset(self.offset.wrapping_add(rhs.offset)),
             space: self.space,
@@ -114,10 +115,10 @@ impl<'a> Add<Address<'a>> for Address<'a> {
     }
 }
 
-impl<'a> Sub<Address<'a>> for Address<'a> {
+impl Sub<Address> for Address {
     type Output = Self;
 
-    fn sub(self, rhs: Address<'a>) -> Self {
+    fn sub(self, rhs: Address) -> Self {
         Self {
             offset: self.space.wrap_offset(self.offset.wrapping_sub(rhs.offset)),
             space: self.space,
@@ -125,10 +126,10 @@ impl<'a> Sub<Address<'a>> for Address<'a> {
     }
 }
 
-impl<'a> Add<&'_ Address<'a>> for Address<'a> {
+impl Add<&'_ Address> for Address {
     type Output = Self;
 
-    fn add(self, rhs: &Address<'a>) -> Self {
+    fn add(self, rhs: &Address) -> Self {
         Self {
             offset: self.space.wrap_offset(self.offset.wrapping_add(rhs.offset)),
             space: self.space,
@@ -136,10 +137,10 @@ impl<'a> Add<&'_ Address<'a>> for Address<'a> {
     }
 }
 
-impl<'a> Sub<&'_ Address<'a>> for Address<'a> {
+impl Sub<&'_ Address> for Address {
     type Output = Self;
 
-    fn sub(self, rhs: &Address<'a>) -> Self {
+    fn sub(self, rhs: &Address) -> Self {
         Self {
             offset: self.space.wrap_offset(self.offset.wrapping_sub(rhs.offset)),
             space: self.space,
@@ -147,7 +148,7 @@ impl<'a> Sub<&'_ Address<'a>> for Address<'a> {
     }
 }
 
-impl<'a> Add<usize> for Address<'a> {
+impl Add<usize> for Address {
     type Output = Self;
 
     fn add(self, rhs: usize) -> Self {
@@ -158,7 +159,7 @@ impl<'a> Add<usize> for Address<'a> {
     }
 }
 
-impl<'a> Sub<usize> for Address<'a> {
+impl Sub<usize> for Address {
     type Output = Self;
 
     fn sub(self, rhs: usize) -> Self {
@@ -169,7 +170,7 @@ impl<'a> Sub<usize> for Address<'a> {
     }
 }
 
-impl<'a> Add<u64> for Address<'a> {
+impl Add<u64> for Address {
     type Output = Self;
 
     fn add(self, rhs: u64) -> Self {
@@ -180,7 +181,7 @@ impl<'a> Add<u64> for Address<'a> {
     }
 }
 
-impl<'a> Sub<u64> for Address<'a> {
+impl Sub<u64> for Address {
     type Output = Self;
 
     fn sub(self, rhs: u64) -> Self {
@@ -191,8 +192,8 @@ impl<'a> Sub<u64> for Address<'a> {
     }
 }
 
-impl<'a> Address<'a> {
-    pub fn new(space: &'a AddressSpace, offset: u64) -> Self {
+impl Address {
+    pub fn new(space: Arc<AddressSpace>, offset: u64) -> Self {
         let offset = space.wrap_offset(offset);
         Self { space, offset, }
     }
@@ -209,18 +210,18 @@ impl<'a> Address<'a> {
         self.space.address_size()
     }
 
-    pub fn space(&self) -> &'a AddressSpace {
-        self.space
+    pub fn space(&self) -> Arc<AddressSpace> {
+        self.space.clone()
     }
 
     pub fn offset(&self) -> u64 {
         self.offset
     }
 
-    pub fn difference(&self, other: &Address<'a>) -> Address<'a> {
+    pub fn difference(&self, other: &Address) -> Address {
         // reinterpret other as if it were in `self's` space
         self.offset.wrapping_sub(self.space.wrap_offset(other.offset()))
-            .into_address(self.space)
+            .into_address(self.space.clone())
     }
 
     pub fn is_constant(&self) -> bool {

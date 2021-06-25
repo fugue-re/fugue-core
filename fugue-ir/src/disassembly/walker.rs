@@ -9,22 +9,22 @@ use std::cell::RefCell;
 use std::fmt;
 use std::mem::size_of;
 
-pub struct InstructionFormatter<'a, 'b, 'c> {
-    walker: RefCell<ParserWalker<'a, 'b, 'c>>,
-    symbols: &'b SymbolTable<'a>,
+pub struct InstructionFormatter<'b, 'c> {
+    walker: RefCell<ParserWalker<'b, 'c>>,
+    symbols: &'b SymbolTable,
     ctor: &'b Constructor,
 }
 
-pub struct MnemonicFormatter<'a, 'b, 'c> {
-    inner: &'b InstructionFormatter<'a, 'b, 'c>,
+pub struct MnemonicFormatter<'b, 'c> {
+    inner: &'b InstructionFormatter<'b, 'c>,
 }
 
-pub struct OperandFormatter<'a, 'b, 'c> {
-    inner: &'b InstructionFormatter<'a, 'b, 'c>,
+pub struct OperandFormatter<'b, 'c> {
+    inner: &'b InstructionFormatter<'b, 'c>,
 }
 
-impl<'a, 'b, 'c> InstructionFormatter<'a, 'b, 'c> {
-    pub fn new(walker: ParserWalker<'a, 'b, 'c>, symbols: &'b SymbolTable<'a>, ctor: &'b Constructor) -> Self {
+impl<'b, 'c> InstructionFormatter<'b, 'c> {
+    pub fn new(walker: ParserWalker<'b, 'c>, symbols: &'b SymbolTable, ctor: &'b Constructor) -> Self {
         Self {
             walker: RefCell::new(walker),
             symbols,
@@ -32,20 +32,20 @@ impl<'a, 'b, 'c> InstructionFormatter<'a, 'b, 'c> {
         }
     }
 
-    pub fn mnemonic(&'b self) -> MnemonicFormatter<'a, 'b, 'c> {
+    pub fn mnemonic(&'b self) -> MnemonicFormatter<'b, 'c> {
         MnemonicFormatter {
             inner: self,
         }
     }
 
-    pub fn operands(&'b self) -> OperandFormatter<'a, 'b, 'c> {
+    pub fn operands(&'b self) -> OperandFormatter<'b, 'c> {
         OperandFormatter {
             inner: self,
         }
     }
 }
 
-impl<'a, 'b, 'c> fmt::Display for InstructionFormatter<'a, 'b, 'c> {
+impl<'b, 'c> fmt::Display for InstructionFormatter<'b, 'c> {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         self.ctor.format_mnemonic(f, &mut self.walker.borrow_mut(), self.symbols)?;
         write!(f, " ")?;
@@ -54,14 +54,14 @@ impl<'a, 'b, 'c> fmt::Display for InstructionFormatter<'a, 'b, 'c> {
     }
 }
 
-impl<'a, 'b, 'c> fmt::Display for MnemonicFormatter<'a, 'b, 'c> {
+impl<'b, 'c> fmt::Display for MnemonicFormatter<'b, 'c> {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         self.inner.ctor.format_mnemonic(f, &mut self.inner.walker.borrow_mut(), self.inner.symbols)?;
         Ok(())
     }
 }
 
-impl<'a, 'b, 'c> fmt::Display for OperandFormatter<'a, 'b, 'c> {
+impl<'b, 'c> fmt::Display for OperandFormatter<'b, 'c> {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         self.inner.ctor.format_body(f, &mut self.inner.walker.borrow_mut(), self.inner.symbols)?;
         Ok(())
@@ -69,22 +69,22 @@ impl<'a, 'b, 'c> fmt::Display for OperandFormatter<'a, 'b, 'c> {
 }
 
 #[derive(Clone)]
-pub struct ConstructState<'a, 'b> {
+pub struct ConstructState<'b> {
     parent: Option<usize>,
     constructor: Option<&'b Constructor>,
-    handle: Option<FixedHandle<'a>>,
+    handle: Option<FixedHandle>,
     resolve: [Option<usize>; 25],
     length: usize,
     offset: usize,
 }
 
-impl<'a, 'b> ConstructState<'a, 'b> {
+impl<'b> ConstructState<'b> {
     pub fn set_parent(&mut self, parent: usize) {
         self.parent = Some(parent);
     }
 }
 
-impl<'a, 'b> Default for ConstructState<'a, 'b> {
+impl<'b> Default for ConstructState<'b> {
     fn default() -> Self {
         Self {
             parent: None,
@@ -98,8 +98,8 @@ impl<'a, 'b> Default for ConstructState<'a, 'b> {
 }
 
 #[derive(Clone)]
-pub struct ContextSet<'a, 'b> {
-    triple: &'b Symbol<'a>,
+pub struct ContextSet<'b> {
+    triple: &'b Symbol,
     point: usize,
     number: usize,
     mask: u32,
@@ -115,24 +115,24 @@ pub enum ParserState {
 }
 
 #[derive(Clone)]
-pub struct ParserContext<'a, 'b> {
+pub struct ParserContext<'b> {
     parse_state: ParserState,
     context: Vec<u32>,
-    context_commit: Vec<ContextSet<'a, 'b>>,
+    context_commit: Vec<ContextSet<'b>>,
 
     backing: [u8; 16],
 
-    address: Address<'a>,
-    next_address: Option<Address<'a>>,
+    address: Address,
+    next_address: Option<Address>,
 
     delay_slot: usize,
 
     alloc: usize,
-    state: Vec<ConstructState<'a, 'b>>,
+    state: Vec<ConstructState<'b>>,
 }
 
-impl<'a, 'b> ParserContext<'a, 'b> {
-    pub fn new(context_db: &ContextDatabase<'a>, address: Address<'a>, buffer: &[u8]) -> Self {
+impl<'b> ParserContext<'b> {
+    pub fn new(context_db: &ContextDatabase, address: Address, buffer: &[u8]) -> Self {
         let mut backing = [0u8; 16];
         let length = buffer.len().min(backing.len());
         &mut backing[..length].copy_from_slice(&buffer[..length]);
@@ -172,23 +172,23 @@ impl<'a, 'b> ParserContext<'a, 'b> {
         self.state[point].offset = offset;
     }
 
-    pub fn point(&self, point: usize) -> &ConstructState<'a, 'b> {
+    pub fn point(&self, point: usize) -> &ConstructState<'b> {
         &self.state[point]
     }
 
-    pub fn point_mut(&mut self, point: usize) -> &mut ConstructState<'a, 'b> {
+    pub fn point_mut(&mut self, point: usize) -> &mut ConstructState<'b> {
         &mut self.state[point]
     }
 
-    pub fn set_handle(&mut self, point: usize, handle: FixedHandle<'a>) {
+    pub fn set_handle(&mut self, point: usize, handle: FixedHandle) {
         self.state[point].handle = Some(handle);
     }
 
-    pub fn handle(&self, point: usize) -> Option<&FixedHandle<'a>> {
+    pub fn handle(&self, point: usize) -> Option<&FixedHandle> {
         self.state[point].handle.as_ref()
     }
 
-    pub fn handle_mut(&mut self, point: usize) -> Option<&mut FixedHandle<'a>> {
+    pub fn handle_mut(&mut self, point: usize) -> Option<&mut FixedHandle> {
         self.state[point].handle.as_mut()
     }
 
@@ -196,7 +196,7 @@ impl<'a, 'b> ParserContext<'a, 'b> {
         &self.state[0]
     }
 
-    pub fn base_state_mut(&mut self) -> &mut ConstructState<'a, 'b> {
+    pub fn base_state_mut(&mut self) -> &mut ConstructState<'b> {
         &mut self.state[0]
     }
 
@@ -288,7 +288,7 @@ impl<'a, 'b> ParserContext<'a, 'b> {
         self.context[num] = (self.context[num] & !mask) | (mask & value);
     }
 
-    pub fn add_commit(&mut self, point: usize, symbol: &'b Symbol<'a>, num: usize, mask: u32, flow: bool) {
+    pub fn add_commit(&mut self, point: usize, symbol: &'b Symbol, num: usize, mask: u32, flow: bool) {
         let set = ContextSet {
             triple: symbol,
             point,
@@ -300,13 +300,13 @@ impl<'a, 'b> ParserContext<'a, 'b> {
         self.context_commit.push(set);
     }
 
-    pub fn apply_commits<'c>(&'c mut self, db: &mut ContextDatabase<'a>, manager: &'a SpaceManager, symbols: &'b SymbolTable<'a>) -> Result<(), Error> {
+    pub fn apply_commits<'a, 'c>(&'c mut self, db: &mut ContextDatabase, manager: &'a SpaceManager, symbols: &'b SymbolTable) -> Result<(), Error> {
         if self.context_commit.is_empty() {
             return Ok(())
         }
 
         let commits = self.context_commit.clone();
-        let mut nwalker = ParserWalker::<'a, 'b, 'c>::new(self);
+        let mut nwalker = ParserWalker::<'b, 'c>::new(self);
 
         for commit in commits {
             let symbol = commit.triple;
@@ -343,7 +343,7 @@ impl<'a, 'b> ParserContext<'a, 'b> {
         self.state[point].constructor
     }
 
-    pub fn set_next_address(&mut self, address: Address<'a>) {
+    pub fn set_next_address(&mut self, address: Address) {
         self.next_address = Some(address);
     }
 
@@ -352,16 +352,16 @@ impl<'a, 'b> ParserContext<'a, 'b> {
     }
 }
 
-pub struct ParserWalker<'a, 'b, 'c> {
-    ctx: &'c mut ParserContext<'a, 'b>,
+pub struct ParserWalker<'b, 'c> {
+    ctx: &'c mut ParserContext<'b>,
 
     point: Option<usize>,
     depth: isize,
     breadcrumb: [usize; 32],
 }
 
-impl<'a, 'b, 'c> ParserWalker<'a, 'b, 'c> {
-    pub fn new(ctx: &'c mut ParserContext<'a, 'b>) -> Self {
+impl<'b, 'c> ParserWalker<'b, 'c> {
+    pub fn new(ctx: &'c mut ParserContext<'b>) -> Self {
         Self {
             ctx,
             point: Some(0),
@@ -370,7 +370,7 @@ impl<'a, 'b, 'c> ParserWalker<'a, 'b, 'c> {
         }
     }
 
-    pub fn context_mut(&mut self) -> &mut ParserContext<'a, 'b> {
+    pub fn context_mut(&mut self) -> &mut ParserContext<'b> {
         self.ctx
     }
 
@@ -384,11 +384,11 @@ impl<'a, 'b, 'c> ParserWalker<'a, 'b, 'c> {
         self.point.is_some()
     }
 
-    pub fn address(&self) -> Address<'a> {
+    pub fn address(&self) -> Address {
         self.ctx.address.clone()
     }
 
-    pub fn next_address(&self) -> Option<Address<'a>> {
+    pub fn next_address(&self) -> Option<Address> {
         self.ctx.next_address.clone()
     }
 
@@ -396,7 +396,7 @@ impl<'a, 'b, 'c> ParserWalker<'a, 'b, 'c> {
         self.ctx.point(0).length
     }
 
-    pub fn set_parent_handle(&mut self, handle: FixedHandle<'a>) -> Result<(), Error> {
+    pub fn set_parent_handle(&mut self, handle: FixedHandle) -> Result<(), Error> {
         if let Some(index) = self.point {
             self.ctx.set_handle(index, handle);
             Ok(())
@@ -405,7 +405,7 @@ impl<'a, 'b, 'c> ParserWalker<'a, 'b, 'c> {
         }
     }
 
-    pub fn parent_handle_mut(&mut self) -> Result<Option<&mut FixedHandle<'a>>, Error> {
+    pub fn parent_handle_mut(&mut self) -> Result<Option<&mut FixedHandle>, Error> {
         if let Some(index) = self.point {
             Ok(self.ctx.handle_mut(index))
         } else {
@@ -413,7 +413,7 @@ impl<'a, 'b, 'c> ParserWalker<'a, 'b, 'c> {
         }
     }
 
-    pub fn handle(&self, index: usize) -> Result<Option<FixedHandle<'a>>, Error> {
+    pub fn handle(&self, index: usize) -> Result<Option<FixedHandle>, Error> {
         let ph = self.point()
             .ok_or_else(|| Error::InconsistentState)?
             .resolve[index]
@@ -421,7 +421,7 @@ impl<'a, 'b, 'c> ParserWalker<'a, 'b, 'c> {
         Ok(self.ctx.handle(ph).map(|v| v.clone()))
     }
 
-    pub fn set_next_address(&mut self, address: Address<'a>) {
+    pub fn set_next_address(&mut self, address: Address) {
         self.ctx.set_next_address(address);
     }
 
@@ -509,14 +509,14 @@ impl<'a, 'b, 'c> ParserWalker<'a, 'b, 'c> {
         })
     }
 
-    pub fn resolve_with<'d>(&'d mut self, pat: &'b PatternExpression, ctor: &'b Constructor, index: usize, symbols: &'b SymbolTable<'a>) -> Result<i64, Error> {
+    pub fn resolve_with<'d>(&'d mut self, pat: &'b PatternExpression, ctor: &'b Constructor, index: usize, symbols: &'b SymbolTable) -> Result<i64, Error> {
         //resolve_with_aux(self, pat, ctor, index, symbols)
         let mut cur_depth = self.depth;
         let mut point = self.ctx.point(self.point.ok_or_else(|| Error::InconsistentState)?);
 
         while point.constructor.map(|ct| ct != ctor).unwrap_or(false) {
             if cur_depth == 0 {
-                let mut nwalker = ParserWalker::<'a, 'b, 'd>::new(self.context_mut());
+                let mut nwalker = ParserWalker::<'b, 'd>::new(self.context_mut());
                 let mut state = ConstructState::default();
 
                 state.constructor = Some(ctor);
@@ -545,7 +545,7 @@ impl<'a, 'b, 'c> ParserWalker<'a, 'b, 'c> {
         state.constructor = Some(ctor);
         state.length = point.length;
 
-        let mut nwalker = ParserWalker::<'a, 'b, 'd>::new(self.context_mut());
+        let mut nwalker = ParserWalker::<'b, 'd>::new(self.context_mut());
 
         nwalker.point = Some(nwalker.ctx.state.len());
         nwalker.ctx.state.push(state);
@@ -557,11 +557,11 @@ impl<'a, 'b, 'c> ParserWalker<'a, 'b, 'c> {
         Ok(value)
     }
 
-    pub fn add_commit(&mut self, symbol: &'b Symbol<'a>, num: usize, mask: u32, flow: bool) -> Result<(), Error> {
+    pub fn add_commit(&mut self, symbol: &'b Symbol, num: usize, mask: u32, flow: bool) -> Result<(), Error> {
         Ok(self.ctx.add_commit(self.point.ok_or_else(|| Error::InconsistentState)?, symbol, num, mask, flow))
     }
 
-    pub fn apply_commits(&mut self, db: &mut ContextDatabase<'a>, manager: &'a SpaceManager, symbols: &'b SymbolTable<'a>) -> Result<(), Error> {
+    pub fn apply_commits(&mut self, db: &mut ContextDatabase, manager: &SpaceManager, symbols: &'b SymbolTable) -> Result<(), Error> {
         self.ctx.apply_commits(db, manager, symbols)
     }
 
@@ -581,7 +581,7 @@ impl<'a, 'b, 'c> ParserWalker<'a, 'b, 'c> {
         }
     }
 
-    pub fn point(&self) -> Option<&ConstructState<'a, 'b>> {
+    pub fn point(&self) -> Option<&ConstructState<'b>> {
         self.point.map(|index| self.ctx.point(index))
     }
 

@@ -1,4 +1,5 @@
 use std::fmt;
+use std::sync::Arc;
 use fnv::FnvHashMap as Map;
 
 use crate::address::Address;
@@ -11,33 +12,33 @@ use fugue_bv::BitVec;
 use super::Register;
 
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
-pub enum Operand<'space> {
+pub enum Operand {
     // RAM
     Address {
-        value: Address<'space>,
+        value: Address,
         size: usize,
     },
     Constant {
         value: u64,
         size: usize,
-        space: &'space AddressSpace,
+        space: Arc<AddressSpace>,
     },
     Register {
-        name: &'space str,
+        name: Arc<str>,
         offset: u64,
         size: usize,
-        space: &'space AddressSpace,
+        space: Arc<AddressSpace>,
     },
     // Unique address space
     Variable {
         offset: u64,
         size: usize,
-        space: &'space AddressSpace,
+        space: Arc<AddressSpace>,
     },
 }
 
-impl<'space> Operand<'space> {
-    pub(crate) fn from_varnodedata(manager: &'space SpaceManager, registers: &'space Map<(u64, usize), &'space str>, vnd: VarnodeData<'space>) -> Operand<'space> {
+impl Operand {
+    pub(crate) fn from_varnodedata(manager: &SpaceManager, registers: &Map<(u64, usize), Arc<str>>, vnd: VarnodeData) -> Operand {
         let offset = vnd.offset();
         let size = vnd.size();
         let space = vnd.space();
@@ -55,7 +56,7 @@ impl<'space> Operand<'space> {
             }
         } else if space == manager.register_space() { // register
             Operand::Register {
-                name: registers[&(offset, size)],
+                name: registers[&(offset, size)].clone(),
                 offset,
                 size,
                 space,
@@ -69,7 +70,7 @@ impl<'space> Operand<'space> {
         }
     }
 
-    pub fn address(&self) -> Option<Address<'space>> {
+    pub fn address(&self) -> Option<Address> {
         if let Self::Address { value, .. } = self {
             Some(value.clone())
         } else {
@@ -85,7 +86,7 @@ impl<'space> Operand<'space> {
         }
     }
 
-    pub fn register(&self) -> Option<Register<'space>> {
+    pub fn register(&self) -> Option<Register> {
         if let Self::Register {
             name,
             offset,
@@ -93,7 +94,7 @@ impl<'space> Operand<'space> {
             space,
         } = self
         {
-            Some(Register { name, space, offset: *offset, size: *size })
+            Some(Register { name: name.clone(), space: space.clone(), offset: *offset, size: *size })
         } else {
             None
         }
@@ -113,14 +114,14 @@ impl<'space> Operand<'space> {
     }
 }
 
-impl<'space> fmt::Display for Operand<'space> {
+impl fmt::Display for Operand {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.display())
     }
 }
 
-impl<'space> AsRef<Operand<'space>> for Operand<'space> {
-    fn as_ref(&self) -> &Operand<'space> {
+impl AsRef<Operand> for Operand {
+    fn as_ref(&self) -> &Operand {
         self
     }
 }
@@ -145,8 +146,8 @@ impl Default for OperandSize {
     }
 }
 
-pub struct OperandFormatter<'operand, 'space> {
-    operand: &'operand Operand<'space>,
+pub struct OperandFormatter<'operand> {
+    operand: &'operand Operand,
     signed: bool,
     sizes: OperandSize,
     case: OperandCase,
@@ -158,8 +159,8 @@ impl Default for OperandCase {
     }
 }
 
-impl<'operand, 'space> OperandFormatter<'operand, 'space> {
-    pub fn new(operand: &'operand Operand<'space>) -> Self {
+impl<'operand> OperandFormatter<'operand> {
+    pub fn new(operand: &'operand Operand) -> Self {
         Self {
             operand,
             signed: false,
@@ -181,13 +182,13 @@ impl<'operand, 'space> OperandFormatter<'operand, 'space> {
     }
 }
 
-impl<'operand, 'space> fmt::Debug for OperandFormatter<'operand, 'space> {
+impl<'operand> fmt::Debug for OperandFormatter<'operand> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{:?}", self.operand)
     }
 }
 
-impl<'operand, 'space> fmt::Display for OperandFormatter<'operand, 'space> {
+impl<'operand> fmt::Display for OperandFormatter<'operand> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.operand {
             Operand::Address { value, .. } => {

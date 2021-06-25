@@ -2,6 +2,7 @@ use std::borrow::Borrow;
 use std::fs::File;
 use std::io::Read;
 use std::path::Path;
+use std::sync::Arc;
 
 use fnv::FnvHashMap as Map;
 use fugue_arch::ArchitectureDef;
@@ -44,16 +45,16 @@ pub struct TranslatorImpl {
     maximum_delay: usize,
     section_count: usize,
 
-    float_formats: Vec<FloatFormat>,
+    float_formats: Vec<Arc<FloatFormat>>,
     manager: Box<SpaceManager>,
 
     #[borrows(manager)]
     #[covariant]
-    pub symbol_table: Box<SymbolTable<'this>>,
+    pub symbol_table: Box<SymbolTable>,
 
     #[borrows(symbol_table)]
     #[covariant]
-    pub root: &'this Symbol<'this>,
+    pub root: &'this Symbol,
 
     #[borrows(symbol_table)]
     #[covariant]
@@ -61,32 +62,32 @@ pub struct TranslatorImpl {
 
     #[borrows(manager)]
     #[covariant]
-    pub registers: Map<(u64, usize), &'this str>,
+    pub registers: Map<(u64, usize), Arc<str>>,
 
     #[borrows(manager)]
     #[covariant]
-    pub registers_by_name: Map<&'this str, VarnodeData<'this>>,
+    pub registers_by_name: Map<Arc<str>, VarnodeData>,
 
     pub registers_size: usize,
 
     #[borrows(manager)]
     #[covariant]
-    pub program_counter: VarnodeData<'this>,
+    pub program_counter: VarnodeData,
 
     #[borrows(manager)]
     #[covariant]
-    pub user_ops: Vec<&'this str>,
+    pub user_ops: Vec<Arc<str>>,
 
     #[borrows(manager)]
     #[covariant]
-    pub context_db: ContextDatabase<'this>,
+    pub context_db: ContextDatabase,
 
     #[covariant]
     pub architecture: ArchitectureDef,
 
     #[borrows(manager)]
     #[covariant]
-    pub compiler_conventions: Map<String, Convention<'this>>,
+    pub compiler_conventions: Map<String, Convention>,
 }
 
 #[derive(Clone)]
@@ -114,14 +115,14 @@ impl Translator {
         *self.0.borrow_unique_mask()
     }
 
-    pub fn float_formats(&self) -> &[FloatFormat] {
-        self.0.borrow_float_formats()
+    pub fn float_formats(&self) -> &[Arc<FloatFormat>] {
+        self.0.borrow_float_formats().as_ref()
     }
 
-    pub fn float_format(&self, size: usize) -> Option<&FloatFormat> {
+    pub fn float_format(&self, size: usize) -> Option<Arc<FloatFormat>> {
         self.0.borrow_float_formats()
             .iter()
-            .find(|ff| ff.size() == size)
+            .find_map(|ff| if ff.size() == size { Some(ff.clone()) } else { None })
     }
 
     pub fn context_database(&self) -> ContextDatabase {
@@ -141,13 +142,12 @@ impl Translator {
         self.0.borrow_manager()
     }
 
-    pub fn registers(&self) -> &Map<(u64, usize), &str> {
+    pub fn registers(&self) -> &Map<(u64, usize), Arc<str>> {
         self.0.borrow_registers()
     }
 
     pub fn register_by_name<S: AsRef<str>>(&self, name: S) -> Option<&VarnodeData> {
-        self.0.borrow_registers_by_name()
-            .get(name.as_ref())
+        self.0.borrow_registers_by_name().get(name.as_ref())
     }
 
     pub fn register_space_size(&self) -> usize {
@@ -162,7 +162,7 @@ impl Translator {
         self.0.borrow_symbol_table()
     }
 
-    pub fn user_ops(&self) -> &[&str] {
+    pub fn user_ops(&self) -> &[Arc<str>] {
         self.0.borrow_user_ops()
     }
 
@@ -223,21 +223,21 @@ impl Translator {
                 match slf.symbol_table.symbol(*sym_id) {
                     None => return Err(DeserialiseError::Invariant("invalid symbol")),
                     Some(Symbol::Varnode {
-                        ref name,
+                        name,
                         ref offset,
                         ref size,
                         ..
                     }) => {
                         if registers
-                            .insert((*offset, *size), name)
+                            .insert((*offset, *size), name.clone())
                             .is_some()
                         {
                             // duplicate
                             return Err(DeserialiseError::Invariant("duplicate varnode"));
                         }
                         register_names.insert(
-                            name,
-                            VarnodeData::new(register_space, *offset, *size),
+                            name.clone(),
+                            VarnodeData::new(register_space.clone(), *offset, *size),
                         );
 
                         if let Some(size) = size.checked_add(*offset as usize) {
@@ -246,7 +246,7 @@ impl Translator {
                             return Err(DeserialiseError::Invariant("offset with size of varnode overflows"));
                         }
 
-                        if pc_name == name {
+                        if pc_name == name.as_ref() {
                             if pc.is_some() {
                                 return Err(DeserialiseError::Invariant(
                                     "duplicate definition of program counter",
@@ -265,7 +265,7 @@ impl Translator {
                         } = pattern_value
                         {
                             slf.context_db
-                                .register_variable(&**name, *bit_start, *bit_end)
+                                .register_variable(name.clone(), *bit_start, *bit_end)
                                 .ok_or_else(|| DeserialiseError::Invariant("duplicate context variable"))?;
                         } else {
                             return Err(DeserialiseError::Invariant(
@@ -274,12 +274,12 @@ impl Translator {
                         }
                     }
                     Some(Symbol::UserOp {
-                        index, ref name, ..
+                        index, name, ..
                     }) => {
                         if user_ops.len() <= *index {
-                            user_ops.resize_with(index + 1, || "");
+                            user_ops.resize_with(index + 1, || Arc::from(""));
                         }
-                        user_ops[*index] = name;
+                        user_ops[*index] = name.clone();
                     }
                     _ => (),
                 }
@@ -331,12 +331,12 @@ impl Translator {
 
         let mut float_formats = children
             .peeking_take_while(|node| node.tag_name().name() == "floatformat")
-            .map(FloatFormat::from_xml)
-            .collect::<Result<Vec<_>, _>>()?;
+            .map(|node| Ok(Arc::new(FloatFormat::from_xml(node)?)))
+            .collect::<Result<Vec<_>, DeserialiseError>>()?;
 
         if float_formats.is_empty() {
-            float_formats.push(FloatFormat::float4());
-            float_formats.push(FloatFormat::float8());
+            float_formats.push(Arc::new(FloatFormat::float4()));
+            float_formats.push(Arc::new(FloatFormat::float8()));
         }
 
         let manager = SpaceManager::from_xml(
@@ -395,7 +395,7 @@ impl Translator {
         Ok(slf)
     }
 
-    pub fn disassemble<'a>(&'a self, db: &mut ContextDatabase, address: Address<'a>, bytes: &[u8]) -> Result<Instruction<'a>, Error> {
+    pub fn disassemble<'a>(&'a self, db: &mut ContextDatabase, address: Address, bytes: &[u8]) -> Result<Instruction, Error> {
         if self.alignment() != 1 {
             if address.offset() % self.alignment() as u64 != 0 {
                 return Err(DisassemblyError::IncorrectAlignment {
@@ -430,8 +430,8 @@ impl Translator {
         })
     }
 
-    pub fn lift_pcode_raw<'a>(&'a self, db: &mut ContextDatabase<'a>, address: Address<'a>, bytes: &[u8]) -> Result<PCodeRaw<'a>, Error> {
-        self.0.with::<'a>(|slf| {
+    pub fn lift_pcode_raw(&self, db: &mut ContextDatabase, address: Address, bytes: &[u8]) -> Result<PCodeRaw, Error> {
+        self.0.with(|slf| {
             if *slf.alignment != 1 {
                 if address.offset() % *slf.alignment as u64 != 0 {
                     return Err(DisassemblyError::IncorrectAlignment {
@@ -500,8 +500,8 @@ impl Translator {
         })
     }
 
-    pub fn lift_pcode<'a>(&'a self, db: &mut ContextDatabase<'a>, address: Address<'a>, bytes: &[u8]) -> Result<PCode<'a>, Error> {
-        self.0.with::<'a>(|slf| {
+    pub fn lift_pcode(&self, db: &mut ContextDatabase, address: Address, bytes: &[u8]) -> Result<PCode, Error> {
+        self.0.with(|slf| {
             if *slf.alignment != 1 {
                 if address.offset() % *slf.alignment as u64 != 0 {
                     return Err(DisassemblyError::IncorrectAlignment {
@@ -568,8 +568,8 @@ impl Translator {
         })
     }
 
-    pub fn lift_ecode<'a>(&'a self, db: &mut ContextDatabase<'a>, address: Address<'a>, bytes: &[u8]) -> Result<ECode<'a>, Error> {
-        self.0.with::<'a>(|slf| {
+    pub fn lift_ecode(&self, db: &mut ContextDatabase, address: Address, bytes: &[u8]) -> Result<ECode, Error> {
+        self.0.with(|slf| {
             if *slf.alignment != 1 {
                 if address.offset() % *slf.alignment as u64 != 0 {
                     return Err(DisassemblyError::IncorrectAlignment {
@@ -637,9 +637,9 @@ impl Translator {
     }
 
     fn resolve_handles<'a, 'b, 'c>(
-        walker: &mut ParserWalker<'a, 'b, 'c>,
+        walker: &mut ParserWalker<'b, 'c>,
         manager: &'a SpaceManager,
-        symbol_table: &'b SymbolTable<'a>,
+        symbol_table: &'b SymbolTable,
     ) -> Result<(), Error> {
         // assumes resolve has resolved all constructors
         walker.base_state();
@@ -700,10 +700,10 @@ impl Translator {
         Ok(())
     }
 
-    fn resolve<'a, 'b, 'c>(
-        walker: &mut ParserWalker<'a, 'b, 'c>,
+    fn resolve<'b, 'c>(
+        walker: &mut ParserWalker<'b, 'c>,
         root: usize,
-        symbol_table: &'b SymbolTable<'a>,
+        symbol_table: &'b SymbolTable,
     ) -> Result<(), Error> {
         let ctor = symbol_table.resolve(root, walker)?;
         walker.set_constructor(ctor)?;
