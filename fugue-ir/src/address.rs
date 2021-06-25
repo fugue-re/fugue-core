@@ -269,6 +269,50 @@ impl Sub<&'_ AddressValue> for AddressValue {
     }
 }
 
+impl Add<Address> for AddressValue {
+    type Output = Self;
+
+    fn add(self, rhs: Address) -> Self {
+        Self {
+            offset: self.space.wrap_offset(self.offset.wrapping_add(rhs.0)),
+            space: self.space,
+        }
+    }
+}
+
+impl Sub<Address> for AddressValue {
+    type Output = Self;
+
+    fn sub(self, rhs: Address) -> Self {
+        Self {
+            offset: self.space.wrap_offset(self.offset.wrapping_sub(rhs.0)),
+            space: self.space,
+        }
+    }
+}
+
+impl Add<&'_ Address> for AddressValue {
+    type Output = Self;
+
+    fn add(self, rhs: &Address) -> Self {
+        Self {
+            offset: self.space.wrap_offset(self.offset.wrapping_add(rhs.0)),
+            space: self.space,
+        }
+    }
+}
+
+impl Sub<&'_ Address> for AddressValue {
+    type Output = Self;
+
+    fn sub(self, rhs: &Address) -> Self {
+        Self {
+            offset: self.space.wrap_offset(self.offset.wrapping_sub(rhs.0)),
+            space: self.space,
+        }
+    }
+}
+
 impl Add<usize> for AddressValue {
     type Output = Self;
 
