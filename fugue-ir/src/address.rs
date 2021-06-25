@@ -25,6 +25,12 @@ impl From<AddressValue> for Address {
     }
 }
 
+impl From<&'_ AddressValue> for Address {
+    fn from(v: &AddressValue) -> Self {
+        Self(v.offset())
+    }
+}
+
 pub trait IntoAddress {
     fn into_address(self, space: &AddressSpace) -> Address;
     fn into_address_value(self, space: Arc<AddressSpace>) -> AddressValue;
