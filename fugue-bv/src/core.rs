@@ -6,7 +6,7 @@ use std::ops::{Add, BitAnd, BitOr, BitXor, Div, Mul, Neg, Not, Rem, Shl, Shr, Su
 use std::sync::Arc;
 
 use rug::Integer as BigInt;
-use rug::integer::Order;
+use rug::integer::Order as BVOrder;
 
 #[derive(Debug, Clone, Hash)]
 pub struct BitVec(BigInt, Arc<BigInt>, bool, usize);
@@ -128,11 +128,11 @@ impl BitVec {
     }
 
     pub fn from_be_bytes(buf: &[u8]) -> Self {
-        Self::from_bigint(BigInt::from_digits(&buf, Order::MsfBe), buf.len() * 8)
+        Self::from_bigint(BigInt::from_digits(&buf, BVOrder::MsfBe), buf.len() * 8)
     }
 
     pub fn from_le_bytes(buf: &[u8]) -> Self {
-        Self::from_bigint(BigInt::from_digits(&buf, Order::LsfLe), buf.len() * 8)
+        Self::from_bigint(BigInt::from_digits(&buf, BVOrder::LsfLe), buf.len() * 8)
     }
 
     #[inline(always)]
@@ -153,7 +153,7 @@ impl BitVec {
         } else {
             buf.iter_mut().for_each(|v| *v = 0u8);
         };
-        self.0.write_digits(&mut buf[((self.3 / 8) - self.0.significant_digits::<u8>())..], Order::MsfBe);
+        self.0.write_digits(&mut buf[((self.3 / 8) - self.0.significant_digits::<u8>())..], BVOrder::MsfBe);
     }
 
     pub fn to_le_bytes(&self, buf: &mut [u8]) {
@@ -165,7 +165,7 @@ impl BitVec {
         } else {
             buf.iter_mut().for_each(|v| *v = 0u8);
         }
-        self.0.write_digits(&mut buf[..self.0.significant_digits::<u8>()], Order::LsfLe);
+        self.0.write_digits(&mut buf[..self.0.significant_digits::<u8>()], BVOrder::LsfLe);
     }
 
     #[inline(always)]
@@ -191,7 +191,7 @@ impl BitVec {
         }
     }
 
-    fn into_bytes<O: Order>(self, bytes: &mut [u8]) {
+    pub fn into_bytes<O: Order>(self, bytes: &mut [u8]) {
         if O::ENDIAN.is_big() {
             self.to_be_bytes(bytes)
         } else {
