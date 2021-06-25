@@ -155,6 +155,70 @@ impl fmt::Display for Address {
     }
 }
 
+impl Add<Address> for Address {
+    type Output = Self;
+
+    fn add(self, rhs: Address) -> Self {
+        Self(self.0.wrapping_add(rhs.0))
+    }
+}
+
+impl Sub<Address> for Address {
+    type Output = Self;
+
+    fn sub(self, rhs: Address) -> Self {
+        Self(self.0.wrapping_sub(rhs.0))
+    }
+}
+
+impl Add<&'_ Address> for Address {
+    type Output = Self;
+
+    fn add(self, rhs: &Address) -> Self {
+        Self(self.0.wrapping_add(rhs.0))
+    }
+}
+
+impl Sub<&'_ Address> for Address {
+    type Output = Self;
+
+    fn sub(self, rhs: &Address) -> Self {
+        Self(self.0.wrapping_sub(rhs.0))
+    }
+}
+
+impl Add<usize> for Address {
+    type Output = Self;
+
+    fn add(self, rhs: usize) -> Self {
+        Self(self.0.wrapping_add(rhs as u64))
+    }
+}
+
+impl Sub<usize> for Address {
+    type Output = Self;
+
+    fn sub(self, rhs: usize) -> Self {
+        Self(self.0.wrapping_sub(rhs as u64))
+    }
+}
+
+impl Add<u64> for Address {
+    type Output = Self;
+
+    fn add(self, rhs: u64) -> Self {
+        Self(self.0.wrapping_add(rhs))
+    }
+}
+
+impl Sub<u64> for Address {
+    type Output = Self;
+
+    fn sub(self, rhs: u64) -> Self {
+        Self(self.0.wrapping_sub(rhs))
+    }
+}
+
 impl fmt::Display for AddressValue {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         write!(f, "{:#x}", self.offset * self.space.word_size() as u64)
