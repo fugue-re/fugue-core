@@ -1,3 +1,5 @@
+use fugue_bytes::Order;
+
 use std::cmp::Ordering;
 use std::fmt;
 use std::ops::{Add, BitAnd, BitOr, BitXor, Div, Mul, Neg, Not, Rem, Shl, Shr, Sub};
@@ -172,6 +174,28 @@ impl BitVec {
             self.to_be_bytes(buf)
         } else {
             self.to_le_bytes(buf)
+        }
+    }
+
+    pub fn from_bytes<O: Order>(bytes: &[u8], signed: bool) -> BitVec {
+        let v = if O::ENDIAN.is_big() {
+            Self::from_be_bytes(bytes)
+        } else {
+            Self::from_le_bytes(bytes)
+        };
+
+        if signed {
+            v.signed()
+        } else {
+            v
+        }
+    }
+
+    fn into_bytes<O: Order>(self, bytes: &mut [u8]) {
+        if O::ENDIAN.is_big() {
+            self.to_be_bytes(bytes)
+        } else {
+            self.to_le_bytes(bytes)
         }
     }
 
