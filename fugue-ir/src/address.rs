@@ -96,6 +96,46 @@ impl IntoAddress for &'_ usize {
     }
 }
 
+impl IntoAddress for u8 {
+    fn into_address(self, space: &AddressSpace) -> Address {
+        Address::new(space, self as u64)
+    }
+
+    fn into_address_value(self, space: Arc<AddressSpace>) -> AddressValue {
+        AddressValue::new(space, self as u64)
+    }
+}
+
+impl IntoAddress for &'_ u8 {
+    fn into_address(self, space: &AddressSpace) -> Address {
+        Address::new(space, *self as u64)
+    }
+
+    fn into_address_value(self, space: Arc<AddressSpace>) -> AddressValue {
+        AddressValue::new(space, *self as u64)
+    }
+}
+
+impl IntoAddress for u16 {
+    fn into_address(self, space: &AddressSpace) -> Address {
+        Address::new(space, self as u64)
+    }
+
+    fn into_address_value(self, space: Arc<AddressSpace>) -> AddressValue {
+        AddressValue::new(space, self as u64)
+    }
+}
+
+impl IntoAddress for &'_ u16 {
+    fn into_address(self, space: &AddressSpace) -> Address {
+        Address::new(space, *self as u64)
+    }
+
+    fn into_address_value(self, space: Arc<AddressSpace>) -> AddressValue {
+        AddressValue::new(space, *self as u64)
+    }
+}
+
 impl IntoAddress for u32 {
     fn into_address(self, space: &AddressSpace) -> Address {
         Address::new(space, self as u64)
@@ -172,6 +212,30 @@ impl From<&'_ Address> for u32 {
     }
 }
 
+impl From<Address> for u16 {
+    fn from(t: Address) -> Self {
+        t.0 as _
+    }
+}
+
+impl From<&'_ Address> for u16 {
+    fn from(t: &'_ Address) -> Self {
+        t.0 as _
+    }
+}
+
+impl From<Address> for u8 {
+    fn from(t: Address) -> Self {
+        t.0 as _
+    }
+}
+
+impl From<&'_ Address> for u8 {
+    fn from(t: &'_ Address) -> Self {
+        t.0 as _
+    }
+}
+
 impl From<AddressValue> for usize {
     fn from(t: AddressValue) -> Self {
         t.offset as _
@@ -203,6 +267,30 @@ impl From<AddressValue> for u32 {
 }
 
 impl From<&'_ AddressValue> for u32 {
+    fn from(t: &'_ AddressValue) -> Self {
+        t.offset as _
+    }
+}
+
+impl From<AddressValue> for u16 {
+    fn from(t: AddressValue) -> Self {
+        t.offset as _
+    }
+}
+
+impl From<&'_ AddressValue> for u16 {
+    fn from(t: &'_ AddressValue) -> Self {
+        t.offset as _
+    }
+}
+
+impl From<AddressValue> for u8 {
+    fn from(t: AddressValue) -> Self {
+        t.offset as _
+    }
+}
+
+impl From<&'_ AddressValue> for u8 {
     fn from(t: &'_ AddressValue) -> Self {
         t.offset as _
     }
