@@ -1,4 +1,5 @@
 use byteorder::ByteOrder;
+use std::cmp::Ordering;
 
 use crate::{BE, LE};
 use crate::endian::Endian;
@@ -40,6 +41,8 @@ pub trait Order: ByteOrder + Send + Sync + 'static {
 
     fn read_usize(buf: &[u8]) -> usize;
     fn write_usize(buf: &mut [u8], n: usize);
+
+    fn subpiece(destination: &mut [u8], source: &[u8], amount: usize);
 }
 
 impl Order for BE {
@@ -85,6 +88,23 @@ impl Order for BE {
     fn write_usize(buf: &mut [u8], n: usize) {
         Self::write_u64(buf, n as u64)
     }
+
+    fn subpiece(destination: &mut [u8], source: &[u8], amount: usize) {
+        let amount = amount.min(source.len());
+        let trimmed = &source[..source.len() - amount];
+        match trimmed.len().cmp(&destination.len()) {
+            Ordering::Less => {
+                destination.copy_from_slice(&trimmed);
+                for i in destination[trimmed.len()..].iter_mut() {
+                    *i = 0;
+                }
+            }
+            Ordering::Equal => {
+                destination.copy_from_slice(&trimmed);
+            }
+            Ordering::Greater => destination.copy_from_slice(&trimmed[trimmed.len() - destination.len()..]),
+        }
+    }
 }
 
 impl Order for LE {
@@ -129,5 +149,21 @@ impl Order for LE {
     #[cfg(target_pointer_width = "64")]
     fn write_usize(buf: &mut [u8], n: usize) {
         Self::write_u64(buf, n as u64)
+    }
+
+    fn subpiece(destination: &mut [u8], source: &[u8], amount: usize) {
+        let amount = amount.min(source.len());
+        let trimmed = &source[amount..];
+        match trimmed.len().cmp(&destination.len()) {
+            Ordering::Less => {
+                destination[..trimmed.len()].copy_from_slice(&trimmed);
+                for i in destination[trimmed.len()..].iter_mut() {
+                    *i = 0;
+                }
+            }
+            Ordering::Equal | Ordering::Greater => {
+                destination.copy_from_slice(&trimmed[..destination.len()]);
+            }
+        }
     }
 }
