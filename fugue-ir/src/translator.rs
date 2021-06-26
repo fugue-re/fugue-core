@@ -170,6 +170,10 @@ impl Translator {
         self.0.borrow_architecture()
     }
 
+    pub fn program_counter(&self) -> &VarnodeData {
+        self.0.borrow_program_counter()
+    }
+
     pub fn from_file<PC: AsRef<str>, P: AsRef<Path>>(
         program_counter: PC,
         architecture: &ArchitectureDef,

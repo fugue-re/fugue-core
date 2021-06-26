@@ -6,6 +6,7 @@ use crate::address::AddressValue;
 use crate::disassembly::VarnodeData;
 use crate::space::AddressSpace;
 use crate::space_manager::SpaceManager;
+use crate::translator::Translator;
 
 use fugue_bv::BitVec;
 
@@ -38,6 +39,10 @@ pub enum Operand {
 }
 
 impl Operand {
+    pub fn from_varnode(translator: &Translator, varnode: &VarnodeData) -> Operand {
+        Self::from_varnodedata(translator.manager(), translator.registers(), varnode)
+    }
+
     pub(crate) fn from_varnodedata(manager: &SpaceManager, registers: &Map<(u64, usize), Arc<str>>, vnd: VarnodeData) -> Operand {
         let offset = vnd.offset();
         let size = vnd.size();
