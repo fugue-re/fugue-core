@@ -97,6 +97,10 @@ impl Prototype {
             outputs: spec.outputs.iter().map(|output| PrototypeEntry::from_spec(output, registers)).collect::<Result<_, _>>()?,
         })
     }
+
+    pub fn extra_pop(&self) -> u64 {
+        self.extra_pop
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -196,5 +200,9 @@ impl Convention {
 
     pub fn return_address(&self) -> &ReturnAddress {
         &self.return_address
+    }
+
+    pub fn default_prototype(&self) -> &Prototype {
+        &self.default_prototype
     }
 }
