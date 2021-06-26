@@ -1,3 +1,4 @@
+use std::borrow::Borrow;
 use std::fmt;
 use std::sync::Arc;
 use fnv::FnvHashMap as Map;
@@ -43,7 +44,9 @@ impl Operand {
         Self::from_varnodedata(translator.manager(), translator.registers(), varnode)
     }
 
-    pub(crate) fn from_varnodedata(manager: &SpaceManager, registers: &Map<(u64, usize), Arc<str>>, vnd: VarnodeData) -> Operand {
+    pub(crate) fn from_varnodedata<V>(manager: &SpaceManager, registers: &Map<(u64, usize), Arc<str>>, vnd: V) -> Operand
+    where V: Borrow<VarnodeData> {
+        let vnd = vnd.borrow();
         let offset = vnd.offset();
         let size = vnd.size();
         let space = vnd.space();
