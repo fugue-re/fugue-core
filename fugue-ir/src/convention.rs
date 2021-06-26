@@ -152,6 +152,10 @@ impl StackPointer {
             space,
         })
     }
+
+    pub fn varnode(&self) -> &VarnodeData {
+        &self.varnode
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -184,5 +188,13 @@ impl Convention {
                 .map(|prototype| Prototype::from_spec(prototype, registers_by_name))
                 .collect::<Result<_, _>>()?,
         })
+    }
+
+    pub fn stack_pointer(&self) -> &StackPointer {
+        &self.stack_pointer
+    }
+
+    pub fn return_address(&self) -> &ReturnAddress {
+        &self.return_address
     }
 }
