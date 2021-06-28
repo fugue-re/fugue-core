@@ -174,6 +174,10 @@ impl Translator {
         self.0.borrow_program_counter()
     }
 
+    pub fn compiler_conventions(&self) -> &Map<String, Convention> {
+        self.0.borrow_compiler_conventions()
+    }
+
     pub fn from_file<PC: AsRef<str>, P: AsRef<Path>>(
         program_counter: PC,
         architecture: &ArchitectureDef,
