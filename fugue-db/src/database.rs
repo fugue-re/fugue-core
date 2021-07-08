@@ -4,6 +4,8 @@ use std::io::BufReader;
 use std::iter::FromIterator;
 use std::path::{Path, PathBuf};
 
+use fs_extra::file::{CopyOptions, copy as copy_file};
+
 use capnp::message::{Reader, ReaderOptions, ReaderSegments, SegmentArray};
 use capnp::serialize_packed::{read_message, write_message};
 
@@ -23,7 +25,7 @@ use crate::Function;
 use crate::Id;
 use crate::Segment;
 
-use crate::backend::DatabaseImporterBackend;
+use crate::backend::{DatabaseImporterBackend, Imported};
 use crate::error::Error;
 use crate::schema;
 
@@ -419,35 +421,37 @@ impl DatabaseImporter {
             }
         });
 
-        let mut err = None;
-        let mut segments = Vec::default();
-
+        let mut res = Err(Error::NoBackendsAvailable);
         for (_, backend) in backends {
-            match backend.import(&self.program) {
-                Ok(import_segments) => {
-                    err = None;
-                    segments = import_segments;
-                    break;
-                },
-                Err(e) => {
-                    if err.is_none() {
-                        err = Some(e);
-                    }
-                },
+            res = backend.import(&self.program);
+            if res.is_ok() {
+                break
             }
         }
 
-        if let Some(err) = err {
-            return Err(err);
+        match res {
+            Ok(Imported::File(ref path)) => {
+                let db = Database::from_file(path, language_db)?;
+                if let Some(ref fdb_path) = self.fdb_path {
+                    if path != fdb_path { // copy it
+                        copy_file(path, fdb_path, &CopyOptions {
+                            overwrite: true,
+                            skip_exist: false,
+                            ..Default::default()
+                        })
+                        .map_err(Error::ExportViaCopy)?;
+                    }
+                }
+                Ok(db)
+            },
+            Ok(Imported::Segments(segments)) => {
+                let db = Database::from_segments(segments, language_db)?;
+                if let Some(ref fdb_path) = self.fdb_path {
+                    db.to_file(fdb_path)?;
+                }
+                Ok(db)
+            },
+            Err(e) => Err(e),
         }
-
-        let db = Database::from_segments(segments, language_db)?;
-
-        // IDB path is ignored in "remote" imports
-        if let Some(ref fdb_path) = self.fdb_path {
-            db.to_file(fdb_path)?;
-        }
-
-        Ok(db)
     }
 }

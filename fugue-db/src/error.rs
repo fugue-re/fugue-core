@@ -15,6 +15,8 @@ pub enum Error {
     Deserialisation(capnp::Error),
     #[error("export path `{}` for serialised database already exists", _0.display())]
     ExportPathExists(std::path::PathBuf),
+    #[error("export of serialised database failed: {0}")]
+    ExportViaCopy(fs_extra::error::Error),
     #[error("function at {0:#x} has no corresponding segment")]
     NoFunctionSegment(u64),
     #[error("block at {0:#x} has no corresponding segment")]

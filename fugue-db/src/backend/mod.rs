@@ -1,5 +1,12 @@
 use std::ops::Deref;
+use std::path::PathBuf;
 use url::Url;
+
+#[derive(Debug)]
+pub enum Imported {
+    File(PathBuf),
+    Segments(Vec<Vec<u8>>),
+}
 
 pub trait Backend {
     type Error: Into<crate::Error>;
@@ -9,7 +16,7 @@ pub trait Backend {
     fn is_available(&self) -> bool;
     fn is_preferred_for(&self, path: &Url) -> Option<bool>;
 
-    fn import(&self, program: &Url) -> Result<Vec<Vec<u8>>, Self::Error>;
+    fn import(&self, program: &Url) -> Result<Imported, Self::Error>;
 }
 
 #[repr(transparent)]
@@ -36,7 +43,7 @@ where
         self.0.is_preferred_for(path)
     }
 
-    fn import(&self, program: &Url) -> Result<Vec<Vec<u8>>, Self::Error> {
+    fn import(&self, program: &Url) -> Result<Imported, Self::Error> {
         self.0.import(program).map_err(|e| e.into())
     }
 }
