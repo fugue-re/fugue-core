@@ -427,6 +427,12 @@ impl Specification {
     pub fn named_from_str<N: Into<String>, S: AsRef<str>>(name: N, input: S) -> Result<Self, DeserialiseError> {
         let document = xml::Document::parse(input.as_ref()).map_err(DeserialiseError::Xml)?;
 
-        Self::named_from_xml(name, document.root_element())
+        let res = Self::named_from_xml(name, document.root_element());
+
+        if let Err(ref e) = res {
+            log::debug!("load failed: {:?}", e);
+        }
+
+        res
     }
 }
