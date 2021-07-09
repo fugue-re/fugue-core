@@ -10,6 +10,7 @@ fugue-arch = { path = "../fugue-arch" }
 fugue-bv = { path = "../fugue-bv" }
 fugue-bytes = { path = "../fugue-bytes" }
 itertools = "0.10"
+log = "0.4"
 ouroboros = "0.9"
 smallvec = "1"
 thiserror = "1"

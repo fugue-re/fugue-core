@@ -57,6 +57,9 @@ impl Language {
 
                 let mut path = root.as_ref().to_path_buf();
                 let cspec_path = compiler.attribute_string("spec")?;
+
+                log::debug!("loading compiler specification `{}`", cspec_path);
+
                 path.push(cspec_path);
 
                 Ok((id, name, path))
@@ -262,6 +265,7 @@ impl LanguageDB {
             .filter(|e| e.file_type().is_file() &&
                     e.path().extension().map(|e| e == "ldefs").unwrap_or(false))
             .try_fold(Self::default(), |mut acc, ldef| {
+                log::debug!("loading language definition from `{:?}`", ldef);
                 match Self::from_file_with(ldef.path(), ignore_errors) {
                     Ok(db) => { acc.db.extend(db.into_iter()); Ok(acc) },
                     Err(_) if ignore_errors => Ok(acc),
