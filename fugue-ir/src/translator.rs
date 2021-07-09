@@ -155,7 +155,8 @@ impl Translator {
     }
 
     pub fn unique_space_size(&self) -> usize {
-        *self.0.borrow_unique_mask() as usize
+        // base is first free offset
+        *self.0.borrow_unique_base() as usize
     }
 
     pub fn symbol_table(&self) -> &SymbolTable {
