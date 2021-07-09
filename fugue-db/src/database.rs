@@ -89,6 +89,17 @@ impl Database {
         self.0.borrow_translators().iter().map(Translator::architecture)
     }
 
+    pub fn default_translator(&self) -> Translator {
+        self.0.borrow_translators()
+            .first()
+            .map(|t| t.clone())
+            .expect("default translator")
+    }
+
+    pub fn translators(&self) -> impl Iterator<Item=&Translator> {
+        self.0.borrow_translators().iter()
+    }
+
     pub fn segments(&self) -> &IntervalTree<u64, Segment> {
         self.0.borrow_segments()
     }
