@@ -15,7 +15,6 @@ chrono = "0.4"
 educe = "0.4"
 fs_extra = "1.2"
 interval-tree = { git = "ssh://git@git.simulacra.to:10022/fugue/interval-tree" }
-inventory = "0.1"
 ouroboros = "0.9"
 
 tempfile = "3"

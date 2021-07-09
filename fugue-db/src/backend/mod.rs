@@ -68,5 +68,3 @@ impl Deref for DatabaseImporterBackend {
         &*self.0
     }
 }
-
-inventory::collect!(DatabaseImporterBackend);

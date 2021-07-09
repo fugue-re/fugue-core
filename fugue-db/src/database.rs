@@ -25,7 +25,7 @@ use crate::Function;
 use crate::Id;
 use crate::Segment;
 
-use crate::backend::{DatabaseImporterBackend, Imported};
+use crate::backend::{Backend, DatabaseImporterBackend, Imported};
 use crate::error::Error;
 use crate::schema;
 
@@ -313,29 +313,35 @@ impl Database {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct DatabaseImporter {
-    program: url::Url,
+    program: Option<url::Url>,
     fdb_path: Option<PathBuf>,
     overwrite_fdb: bool,
     backend_pref: Option<String>,
+    backends: Vec<DatabaseImporterBackend>,
+}
+
+impl Default for DatabaseImporter {
+    fn default() -> Self {
+        Self {
+            program: None,
+            fdb_path: None,
+            overwrite_fdb: false,
+            backend_pref: None,
+            backends: Vec::default(),
+        }
+    }
 }
 
 impl DatabaseImporter {
-    pub fn available_backends() -> impl Iterator<Item = &'static DatabaseImporterBackend> {
-        inventory::iter::<DatabaseImporterBackend>()
-    }
-
     pub fn new<P: AsRef<Path>>(program: P) -> DatabaseImporter {
         Self::new_url(Self::url_from_path(program))
     }
 
     pub fn new_url<U: Into<Url>>(program_url: U) -> DatabaseImporter {
         Self {
-            program: program_url.into(),
-            fdb_path: None,
-            overwrite_fdb: false,
-            backend_pref: None,
+            program: Some(program_url.into()),
+            ..Default::default()
         }
     }
 
@@ -351,18 +357,29 @@ impl DatabaseImporter {
         }
     }
 
+    pub fn available_backends(&self) -> impl Iterator<Item=&DatabaseImporterBackend> {
+        self.backends.iter()
+    }
+
     pub fn prefer_backend<N: Into<String>>(&mut self, backend: N) -> &mut Self {
         self.backend_pref = Some(backend.into());
         self
     }
 
+    pub fn register_backend<B, E>(&mut self, backend: B) -> &mut Self
+    where B: Backend<Error = E> + 'static,
+          E: Into<Error> + 'static {
+        self.backends.push(DatabaseImporterBackend::new(backend));
+        self
+    }
+
     pub fn program<P: AsRef<Path>>(&mut self, program: P) -> &mut Self {
-        self.program = Self::url_from_path(program);
+        self.program = Some(Self::url_from_path(program));
         self
     }
 
     pub fn remote<U: Into<Url>>(&mut self, url: U) -> &mut Self {
-        self.program = url.into();
+        self.program = Some(url.into());
         self
     }
 
@@ -377,15 +394,21 @@ impl DatabaseImporter {
     }
 
     pub fn import(&self, language_db: &LanguageDB) -> Result<Database, Error> {
+        let program = if let Some(ref program) = self.program {
+            program.clone()
+        } else {
+            return Err(Error::NoImportUrl)
+        };
+
         if let Some(ref fdb_path) = self.fdb_path {
             if fdb_path.exists() && !self.overwrite_fdb {
                 return Err(Error::ExportPathExists(fdb_path.to_owned()))
             }
         }
 
-        if self.program.scheme() == "file" {
-            let program = self.program.to_file_path()
-                .map_err(|_| Error::InvalidLocalImportUrl(self.program.clone()))?;
+        if program.scheme() == "file" {
+            let program = program.to_file_path()
+                .map_err(|_| Error::InvalidLocalImportUrl(program.clone()))?;
 
             // importing from an existing database
             if program
@@ -399,10 +422,10 @@ impl DatabaseImporter {
             };
         }
 
-        let mut backends = inventory::iter::<DatabaseImporterBackend>()
+        let mut backends = self.available_backends()
             .filter_map(|b| if !b.is_available() {
                 None
-            } else if let Some(pref) = b.is_preferred_for(&self.program) {
+            } else if let Some(pref) = b.is_preferred_for(&program) {
                 Some((if pref { 5 } else { 1 }, b))
             } else {
                 None
@@ -423,7 +446,7 @@ impl DatabaseImporter {
 
         let mut res = Err(Error::NoBackendsAvailable);
         for (_, backend) in backends {
-            res = backend.import(&self.program);
+            res = backend.import(&program);
             if res.is_ok() {
                 break
             }

@@ -23,6 +23,8 @@ pub enum Error {
     NoBlockSegment(u64),
     #[error("no importer backends available")]
     NoBackendsAvailable,
+    #[error("no URL specified for database import")]
+    NoImportUrl,
     #[error("file not found at `{}`", _0.display())]
     FileNotFound(std::path::PathBuf),
     #[error("invalid local import URL `{0}`")]
