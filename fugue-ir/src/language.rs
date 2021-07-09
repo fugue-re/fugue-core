@@ -29,6 +29,10 @@ pub struct Language {
 
 impl Language {
     pub fn from_xml<P: AsRef<Path>>(root: P, input: xml::Node) -> Result<Self, DeserialiseError> {
+        Self::from_xml_with(root, input, false)
+    }
+
+    pub fn from_xml_with<P: AsRef<Path>>(root: P, input: xml::Node, ignore_errors: bool) -> Result<Self, DeserialiseError> {
         if input.tag_name().name() != "language" {
             return Err(DeserialiseError::TagUnexpected(
                 input.tag_name().name().to_owned(),
@@ -45,7 +49,7 @@ impl Language {
                 error: Box::new(e),
             })?;
 
-        let compiler_specs = input.children()
+        let compiler_specs_it = input.children()
             .filter(|e| e.is_element() && e.tag_name().name() == "compiler")
             .map(|compiler| {
                 let id = compiler.attribute_string("id")?;
@@ -56,11 +60,20 @@ impl Language {
                 path.push(cspec_path);
 
                 Ok((id, name, path))
-            })
-            .filter_map_ok(|(id, name, path)| {
+            });
+
+        let compiler_specs = if ignore_errors {
+            compiler_specs_it.filter_map_ok(|(id, name, path)| {
                 CSpec::named_from_file(name, &path).ok().map(|cspec| (id, cspec))
             })
-            .collect::<Result<Map<_, _>, DeserialiseError>>()?;
+            .collect::<Result<Map<_, _>, DeserialiseError>>()
+        } else {
+            compiler_specs_it.map_ok(|(id, name, path)| {
+                CSpec::named_from_file(name, &path).map(|cspec| (id, cspec))
+            })
+            .flatten_ok()
+            .collect::<Result<Map<_, _>, DeserialiseError>>()
+        }?;
 
         let architecture = ArchitectureDef::new(
             input.attribute_processor("processor")?,
@@ -174,7 +187,7 @@ impl LanguageDB {
             .filter(xml::Node::is_element)
             .filter(|t| t.tag_name().name() == "language")
             .map(|t| {
-                let ldef = Language::from_xml(&root, t)?;
+                let ldef = Language::from_xml_with(&root, t, ignore_errors)?;
                 Ok((ldef.architecture.clone(), ldef))
             });
 
