@@ -71,10 +71,14 @@ impl Language {
             })
             .collect::<Result<Map<_, _>, DeserialiseError>>()
         } else {
-            compiler_specs_it.map_ok(|(id, name, path)| {
-                CSpec::named_from_file(name, &path).map(|cspec| (id, cspec))
-            })
-            .flatten_ok()
+            compiler_specs_it.map(|res| res.and_then(|(id, name, path)| {
+                CSpec::named_from_file(name, &path)
+                    .map(|cspec| (id, cspec))
+                    .map_err(|e| DeserialiseError::DeserialiseDepends {
+                        path,
+                        error: Box::new(e),
+                    })
+            }))
             .collect::<Result<Map<_, _>, DeserialiseError>>()
         }?;
 
