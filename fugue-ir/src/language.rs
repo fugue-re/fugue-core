@@ -85,6 +85,8 @@ impl Language {
             input.attribute_variant("variant")?,
         );
 
+        log::debug!("loaded {} compiler conventions for {}", compiler_specs.len(), architecture);
+
         let mut path = root.as_ref().to_path_buf();
         let slafile_path = input.attribute_string("slafile")?;
         path.push(slafile_path);
