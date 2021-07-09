@@ -288,7 +288,7 @@ mod test {
 
     #[test]
     fn test_language_db_full() -> Result<(), Error> {
-        let db = LanguageDB::from_directory("./data")?;
+        let db = LanguageDB::from_directory_with("./data", true)?;
         assert_eq!(db.len(), 43);
         Ok(())
     }
@@ -332,14 +332,14 @@ mod test {
 
     #[test]
     fn test_language_def_x86() -> Result<(), Error> {
-        let ldef = LanguageDB::from_file("./data/x86/x86.ldefs")?;
+        let ldef = LanguageDB::from_file_with("./data/x86/x86.ldefs", true)?;
         assert_eq!(ldef.len(), 5);
         Ok(())
     }
 
     #[test]
     fn test_language_def_x86_translator_all() -> Result<(), Error> {
-        let ldef = LanguageDB::from_file("./data/x86/x86.ldefs")?;
+        let ldef = LanguageDB::from_file_with("./data/x86/x86.ldefs", true)?;
         assert_eq!(ldef.len(), 5);
 
         for builder in ldef.iter() {
