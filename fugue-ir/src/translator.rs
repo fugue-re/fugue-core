@@ -308,6 +308,7 @@ impl Translator {
                 let conv = Convention::from_spec(spec,
                                                  &slf.registers_by_name,
                                                  &slf.manager)?;
+                log::debug!("loaded compiler convention `{}`", name);
                 slf.compiler_conventions.insert(name.clone(), conv);
             }
 
