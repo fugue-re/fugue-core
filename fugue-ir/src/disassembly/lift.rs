@@ -402,6 +402,8 @@ impl<'a, 'b, 'c> IRBuilder<'a, 'b, 'c> {
         self.label_base = self.label_count;
         self.label_count += constructor.labels();
 
+        self.labels.resize_with(self.label_count, Default::default);
+
         for op in constructor.operations() {
             match op.opcode() {
                 Opcode::Build => {
