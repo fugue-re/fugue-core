@@ -732,6 +732,7 @@ impl PCodeOp {
                 operand: Operand::from_varnodedata(manager, registers, inputs.next().unwrap()),
                 result: Operand::from_varnodedata(manager, registers, output.unwrap()),
             },
+            Opcode::Label => PCodeOp::Skip,
             Opcode::Build
             | Opcode::CrossBuild
             | Opcode::CPoolRef
@@ -741,9 +742,7 @@ impl PCodeOp {
             | Opcode::New
             | Opcode::Insert
             | Opcode::Cast
-            | Opcode::Label
             | Opcode::SegmentOp => {
-                // TODO: make this a skip for labels?
                 panic!("{:?} unimplemented due to spec", opcode)
             }
         }
