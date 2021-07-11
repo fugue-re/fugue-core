@@ -743,7 +743,8 @@ impl PCodeOp {
             | Opcode::Cast
             | Opcode::Label
             | Opcode::SegmentOp => {
-                panic!("unimplemented due to spec.")
+                // TODO: make this a skip for labels?
+                panic!("{:?} unimplemented due to spec", opcode)
             }
         }
     }
