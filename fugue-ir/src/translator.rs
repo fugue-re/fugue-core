@@ -502,7 +502,7 @@ impl Translator {
                     IRBuilder::new(ParserWalker::new(&mut context), &mut delay_contexts, &slf.manager, &slf.float_formats, &slf.registers, &slf.user_ops, *slf.unique_mask)?;
 
                 builder.build(tmpl, None, &slf.symbol_table)?;
-                builder.resolve_relatives();
+                builder.resolve_relatives()?;
                 Ok(builder.emit_raw(fall_offset))
             } else {
                 Ok(PCodeRaw::nop(address, walker.length()))
@@ -570,7 +570,7 @@ impl Translator {
                     IRBuilder::new(ParserWalker::new(&mut context), &mut delay_contexts, &slf.manager, &slf.float_formats, &slf.registers, &slf.user_ops, *slf.unique_mask)?;
 
                 builder.build(tmpl, None, &slf.symbol_table)?;
-                builder.resolve_relatives();
+                builder.resolve_relatives()?;
                 Ok(builder.emit_pcode(fall_offset))
             } else {
                 Ok(PCode::nop(address, walker.length()))
@@ -638,7 +638,7 @@ impl Translator {
                     IRBuilder::new(ParserWalker::new(&mut context), &mut delay_contexts, &slf.manager, &slf.float_formats, &slf.registers, &slf.user_ops, *slf.unique_mask)?;
 
                 builder.build(tmpl, None, &slf.symbol_table)?;
-                builder.resolve_relatives();
+                builder.resolve_relatives()?;
                 Ok(builder.emit_ecode(fall_offset))
             } else {
                 Ok(ECode::nop(address, walker.length()))

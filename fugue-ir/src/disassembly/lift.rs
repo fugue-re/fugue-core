@@ -423,16 +423,17 @@ impl<'a, 'b, 'c> IRBuilder<'a, 'b, 'c> {
         Ok(())
     }
 
-    pub fn resolve_relatives(&mut self) {
+    pub fn resolve_relatives(&mut self) -> Result<(), Error> {
         for rel in &self.label_refs {
             let varnode = &mut self.issued[rel.instruction].inputs[rel.index];
             let id = varnode.offset();
             if id >= self.labels.len() as u64 {
-                panic!("no known ways to set a label...")
+                return Err(Error::Invariant(format!("no known ways to set label {}", id)));
             }
             let res = (self.labels[id as usize] - rel.index as u64) & bits::calculate_mask(varnode.size());
             varnode.offset = res;
         }
+        Ok(())
     }
 
     pub fn emit_raw(self, length: usize) -> PCodeRaw {

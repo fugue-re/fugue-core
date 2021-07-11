@@ -27,4 +27,6 @@ pub enum Error {
     InvalidHandle,
     #[error("inconsistent disassembly state")]
     InconsistentState,
+    #[error("{0}")]
+    Invariant(String),
 }
