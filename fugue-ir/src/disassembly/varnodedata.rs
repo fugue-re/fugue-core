@@ -6,6 +6,7 @@ use crate::space::AddressSpace;
 use crate::Translator;
 
 #[derive(Debug, Clone, PartialEq, Eq, Ord, PartialOrd, Hash)]
+#[derive(serde::Deserialize, serde::Serialize)]
 pub struct VarnodeData {
     space: Arc<AddressSpace>,
     pub(crate) offset: u64,

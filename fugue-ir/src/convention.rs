@@ -9,6 +9,7 @@ use std::sync::Arc;
 use fnv::FnvHashMap as Map;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(serde::Deserialize, serde::Serialize)]
 pub enum PrototypeOperand { // TODO: should these just be Registers?
     Register {
         name: Arc<str>,
@@ -56,6 +57,7 @@ impl PrototypeOperand {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(serde::Deserialize, serde::Serialize)]
 pub struct PrototypeEntry {
     min_size: usize,
     max_size: usize,
@@ -79,6 +81,7 @@ impl PrototypeEntry {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(serde::Deserialize, serde::Serialize)]
 pub struct Prototype {
     name: String,
     extra_pop: u64,
@@ -104,6 +107,7 @@ impl Prototype {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(serde::Deserialize, serde::Serialize)]
 pub enum ReturnAddress {
     Register {
         name: Arc<str>,
@@ -137,6 +141,7 @@ impl ReturnAddress {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(serde::Deserialize, serde::Serialize)]
 pub struct StackPointer {
     name: Arc<str>,
     varnode: VarnodeData,
@@ -163,6 +168,7 @@ impl StackPointer {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(serde::Deserialize, serde::Serialize)]
 pub struct Convention {
     name: String,
     data_organisation: compiler::DataOrganisation,

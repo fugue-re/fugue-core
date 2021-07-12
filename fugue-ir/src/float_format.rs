@@ -6,6 +6,7 @@ use crate::deserialise::parse::XmlExt;
 //use std::mem::size_of;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(serde::Deserialize, serde::Serialize)]
 pub struct FloatFormat {
     pub size: usize,
     pub sign_pos: u32,

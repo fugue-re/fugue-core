@@ -5,6 +5,7 @@ use crate::space::AddressSpace;
 use super::operand::Operand;
 
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[derive(serde::Deserialize, serde::Serialize)]
 pub struct Register {
     pub(crate) name: Arc<str>,
     pub(crate) space: Arc<AddressSpace>,

@@ -6,6 +6,7 @@ use crate::error::Error;
 use crate::schema;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(serde::Deserialize, serde::Serialize)]
 pub struct ExportInfo {
     input_path: String,
     input_md5: [u8; 16],

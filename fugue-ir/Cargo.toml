@@ -12,7 +12,8 @@ fugue-bytes = { path = "../fugue-bytes" }
 itertools = "0.10"
 log = "0.4"
 ouroboros = "0.9"
-smallvec = "1"
+serde = { version = "1", features = ["derive", "rc"] }
+smallvec = { version = "1", features = ["serde"] }
 thiserror = "1"
 walkdir = "2"
 xml = { version = "0.14", package = "roxmltree" }

@@ -15,6 +15,7 @@ pub mod register;
 pub use register::Register;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(serde::Deserialize, serde::Serialize)]
 pub enum PCodeOp {
     Copy {
         source: Operand,

@@ -2,6 +2,7 @@ use std::convert::TryFrom;
 use crate::Error;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(serde::Deserialize, serde::Serialize)]
 pub enum Format {
     Raw,
     PE,

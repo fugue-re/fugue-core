@@ -14,6 +14,7 @@ use fugue_bv::BitVec;
 use super::Register;
 
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[derive(serde::Deserialize, serde::Serialize)]
 pub enum Operand {
     // RAM
     Address {

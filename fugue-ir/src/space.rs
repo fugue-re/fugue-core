@@ -7,6 +7,7 @@ use std::mem;
 use std::ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, Deref, DerefMut, Not};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(serde::Deserialize, serde::Serialize)]
 pub enum SpaceKind {
     Constant,
     Processor,
@@ -14,6 +15,7 @@ pub enum SpaceKind {
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(serde::Deserialize, serde::Serialize)]
 #[repr(transparent)]
 pub struct SpaceProperty(usize);
 
@@ -163,6 +165,7 @@ impl SpaceProperty {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(serde::Deserialize, serde::Serialize)]
 pub struct Space {
     index: usize,
     kind: SpaceKind,
@@ -206,6 +209,7 @@ impl Space {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(serde::Deserialize, serde::Serialize)]
 pub enum AddressSpace {
     Constant(Space),
     Unique(Space),

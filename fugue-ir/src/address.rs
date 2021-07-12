@@ -5,12 +5,14 @@ use std::sync::Arc;
 use crate::space::{AddressSpace, SpaceKind};
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(serde::Deserialize, serde::Serialize)]
 pub struct AddressValue {
     space: Arc<AddressSpace>,
     offset: u64,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(serde::Deserialize, serde::Serialize)]
 pub struct Address(u64);
 
 impl Address {
