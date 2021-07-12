@@ -755,6 +755,7 @@ impl PCodeOp {
 }
 
 #[derive(Debug, Clone)]
+#[derive(serde::Deserialize, serde::Serialize)]
 pub struct PCode {
     pub address: AddressValue,
     pub operations: SmallVec<[PCodeOp; 16]>,
