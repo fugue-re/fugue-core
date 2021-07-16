@@ -1784,6 +1784,7 @@ impl Stmt {
                     Expr::cast_signed(Expr::cast_float(input, format), output_size),
                 )
             }
+            Opcode::Label => Self::skip(),
             Opcode::Build
             | Opcode::CrossBuild
             | Opcode::CPoolRef
@@ -1793,7 +1794,6 @@ impl Stmt {
             | Opcode::New
             | Opcode::Insert
             | Opcode::Cast
-            | Opcode::Label
             | Opcode::SegmentOp => {
                 panic!("unimplemented due to spec.")
             }

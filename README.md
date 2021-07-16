@@ -1,3 +1,3 @@
 # Fugue Binary Analysis Framework
 
-![](data/fugue.jpg)
+![](data/fugue-logo-border-t.png)
