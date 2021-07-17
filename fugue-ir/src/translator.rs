@@ -347,6 +347,7 @@ impl Translator {
         if float_formats.is_empty() {
             float_formats.push(Arc::new(FloatFormat::float4()));
             float_formats.push(Arc::new(FloatFormat::float8()));
+            float_formats.push(Arc::new(FloatFormat::float10()));
         }
 
         let manager = SpaceManager::from_xml(

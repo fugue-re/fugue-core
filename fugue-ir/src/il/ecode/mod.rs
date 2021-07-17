@@ -513,7 +513,7 @@ impl From<VarnodeData> for Expr {
             // address-like
             Self::load(
                 src,
-                vnd.space().address_size(),
+                vnd.space().address_size() * 8,
                 vnd.space(),
             )
         }
@@ -784,7 +784,7 @@ impl Expr {
         E: Into<Expr>,
     {
         Self::Load(
-            Box::new(Self::cast_unsigned(expr, space.address_size())),
+            Box::new(Self::cast_unsigned(expr, space.address_size() * 8)),
             size,
             space,
         )
@@ -864,6 +864,9 @@ impl Expr {
     {
         let expr = expr.into();
         let bits = expr.bits();
+
+        println!("expr: {:?}, bits {}", expr, bits);
+
         let format = formats[&bits].clone();
 
         Self::unary_rel(
@@ -1846,7 +1849,7 @@ impl Stmt {
         T: Into<Expr>,
     {
         Self::Branch(BranchTarget::computed(
-            Expr::load(target, space.address_size(), space.clone()),
+            Expr::load(target, space.address_size() * 8, space.clone()),
             space.clone(),
         ))
     }
@@ -1863,7 +1866,7 @@ impl Stmt {
         T: Into<Expr>,
     {
         Self::Call(BranchTarget::computed(
-            Expr::load(target, space.address_size(), space.clone()),
+            Expr::load(target, space.address_size() * 8, space.clone()),
             space,
         ))
     }
@@ -1873,7 +1876,7 @@ impl Stmt {
         T: Into<Expr>,
     {
         Self::Return(BranchTarget::computed(
-            Expr::load(target, space.address_size(), space.clone()),
+            Expr::load(target, space.address_size() * 8, space.clone()),
             space.clone(),
         ))
     }

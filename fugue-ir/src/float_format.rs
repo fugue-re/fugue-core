@@ -48,6 +48,20 @@ impl FloatFormat {
         }
     }
 
+    pub const fn float10() -> Self {
+        FloatFormat {
+            size: 10,
+            sign_pos: 79,
+            exp_pos: 64,
+            exp_size: 15,
+            exp_max: (1 << 15) - 1,
+            frac_pos: 0,
+            frac_size: 64,
+            bias: 16383,
+            j_bit_implied: true,
+        }
+    }
+
     /*
     pub fn from_parts(sign: bool, signif: u64, exp: i32) -> f64 {
         let signif = signif.checked_shr(1).unwrap_or(0);
