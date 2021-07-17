@@ -17,5 +17,4 @@ before_script:
   - chmod 700 ~/.ssh
   - mkdir -p ~/.cargo
   - echo '[registries]\nfugue = { index = "ssh://git@github.com/fugue-re/fugue-registry.git" }' > ~/.cargo/config
-  - echo "[registries.fugue]\ntoken = \"${FUGUE_REGISTRY_TOKEN}\"" > ~/.cargo/credentials
-  - cargo update
+  - cargo login --registry=fugue "$FUGUE_REGISTRY_TOKEN"
