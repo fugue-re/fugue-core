@@ -1884,6 +1884,45 @@ impl Stmt {
 }
 
 #[derive(Debug, Clone)]
+pub struct Entity<V> {
+    location: Location,
+    value: V,
+}
+
+impl<V> Entity<V> {
+    pub fn new(location: Location, value: V) -> Self {
+        Self {
+            location,
+            value,
+        }
+    }
+
+    pub fn location(&self) -> &Location {
+        &self.location
+    }
+
+    pub fn location_mut(&self) -> &Location {
+        &self.location
+    }
+
+    pub fn value(&self) -> &V {
+        &self.value
+    }
+
+    pub fn value_mut(&mut self) -> &mut V {
+        &mut self.value
+    }
+
+    pub fn into_value(self) -> V {
+        self.value
+    }
+
+    pub fn into_parts(self) -> (Location, V) {
+        (self.location, self.value)
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct ECode {
     pub address: AddressValue,
     pub operations: SmallVec<[Stmt; 16]>,
