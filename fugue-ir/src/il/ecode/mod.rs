@@ -101,6 +101,14 @@ impl fmt::Display for Location {
 }
 
 impl Location {
+    pub fn new<A>(address: A, position: usize) -> Location
+    where A: Into<AddressValue> {
+        Self {
+            address: address.into(),
+            position,
+        }
+    }
+
     pub fn address(&self) -> Cow<AddressValue> {
         Cow::Borrowed(&self.address)
     }
@@ -121,7 +129,7 @@ impl Location {
         !self.is_relative()
     }
 
-    pub(crate) fn absolute_from<A>(&mut self, address: A, position: usize)
+    pub fn absolute_from<A>(&mut self, address: A, position: usize)
     where
         A: Into<AddressValue>,
     {
