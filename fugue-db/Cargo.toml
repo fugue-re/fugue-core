@@ -4,17 +4,18 @@ version = "0.1.0"
 authors = ["Sam Thomas <st@xv.ax>"]
 edition = "2018"
 build = "build.rs"
+license = "MIT"
 
 [dependencies]
-fugue-arch = { path = "../fugue-arch" }
-fugue-bytes = { path = "../fugue-bytes" }
-fugue-ir = { path = "../fugue-ir" }
+fugue-arch = { path = "../fugue-arch", version = "0.1", registry = "fugue" }
+fugue-bytes = { path = "../fugue-bytes", version = "0.1", registry = "fugue" }
+fugue-ir = { path = "../fugue-ir", version = "0.1", registry = "fugue" }
 
 capnp = "0.14"
 chrono = { version = "0.4", features = ["serde"] }
 educe = "0.4"
 fs_extra = "1.2"
-interval-tree = { version = "0.1", registry = "fugue" }
+interval-tree = { git = "ssh://git@git.simulacra.to:10022/fugue/interval-tree.git", version = "0.1", registry = "fugue" }
 ouroboros = "0.9"
 
 serde = { version = "1", features = ["derive"] }
