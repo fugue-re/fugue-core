@@ -11,7 +11,6 @@ rust-latest:
 before_script:
   - apt-get update -y
   - apt-get install capnproto -y
-  - git clone git@github.com:fugue-re/fugue-registry.git
   - mkdir -p ~/.cargo
   - echo '[registries]' >> ~/.cargo/config.toml
   - echo 'fugue = { index = "https://github.com/fugue-re/fugue-registry" }' >> ~/.cargo/config.toml
