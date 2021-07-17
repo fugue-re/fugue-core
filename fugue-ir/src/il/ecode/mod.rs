@@ -865,8 +865,6 @@ impl Expr {
         let expr = expr.into();
         let bits = expr.bits();
 
-        println!("expr: {:?}, bits {}", expr, bits);
-
         let format = formats[&bits].clone();
 
         Self::unary_rel(
