@@ -15,6 +15,7 @@ before_script:
   - echo "$FUGUE_SSH_PRIVATE_KEY" | tr -d '\r' | ssh-add -
   - mkdir -p ~/.ssh
   - chmod 700 ~/.ssh
-  - mkdir -p $HOME/.cargo
-  - echo '[registries]\nfugue = { index = "ssh://git@github.com/fugue-re/fugue-registry.git" }' > $HOME/.cargo/config
-  - echo "[registries.fugue]\ntoken = \"${FUGUE_REGISTRY_TOKEN}\"" > $HOME/.cargo/credentials
+  - mkdir -p ~/.cargo
+  - echo '[registries]\nfugue = { index = "ssh://git@github.com/fugue-re/fugue-registry.git" }' > ~/.cargo/config
+  - echo "[registries.fugue]\ntoken = \"${FUGUE_REGISTRY_TOKEN}\"" > ~/.cargo/credentials
+  - cargo update
