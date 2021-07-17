@@ -10,8 +10,13 @@ rust-latest:
 
 before_script:
   - apt-get update -y
-  - apt-get install capnproto -y
+  - apt-get install capnproto openssh-client -y
+  - eval $(ssh-agent -s)
+  - echo "$FUGUE_SSH_PRIVATE_KEY" | tr -d '\r' | ssh-add -
+  - mkdir -p ~/.ssh
+  - chmod 700 ~/.ssh
+  - ssh-keyscan -t rsa github.com >> ~/.ssh/known_hosts
   - mkdir -p .cargo
   - echo '[registries]' >> .cargo/config.toml
-  - echo 'fugue = { index = "https://github.com/fugue-re/fugue-registry" }' >> .cargo/config.toml
+  - echo 'fugue = { index = "ssh://git@github.com/fugue-re/fugue-registry" }' >> .cargo/config.toml
   - cargo login --registry=fugue "$FUGUE_REGISTRY_TOKEN"
