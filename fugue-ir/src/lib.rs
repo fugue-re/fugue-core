@@ -1,3 +1,5 @@
+extern crate roxmltree as xml;
+
 mod bits;
 
 pub mod address;

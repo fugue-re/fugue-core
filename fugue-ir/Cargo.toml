@@ -13,11 +13,11 @@ fugue-bytes = { path = "../fugue-bytes", version = "0.1", registry = "fugue" }
 itertools = "0.10"
 log = "0.4"
 ouroboros = "0.9"
+roxmltree = "0.14"
 serde = { version = "1", features = ["derive", "rc"] }
 smallvec = { version = "1", features = ["serde"] }
 thiserror = "1"
 walkdir = "2"
-xml = { version = "0.14", package = "roxmltree" }
 
 [dev-dependencies]
 criterion = "0.3"
