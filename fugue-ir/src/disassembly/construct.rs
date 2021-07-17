@@ -8,6 +8,8 @@ use crate::disassembly::symbol::FixedHandle;
 use crate::space::AddressSpace;
 use crate::space_manager::SpaceManager;
 
+use std::sync::Arc;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum HandleKind {
     Space,
@@ -59,7 +61,7 @@ impl ConstTpl {
         matches!(self, Self::Relative { .. })
     }
 
-    pub fn fix<'a, 'b, 'c>(&'b self, walker: &mut ParserWalker<'a, 'b, 'c>, manager: &'a SpaceManager) -> Result<u64, Error> {
+    pub fn fix<'a, 'b, 'c>(&'b self, walker: &mut ParserWalker<'b, 'c>, manager: &'a SpaceManager) -> Result<u64, Error> {
         Ok(match self {
             Self::Start => walker.address().offset(),
             Self::Next => walker.next_address().ok_or_else(|| Error::InvalidNextAddress)?.offset(),
@@ -112,7 +114,7 @@ impl ConstTpl {
         })
     }
 
-    pub fn offset<'a, 'b, 'c>(&'b self, handle: &mut FixedHandle<'a>, walker: &mut ParserWalker<'a, 'b, 'c>, manager: &'a SpaceManager) -> Result<(), Error> {
+    pub fn offset<'a, 'b, 'c>(&'b self, handle: &mut FixedHandle, walker: &mut ParserWalker<'b, 'c>, manager: &'a SpaceManager) -> Result<(), Error> {
         Ok(match self {
             Self::Handle(index, _) => {
                 let h = walker.handle(*index)?
@@ -131,7 +133,7 @@ impl ConstTpl {
         })
     }
 
-    pub fn space<'a, 'b, 'c>(&'b self, walker: &mut ParserWalker<'a, 'b, 'c>, manager: &'a SpaceManager) -> Result<&'a AddressSpace, Error> {
+    pub fn space<'a, 'b, 'c>(&'b self, walker: &mut ParserWalker<'b, 'c>, manager: &'a SpaceManager) -> Result<Arc<AddressSpace>, Error> {
         Ok(match self {
             Self::CurrentSpace => walker.address().space(),
             Self::Handle(index, kind) => {
@@ -148,7 +150,7 @@ impl ConstTpl {
         })
     }
 
-    pub fn fix_space<'a, 'b, 'c>(&'b self, walker: &mut ParserWalker<'a, 'b, 'c>, manager: &'a SpaceManager) -> Result<Option<&'a AddressSpace>, Error> {
+    pub fn fix_space<'a, 'b, 'c>(&'b self, walker: &mut ParserWalker<'b, 'c>, manager: &'a SpaceManager) -> Result<Option<Arc<AddressSpace>>, Error> {
         Ok(match self {
             Self::CurrentSpace => Some(walker.address().space()),
             Self::Handle(index, kind) => {
@@ -210,7 +212,7 @@ pub struct HandleTpl {
 }
 
 impl HandleTpl {
-    pub fn fix<'a, 'b, 'c>(&'b self, walker: &mut ParserWalker<'a, 'b, 'c>, manager: &'a SpaceManager) -> Result<FixedHandle<'a>, Error> {
+    pub fn fix<'a, 'b, 'c>(&'b self, walker: &mut ParserWalker<'b, 'c>, manager: &'a SpaceManager) -> Result<FixedHandle, Error> {
         if self.ptr_space.is_real() {
             let mut handle = FixedHandle::new(self.space.space(walker, manager)?);
             handle.size = self.size.fix(walker, manager)? as usize;
@@ -262,7 +264,7 @@ pub struct VarnodeTpl {
 }
 
 impl VarnodeTpl {
-    pub fn is_dynamic<'a, 'b, 'c>(&'b self, walker: &mut ParserWalker<'a, 'b, 'c>) -> Result<bool, Error> {
+    pub fn is_dynamic<'b, 'c>(&'b self, walker: &mut ParserWalker<'b, 'c>) -> Result<bool, Error> {
         if let ConstTpl::Handle(index, _) = self.offset {
             Ok(walker.handle(index)?
                 .ok_or_else(|| Error::InvalidHandle)?

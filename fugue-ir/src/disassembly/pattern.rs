@@ -77,7 +77,7 @@ impl PatternExpression {
         }
     }
 
-    pub fn value<'a, 'b, 'c>(&'b self, walker: &mut ParserWalker<'a, 'b, 'c>, symbols: &'b SymbolTable<'a>) -> Result<i64, Error> {
+    pub fn value<'b, 'c>(&'b self, walker: &mut ParserWalker<'b, 'c>, symbols: &'b SymbolTable) -> Result<i64, Error> {
         Ok(match self {
             Self::TokenField {
                 big_endian,

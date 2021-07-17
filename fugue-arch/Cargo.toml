@@ -3,8 +3,9 @@ name = "fugue-arch"
 version = "0.1.0"
 authors = ["Sam Thomas <st@xv.ax>"]
 edition = "2018"
+license = "MIT"
 
 [dependencies]
-fugue-bytes = { path = "../fugue-bytes" }
+fugue-bytes = { path = "../fugue-bytes", version = "0.1", registry = "fugue" }
 thiserror = "1"
 unicase = "2.6"

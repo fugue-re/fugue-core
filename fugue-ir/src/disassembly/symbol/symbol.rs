@@ -8,20 +8,21 @@ use crate::space::AddressSpace;
 use crate::space_manager::SpaceManager;
 
 use std::fmt;
+use std::sync::Arc;
 
 #[derive(Debug, Clone)]
-pub struct FixedHandle<'a> {
-    pub space: &'a AddressSpace,
+pub struct FixedHandle {
+    pub space: Arc<AddressSpace>,
     pub size: usize,
-    pub offset_space: Option<&'a AddressSpace>,
+    pub offset_space: Option<Arc<AddressSpace>>,
     pub offset_offset: u64,
     pub offset_size: usize,
-    pub temporary_space: Option<&'a AddressSpace>,
+    pub temporary_space: Option<Arc<AddressSpace>>,
     pub temporary_offset: u64,
 }
 
-impl<'a> FixedHandle<'a> {
-    pub fn new(space: &'a AddressSpace) -> Self {
+impl FixedHandle {
+    pub fn new(space: Arc<AddressSpace>) -> Self {
         Self {
             space,
             size: 0,
@@ -53,28 +54,28 @@ pub enum SymbolKind {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Symbol<'a> {
+pub enum Symbol {
     UserOp {
         id: usize,
         scope: usize,
-        name: String,
+        name: Arc<str>,
         index: usize,
     },
     Epsilon {
         id: usize,
         scope: usize,
-        name: String,
+        name: Arc<str>,
     },
     Value {
         id: usize,
         scope: usize,
-        name: String,
+        name: Arc<str>,
         pattern_value: PatternExpression,
     },
     ValueMap {
         id: usize,
         scope: usize,
-        name: String,
+        name: Arc<str>,
         pattern_value: PatternExpression,
         value_table: Vec<i64>,
         table_is_filled: bool,
@@ -82,7 +83,7 @@ pub enum Symbol<'a> {
     Name {
         id: usize,
         scope: usize,
-        name: String,
+        name: Arc<str>,
         pattern_value: PatternExpression,
         name_table: Vec<String>,
         table_is_filled: bool,
@@ -90,15 +91,15 @@ pub enum Symbol<'a> {
     Varnode {
         id: usize,
         scope: usize,
-        name: String,
-        space: &'a AddressSpace,
+        name: Arc<str>,
+        space: Arc<AddressSpace>,
         offset: u64,
         size: usize,
     },
     Context {
         id: usize,
         scope: usize,
-        name: String,
+        name: Arc<str>,
         pattern_value: PatternExpression,
         varnode_id: usize,
         high: usize,
@@ -108,7 +109,7 @@ pub enum Symbol<'a> {
     VarnodeList {
         id: usize,
         scope: usize,
-        name: String,
+        name: Arc<str>,
         pattern_value: PatternExpression,
         varnode_table: Vec<Option<usize>>,
         table_is_filled: bool,
@@ -116,7 +117,7 @@ pub enum Symbol<'a> {
     Operand {
         id: usize,
         scope: usize,
-        name: String,
+        name: Arc<str>,
         handle_index: usize,
         offset: usize,
         base: Option<usize>,
@@ -129,35 +130,35 @@ pub enum Symbol<'a> {
     Start {
         id: usize,
         scope: usize,
-        name: String,
+        name: Arc<str>,
         pattern_value: PatternExpression,
     },
     End {
         id: usize,
         scope: usize,
-        name: String,
+        name: Arc<str>,
         pattern_value: PatternExpression,
     },
     Subtable {
         id: usize,
         scope: usize,
-        name: String,
+        name: Arc<str>,
         constructors: Vec<Constructor>,
         decision_tree: DecisionNode,
     },
     FlowDest {
         id: usize,
         scope: usize,
-        name: String,
+        name: Arc<str>,
     },
     FlowRef {
         id: usize,
         scope: usize,
-        name: String,
+        name: Arc<str>,
     },
 }
 
-impl<'a> Symbol<'a> {
+impl Symbol {
     pub fn id(&self) -> usize {
         match self {
             Self::UserOp { id, .. }
@@ -228,7 +229,7 @@ impl<'a> Symbol<'a> {
         }
     }
 
-    pub fn defining_symbol<'b>(&self, symbols: &'b SymbolTable<'a>) -> Result<Option<&'b Symbol<'a>>, Error> {
+    pub fn defining_symbol<'b>(&self, symbols: &'b SymbolTable) -> Result<Option<&'b Symbol>, Error> {
         if let Self::Operand { subsym_id, .. } = self {
             if let Some(id) = subsym_id {
                 Ok(Some(
@@ -242,7 +243,7 @@ impl<'a> Symbol<'a> {
         }
     }
 
-    pub fn resolve<'b, 'c>(&'b self, walker: &mut ParserWalker<'a, 'b, 'c>) -> Result<Option<&'b Constructor>, Error> {
+    pub fn resolve<'b, 'c>(&'b self, walker: &mut ParserWalker<'b, 'c>) -> Result<Option<&'b Constructor>, Error> {
         match self {
             Self::Subtable { decision_tree, constructors, .. } => {
                 Ok(Some(decision_tree.resolve(walker, constructors)?))
@@ -267,7 +268,7 @@ impl<'a> Symbol<'a> {
         matches!(self, Self::Operand { .. })
     }
 
-    pub fn fixed_handle<'b, 'c>(&'b self, walker: &mut ParserWalker<'a, 'b, 'c>, manager: &'a SpaceManager, symbols: &'b SymbolTable<'a>) -> Result<FixedHandle<'a>, Error> {
+    pub fn fixed_handle<'b, 'c>(&'b self, walker: &mut ParserWalker<'b, 'c>, manager: &SpaceManager, symbols: &'b SymbolTable) -> Result<FixedHandle, Error> {
         Ok(match self {
             Self::Epsilon { .. } => {
                 FixedHandle {
@@ -293,7 +294,7 @@ impl<'a> Symbol<'a> {
             },
             Self::Varnode { space, offset, size, .. } => {
                 FixedHandle {
-                    space,
+                    space: space.clone(),
                     size: *size,
                     offset_space: None,
                     offset_offset: *offset,
@@ -368,7 +369,7 @@ impl<'a> Symbol<'a> {
         })
     }
 
-    pub fn format<'b, 'c>(&'b self, fmt: &mut fmt::Formatter, walker: &mut ParserWalker<'a, 'b, 'c>, symbols: &'b SymbolTable<'a>) -> Result<(), fmt::Error> {
+    pub fn format<'b, 'c>(&'b self, fmt: &mut fmt::Formatter, walker: &mut ParserWalker<'b, 'c>, symbols: &'b SymbolTable) -> Result<(), fmt::Error> {
         match self {
             Self::Operand { subsym_id, handle_index, def_expr, .. } => {
                 walker.push_operand(*handle_index).expect("push operand");
@@ -451,7 +452,7 @@ pub struct SymbolBuilder {
     pub(super) kind: SymbolKind,
     pub(super) id: usize,
     pub(super) scope: usize,
-    pub(super) name: String,
+    pub(super) name: Arc<str>,
 }
 
 impl Default for SymbolBuilder {
@@ -460,7 +461,7 @@ impl Default for SymbolBuilder {
             kind: SymbolKind::UserOp,
             id: 0,
             scope: 0,
-            name: String::default(),
+            name: Arc::<str>::from(""),
         }
     }
 }
@@ -470,7 +471,7 @@ impl SymbolBuilder {
         self,
         spaces: &'a SpaceManager,
         input: xml::Node,
-    ) -> Result<Symbol<'a>, DeserialiseError> {
+    ) -> Result<Symbol, DeserialiseError> {
         Ok(match self.kind {
             SymbolKind::UserOp => {
                 if input.tag_name().name() != "userop" {

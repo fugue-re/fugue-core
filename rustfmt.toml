@@ -1,0 +1,6 @@
+brace_style = "PreferSameLine"
+imports_granularity = "Item"
+reorder_imports = true
+reorder_modules = true
+reorder_impl_items = true
+use_field_init_shorthand = true

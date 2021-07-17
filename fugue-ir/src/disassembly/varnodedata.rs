@@ -1,23 +1,25 @@
 use std::fmt;
+use std::sync::Arc;
 
-use crate::address::Address;
+use crate::address::AddressValue;
 use crate::space::AddressSpace;
 use crate::Translator;
 
 #[derive(Debug, Clone, PartialEq, Eq, Ord, PartialOrd, Hash)]
-pub struct VarnodeData<'a> {
-    space: &'a AddressSpace,
+#[derive(serde::Deserialize, serde::Serialize)]
+pub struct VarnodeData {
+    space: Arc<AddressSpace>,
     pub(crate) offset: u64,
     pub(crate) size: usize,
 }
 
 pub struct VarnodeDataFormatter<'a> {
-    varnode: &'a VarnodeData<'a>,
+    varnode: &'a VarnodeData,
     translator: &'a Translator,
 }
 
 impl<'a> VarnodeDataFormatter<'a> {
-    fn new(varnode: &'a VarnodeData<'a>, translator: &'a Translator) -> Self {
+    fn new(varnode: &'a VarnodeData, translator: &'a Translator) -> Self {
         Self {
             varnode,
             translator,
@@ -55,12 +57,12 @@ impl<'a> fmt::Display for VarnodeDataFormatter<'a> {
     }
 }
 
-impl<'a> VarnodeData<'a> {
-    pub fn display(&'a self, translator: &'a Translator) -> VarnodeDataFormatter<'a> {
+impl VarnodeData {
+    pub fn display<'a>(&'a self, translator: &'a Translator) -> VarnodeDataFormatter<'a> {
         VarnodeDataFormatter::new(self, translator)
     }
 
-    pub fn new(space: &'a AddressSpace, offset: u64, size: usize) -> Self {
+    pub fn new(space: Arc<AddressSpace>, offset: u64, size: usize) -> Self {
         Self {
             space,
             offset,
@@ -68,12 +70,12 @@ impl<'a> VarnodeData<'a> {
         }
     }
 
-    pub fn address(&self) -> Address<'a> {
-        Address::new(self.space, self.offset)
+    pub fn address(&self) -> AddressValue {
+        AddressValue::new(self.space.clone(), self.offset)
     }
 
-    pub fn space(&self) -> &'a AddressSpace {
-        self.space
+    pub fn space(&self) -> Arc<AddressSpace> {
+        self.space.clone()
     }
 
     pub fn offset(&self) -> u64 {

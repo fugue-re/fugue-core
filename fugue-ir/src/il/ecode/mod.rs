@@ -1,25 +1,27 @@
 use std::borrow::Cow;
 use std::fmt;
+use std::sync::Arc;
 
+use crate::address::AddressValue;
 use crate::disassembly::{Opcode, VarnodeData};
 use crate::float_format::FloatFormat;
 use crate::space::AddressSpace;
 use crate::space_manager::SpaceManager;
-use crate::{Address, Translator};
+use crate::Translator;
 
 use fnv::FnvHashMap as Map;
 use fugue_bv::BitVec;
 use smallvec::{smallvec, SmallVec};
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Var<'space> {
-    space: &'space AddressSpace,
+pub struct Var {
+    space: Arc<AddressSpace>,
     offset: u64,
     bits: usize,
     generation: usize,
 }
 
-impl<'space> Var<'space> {
+impl Var {
     pub fn offset(&self) -> u64 {
         self.offset
     }
@@ -34,23 +36,24 @@ impl<'space> Var<'space> {
 
     pub fn with_generation(&self, generation: usize) -> Self {
         Self {
+            space: self.space.clone(),
             generation,
             ..*self
         }
     }
 
-    pub fn space(&self) -> &'space AddressSpace {
-        self.space
+    pub fn space(&self) -> Arc<AddressSpace> {
+        self.space.clone()
     }
 }
 
-impl<'space> fmt::Display for Var<'space> {
+impl fmt::Display for Var {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.display(None))
     }
 }
 
-impl<'var, 'space> fmt::Display for VarFormatter<'var, 'space> {
+impl<'var, 'trans> fmt::Display for VarFormatter<'var, 'trans> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if self.translator.is_some() && self.var.space().is_register() {
             write!(f, "{}:{}", self.translator.unwrap().registers()[&(self.var.offset(), self.var.bits() / 8)], self.var.bits())
@@ -60,13 +63,13 @@ impl<'var, 'space> fmt::Display for VarFormatter<'var, 'space> {
     }
 }
 
-pub struct VarFormatter<'var, 'space> {
-    var: &'var Var<'space>,
-    translator: Option<&'space Translator>,
+pub struct VarFormatter<'var, 'trans> {
+    var: &'var Var,
+    translator: Option<&'trans Translator>,
 }
 
-impl<'space> Var<'space> {
-    fn display<'var>(&'var self, translator: Option<&'space Translator>) -> VarFormatter<'var, 'space> {
+impl Var {
+    fn display<'var, 'trans>(&'var self, translator: Option<&'trans Translator>) -> VarFormatter<'var, 'trans> {
         VarFormatter {
             var: self,
             translator,
@@ -74,8 +77,8 @@ impl<'space> Var<'space> {
     }
 }
 
-impl<'space> From<VarnodeData<'space>> for Var<'space> {
-    fn from(vnd: VarnodeData<'space>) -> Self {
+impl From<VarnodeData> for Var {
+    fn from(vnd: VarnodeData) -> Self {
         Self {
             space: vnd.space(),
             offset: vnd.offset(),
@@ -86,19 +89,19 @@ impl<'space> From<VarnodeData<'space>> for Var<'space> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Location<'space> {
-    address: Address<'space>,
+pub struct Location {
+    address: AddressValue,
     position: usize,
 }
 
-impl<'space> fmt::Display for Location<'space> {
+impl fmt::Display for Location {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}.{}", self.address, self.position)
     }
 }
 
-impl<'space> Location<'space> {
-    pub fn address(&self) -> Cow<Address<'space>> {
+impl Location {
+    pub fn address(&self) -> Cow<AddressValue> {
         Cow::Borrowed(&self.address)
     }
 
@@ -106,7 +109,7 @@ impl<'space> Location<'space> {
         self.position
     }
 
-    pub fn space(&self) -> &'space AddressSpace {
+    pub fn space(&self) -> Arc<AddressSpace> {
         self.address.space()
     }
 
@@ -120,7 +123,7 @@ impl<'space> Location<'space> {
 
     pub(crate) fn absolute_from<A>(&mut self, address: A, position: usize)
     where
-        A: Into<Address<'space>>,
+        A: Into<AddressValue>,
     {
         if self.is_absolute() {
             return;
@@ -142,33 +145,33 @@ impl<'space> Location<'space> {
     }
 }
 
-impl<'space> From<VarnodeData<'space>> for Location<'space> {
-    fn from(vnd: VarnodeData<'space>) -> Self {
+impl From<VarnodeData> for Location {
+    fn from(vnd: VarnodeData) -> Self {
         Self {
-            address: Address::new(vnd.space(), vnd.offset()),
+            address: AddressValue::new(vnd.space(), vnd.offset()),
             position: 0,
         }
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum BranchTarget<'space> {
-    Location(Location<'space>),
-    Computed(Expr<'space>, &'space AddressSpace),
+pub enum BranchTarget {
+    Location(Location),
+    Computed(Expr, Arc<AddressSpace>),
 }
 
-impl<'space> fmt::Display for BranchTarget<'space> {
+impl fmt::Display for BranchTarget {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.display(None))
     }
 }
 
-pub struct BranchTargetFormatter<'target, 'space> {
-    target: &'target BranchTarget<'space>,
-    translator: Option<&'space Translator>,
+pub struct BranchTargetFormatter<'target, 'trans> {
+    target: &'target BranchTarget,
+    translator: Option<&'trans Translator>,
 }
 
-impl<'target, 'space> fmt::Display for BranchTargetFormatter<'target, 'space> {
+impl<'target, 'trans> fmt::Display for BranchTargetFormatter<'target, 'trans> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.target {
             BranchTarget::Location(loc) => write!(f, "{}", loc),
@@ -177,8 +180,8 @@ impl<'target, 'space> fmt::Display for BranchTargetFormatter<'target, 'space> {
     }
 }
 
-impl<'space> BranchTarget<'space> {
-    fn display<'target>(&'target self, translator: Option<&'space Translator>) -> BranchTargetFormatter<'target, 'space> {
+impl BranchTarget {
+    fn display<'target, 'trans>(&'target self, translator: Option<&'trans Translator>) -> BranchTargetFormatter<'target, 'trans> {
         BranchTargetFormatter {
             target: self,
             translator,
@@ -186,14 +189,14 @@ impl<'space> BranchTarget<'space> {
     }
 }
 
-impl<'space> From<Location<'space>> for BranchTarget<'space> {
-    fn from(t: Location<'space>) -> Self {
+impl From<Location> for BranchTarget {
+    fn from(t: Location) -> Self {
         Self::Location(t)
     }
 }
 
-impl<'space> BranchTarget<'space> {
-    pub fn computed<E: Into<Expr<'space>>>(expr: E, space: &'space AddressSpace) -> Self {
+impl BranchTarget {
+    pub fn computed<E: Into<Expr>>(expr: E, space: Arc<AddressSpace>) -> Self {
         Self::Computed(expr.into(), space)
     }
 
@@ -201,15 +204,15 @@ impl<'space> BranchTarget<'space> {
         matches!(self, Self::Computed(_, _))
     }
 
-    pub fn location<L: Into<Location<'space>>>(location: L) -> Self {
+    pub fn location<L: Into<Location>>(location: L) -> Self {
         Self::from(location.into())
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum Cast<'space> {
+pub enum Cast {
     Bool,                       // T -> Bool
-    Float(&'space FloatFormat), // T -> FloatFormat::T
+    Float(Arc<FloatFormat>),    // T -> FloatFormat::T
 
     Signed(usize),   // sign-extension
     Unsigned(usize), // zero-extension
@@ -218,7 +221,7 @@ pub enum Cast<'space> {
     Low(usize),  // truncate keep LSBs
 }
 
-impl<'space> fmt::Display for Cast<'space> {
+impl fmt::Display for Cast {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Bool => write!(f, "bool"),
@@ -231,7 +234,7 @@ impl<'space> fmt::Display for Cast<'space> {
     }
 }
 
-impl<'space> Cast<'space> {
+impl Cast {
     pub fn bits(&self) -> usize {
         match self {
             Self::Bool => 1,
@@ -292,27 +295,27 @@ pub enum BinRel {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum Expr<'space> {
-    UnRel(UnRel, Box<Expr<'space>>),                      // T -> bool
-    BinRel(BinRel, Box<Expr<'space>>, Box<Expr<'space>>), // T * T -> bool
+pub enum Expr {
+    UnRel(UnRel, Box<Expr>),                      // T -> bool
+    BinRel(BinRel, Box<Expr>, Box<Expr>), // T * T -> bool
 
-    UnOp(UnOp, Box<Expr<'space>>),                      // T -> T
-    BinOp(BinOp, Box<Expr<'space>>, Box<Expr<'space>>), // T * T -> T
+    UnOp(UnOp, Box<Expr>),                      // T -> T
+    BinOp(BinOp, Box<Expr>, Box<Expr>), // T * T -> T
 
-    Cast(Box<Expr<'space>>, Cast<'space>), // T -> Cast::T
-    Load(Box<Expr<'space>>, usize, &'space AddressSpace), // SPACE[T]:SIZE -> T
+    Cast(Box<Expr>, Cast), // T -> Cast::T
+    Load(Box<Expr>, usize, Arc<AddressSpace>), // SPACE[T]:SIZE -> T
 
-    Extract(Box<Expr<'space>>, usize, usize), // T T[LSB..MSB) -> T
-    Concat(Box<Expr<'space>>, Box<Expr<'space>>), // T * T -> T
+    Extract(Box<Expr>, usize, usize), // T T[LSB..MSB) -> T
+    Concat(Box<Expr>, Box<Expr>), // T * T -> T
 
-    Intrinsic(&'space str, SmallVec<[Box<Expr<'space>>; 4]>, usize),
+    Intrinsic(Arc<str>, SmallVec<[Box<Expr>; 4]>, usize),
 
     Val(BitVec),      // BitVec -> T
-    Var(Var<'space>), // String * usize -> T
+    Var(Var), // String * usize -> T
 }
 
-impl<'space> Expr<'space> {
-    fn fmt_l1(&self, f: &mut fmt::Formatter<'_>, translator: Option<&'space Translator>) -> fmt::Result {
+impl Expr {
+    fn fmt_l1<'trans>(&self, f: &mut fmt::Formatter<'_>, translator: Option<&'trans Translator>) -> fmt::Result {
         match self {
             Expr::Val(v) => write!(f, "{}", v),
             Expr::Var(v) => write!(f, "{}", v.display(translator.clone())),
@@ -358,7 +361,7 @@ impl<'space> Expr<'space> {
         }
     }
 
-    fn fmt_l2(&self, f: &mut fmt::Formatter<'_>, translator: Option<&'space Translator>) -> fmt::Result {
+    fn fmt_l2<'trans>(&self, f: &mut fmt::Formatter<'_>, translator: Option<&'trans Translator>) -> fmt::Result {
         match self {
             Expr::UnOp(UnOp::NEG, expr) => { write!(f, "-")?; expr.fmt_l1(f, translator) },
             Expr::UnOp(UnOp::NOT, expr) => { write!(f, "!")?; expr.fmt_l1(f, translator) },
@@ -366,7 +369,7 @@ impl<'space> Expr<'space> {
         }
     }
 
-    fn fmt_l3(&self, f: &mut fmt::Formatter<'_>, translator: Option<&'space Translator>) -> fmt::Result {
+    fn fmt_l3<'trans>(&self, f: &mut fmt::Formatter<'_>, translator: Option<&'trans Translator>) -> fmt::Result {
         match self {
             Expr::BinOp(BinOp::MUL, e1, e2) => { e1.fmt_l3(f, translator.clone())?; write!(f, " * ")?; e2.fmt_l2(f, translator) }
             Expr::BinOp(BinOp::DIV, e1, e2) => { e1.fmt_l3(f, translator.clone())?; write!(f, " / ")?; e2.fmt_l2(f, translator) }
@@ -377,7 +380,7 @@ impl<'space> Expr<'space> {
         }
     }
 
-    fn fmt_l4(&self, f: &mut fmt::Formatter<'_>, translator: Option<&'space Translator>) -> fmt::Result {
+    fn fmt_l4<'trans>(&self, f: &mut fmt::Formatter<'_>, translator: Option<&'trans Translator>) -> fmt::Result {
         match self {
             Expr::BinOp(BinOp::ADD, e1, e2) => { e1.fmt_l4(f, translator.clone())?; write!(f, " + ")?; e2.fmt_l3(f, translator) },
             Expr::BinOp(BinOp::SUB, e1, e2) => { e1.fmt_l4(f, translator.clone())?; write!(f, " - ")?; e2.fmt_l3(f, translator) },
@@ -385,7 +388,7 @@ impl<'space> Expr<'space> {
         }
     }
 
-    fn fmt_l5(&self, f: &mut fmt::Formatter<'_>, translator: Option<&'space Translator>) -> fmt::Result {
+    fn fmt_l5<'trans>(&self, f: &mut fmt::Formatter<'_>, translator: Option<&'trans Translator>) -> fmt::Result {
         match self {
             Expr::BinOp(BinOp::SHL, e1, e2) => { e1.fmt_l5(f, translator.clone())?; write!(f, " << ")?; e2.fmt_l4(f, translator) },
             Expr::BinOp(BinOp::SHR, e1, e2) => { e1.fmt_l5(f, translator.clone())?; write!(f, " >> ")?; e2.fmt_l4(f, translator) },
@@ -394,7 +397,7 @@ impl<'space> Expr<'space> {
         }
     }
 
-    fn fmt_l6(&self, f: &mut fmt::Formatter<'_>, translator: Option<&'space Translator>) -> fmt::Result {
+    fn fmt_l6<'trans>(&self, f: &mut fmt::Formatter<'_>, translator: Option<&'trans Translator>) -> fmt::Result {
         match self {
             Expr::BinRel(BinRel::LT, e1, e2) => { e1.fmt_l6(f, translator.clone())?; write!(f, " < ")?; e2.fmt_l5(f, translator) },
             Expr::BinRel(BinRel::LE, e1, e2) => { e1.fmt_l6(f, translator.clone())?; write!(f, " <= ")?; e2.fmt_l5(f, translator) },
@@ -404,7 +407,7 @@ impl<'space> Expr<'space> {
         }
     }
 
-    fn fmt_l7(&self, f: &mut fmt::Formatter<'_>, translator: Option<&'space Translator>) -> fmt::Result {
+    fn fmt_l7<'trans>(&self, f: &mut fmt::Formatter<'_>, translator: Option<&'trans Translator>) -> fmt::Result {
         match self {
             Expr::BinRel(BinRel::EQ, e1, e2) => { e1.fmt_l7(f, translator.clone())?; write!(f, " == ")?; e2.fmt_l6(f, translator) },
             Expr::BinRel(BinRel::NEQ, e1, e2) => { e1.fmt_l7(f, translator.clone())?; write!(f, " != ")?; e2.fmt_l6(f, translator) },
@@ -412,7 +415,7 @@ impl<'space> Expr<'space> {
         }
     }
 
-    fn fmt_l8(&self, f: &mut fmt::Formatter<'_>, translator: Option<&'space Translator>) -> fmt::Result {
+    fn fmt_l8<'trans>(&self, f: &mut fmt::Formatter<'_>, translator: Option<&'trans Translator>) -> fmt::Result {
         if let Expr::BinOp(BinOp::AND, e1, e2) = self {
             e1.fmt_l8(f, translator.clone())?;
             write!(f, " & ")?;
@@ -422,7 +425,7 @@ impl<'space> Expr<'space> {
         }
     }
 
-    fn fmt_l9(&self, f: &mut fmt::Formatter<'_>, translator: Option<&'space Translator>) -> fmt::Result {
+    fn fmt_l9<'trans>(&self, f: &mut fmt::Formatter<'_>, translator: Option<&'trans Translator>) -> fmt::Result {
         if let Expr::BinOp(BinOp::XOR, e1, e2) = self {
             e1.fmt_l9(f, translator.clone())?;
             write!(f, " ^ ")?;
@@ -432,7 +435,7 @@ impl<'space> Expr<'space> {
         }
     }
 
-    fn fmt_l10(&self, f: &mut fmt::Formatter<'_>, translator: Option<&'space Translator>) -> fmt::Result {
+    fn fmt_l10<'trans>(&self, f: &mut fmt::Formatter<'_>, translator: Option<&'trans Translator>) -> fmt::Result {
         if let Expr::BinOp(BinOp::OR, e1, e2) = self {
             e1.fmt_l10(f, translator.clone())?;
             write!(f, " | ")?;
@@ -443,25 +446,25 @@ impl<'space> Expr<'space> {
     }
 }
 
-impl<'space> fmt::Display for Expr<'space> {
+impl fmt::Display for Expr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.fmt_l10(f, None)
     }
 }
 
-pub struct ExprFormatter<'expr, 'space> {
-    expr: &'expr Expr<'space>,
-    translator: Option<&'space Translator>,
+pub struct ExprFormatter<'expr, 'trans> {
+    expr: &'expr Expr,
+    translator: Option<&'trans Translator>,
 }
 
-impl<'expr, 'space> fmt::Display for ExprFormatter<'expr, 'space> {
+impl<'expr, 'trans> fmt::Display for ExprFormatter<'expr, 'trans> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.expr.fmt_l10(f, self.translator.clone())
     }
 }
 
-impl<'space> Expr<'space> {
-    pub fn display<'expr>(&'expr self, translator: Option<&'space Translator>) -> ExprFormatter<'expr, 'space> {
+impl Expr {
+    pub fn display<'expr, 'trans>(&'expr self, translator: Option<&'trans Translator>) -> ExprFormatter<'expr, 'trans> {
         ExprFormatter {
             expr: self,
             translator,
@@ -469,20 +472,20 @@ impl<'space> Expr<'space> {
     }
 }
 
-impl<'space> From<BitVec> for Expr<'space> {
+impl From<BitVec> for Expr {
     fn from(val: BitVec) -> Self {
         Self::Val(val)
     }
 }
 
-impl<'space> From<Var<'space>> for Expr<'space> {
-    fn from(var: Var<'space>) -> Self {
+impl From<Var> for Expr {
+    fn from(var: Var) -> Self {
         Self::Var(var)
     }
 }
 
-impl<'space> From<VarnodeData<'space>> for Expr<'space> {
-    fn from(vnd: VarnodeData<'space>) -> Self {
+impl From<VarnodeData> for Expr {
+    fn from(vnd: VarnodeData) -> Self {
         if vnd.space().is_constant() {
             Self::from(BitVec::from_u64(vnd.offset(), vnd.size() * 8))
         } else if vnd.space().is_unique() || vnd.space().is_register() {
@@ -509,7 +512,7 @@ impl<'space> From<VarnodeData<'space>> for Expr<'space> {
     }
 }
 
-impl<'space> Expr<'space> {
+impl Expr {
     pub fn bits(&self) -> usize {
         match self {
             Self::UnRel(_, _) | Self::BinRel(_, _, _) => 1,
@@ -533,7 +536,7 @@ impl<'space> Expr<'space> {
     }
 
     pub fn is_float_format(&self, format: &FloatFormat) -> bool {
-        matches!(self, Self::Cast(_, Cast::Float(f)) if *f == format)
+        matches!(self, Self::Cast(_, Cast::Float(f)) if f.as_ref() == format)
     }
 
     pub fn is_signed(&self) -> bool {
@@ -555,7 +558,7 @@ impl<'space> Expr<'space> {
 
     pub fn cast_bool<E>(expr: E) -> Self
     where
-        E: Into<Expr<'space>>,
+        E: Into<Expr>,
     {
         let expr = expr.into();
         if expr.is_bool() {
@@ -567,7 +570,7 @@ impl<'space> Expr<'space> {
 
     pub fn cast_signed<E>(expr: E, bits: usize) -> Self
     where
-        E: Into<Expr<'space>>,
+        E: Into<Expr>,
     {
         let expr = expr.into();
         if expr.is_signed_bits(bits) {
@@ -579,7 +582,7 @@ impl<'space> Expr<'space> {
 
     pub fn cast_unsigned<E>(expr: E, bits: usize) -> Self
     where
-        E: Into<Expr<'space>>,
+        E: Into<Expr>,
     {
         let expr = expr.into();
         if expr.is_unsigned_bits(bits) {
@@ -589,12 +592,12 @@ impl<'space> Expr<'space> {
         }
     }
 
-    pub fn cast_float<E>(expr: E, format: &'space FloatFormat) -> Self
+    pub fn cast_float<E>(expr: E, format: Arc<FloatFormat>) -> Self
     where
-        E: Into<Expr<'space>>,
+        E: Into<Expr>,
     {
         let expr = expr.into();
-        if expr.is_float_format(format) {
+        if expr.is_float_format(format.as_ref()) {
             expr
         } else {
             Self::Cast(Box::new(expr.into()), Cast::Float(format))
@@ -603,7 +606,7 @@ impl<'space> Expr<'space> {
 
     pub fn extract_high<E>(expr: E, bits: usize) -> Self
     where
-        E: Into<Expr<'space>>,
+        E: Into<Expr>,
     {
         let expr = expr.into();
         if expr.is_unsigned_bits(bits) {
@@ -615,7 +618,7 @@ impl<'space> Expr<'space> {
 
     pub fn extract_low<E>(expr: E, bits: usize) -> Self
     where
-        E: Into<Expr<'space>>,
+        E: Into<Expr>,
     {
         let expr = expr.into();
         if expr.is_unsigned_bits(bits) {
@@ -627,31 +630,31 @@ impl<'space> Expr<'space> {
 
     pub(crate) fn unary_op<E>(op: UnOp, expr: E) -> Self
     where
-        E: Into<Expr<'space>>,
+        E: Into<Expr>,
     {
         Self::UnOp(op, Box::new(expr.into()))
     }
 
     pub(crate) fn unary_rel<E>(rel: UnRel, expr: E) -> Self
     where
-        E: Into<Expr<'space>>,
+        E: Into<Expr>,
     {
         Self::cast_bool(Self::UnRel(rel, Box::new(expr.into())))
     }
 
     pub(crate) fn binary_op<E1, E2>(op: BinOp, expr1: E1, expr2: E2) -> Self
     where
-        E1: Into<Expr<'space>>,
-        E2: Into<Expr<'space>>,
+        E1: Into<Expr>,
+        E2: Into<Expr>,
     {
         Self::BinOp(op, Box::new(expr1.into()), Box::new(expr2.into()))
     }
 
     pub(crate) fn binary_op_promote_as<E1, E2, F>(op: BinOp, expr1: E1, expr2: E2, cast: F) -> Self
     where
-        E1: Into<Expr<'space>>,
-        E2: Into<Expr<'space>>,
-        F: Fn(Expr<'space>, usize) -> Expr<'space>,
+        E1: Into<Expr>,
+        E2: Into<Expr>,
+        F: Fn(Expr, usize) -> Expr,
     {
         let e1 = expr1.into();
         let e2 = expr2.into();
@@ -662,24 +665,24 @@ impl<'space> Expr<'space> {
 
     pub(crate) fn binary_op_promote<E1, E2>(op: BinOp, expr1: E1, expr2: E2) -> Self
     where
-        E1: Into<Expr<'space>>,
-        E2: Into<Expr<'space>>,
+        E1: Into<Expr>,
+        E2: Into<Expr>,
     {
         Self::binary_op_promote_as(op, expr1, expr2, |e, sz| Self::cast_unsigned(e, sz))
     }
 
     pub(crate) fn binary_op_promote_bool<E1, E2>(op: BinOp, expr1: E1, expr2: E2) -> Self
     where
-        E1: Into<Expr<'space>>,
-        E2: Into<Expr<'space>>,
+        E1: Into<Expr>,
+        E2: Into<Expr>,
     {
         Self::binary_op_promote_as(op, expr1, expr2, |e, _sz| Self::cast_bool(e))
     }
 
     pub(crate) fn binary_op_promote_signed<E1, E2>(op: BinOp, expr1: E1, expr2: E2) -> Self
     where
-        E1: Into<Expr<'space>>,
-        E2: Into<Expr<'space>>,
+        E1: Into<Expr>,
+        E2: Into<Expr>,
     {
         Self::binary_op_promote_as(op, expr1, expr2, |e, sz| Self::cast_signed(e, sz))
     }
@@ -688,21 +691,21 @@ impl<'space> Expr<'space> {
         op: BinOp,
         expr1: E1,
         expr2: E2,
-        formats: &Map<usize, &'space FloatFormat>,
+        formats: &Map<usize, Arc<FloatFormat>>,
     ) -> Self
     where
-        E1: Into<Expr<'space>>,
-        E2: Into<Expr<'space>>,
+        E1: Into<Expr>,
+        E2: Into<Expr>,
     {
         Self::binary_op_promote_as(op, expr1, expr2, |e, sz| {
-            Self::cast_float(Self::cast_signed(e, sz), formats[&sz])
+            Self::cast_float(Self::cast_signed(e, sz), formats[&sz].clone())
         })
     }
 
     pub(crate) fn binary_rel<E1, E2>(rel: BinRel, expr1: E1, expr2: E2) -> Self
     where
-        E1: Into<Expr<'space>>,
-        E2: Into<Expr<'space>>,
+        E1: Into<Expr>,
+        E2: Into<Expr>,
     {
         Self::cast_bool(Self::BinRel(
             rel,
@@ -718,9 +721,9 @@ impl<'space> Expr<'space> {
         cast: F,
     ) -> Self
     where
-        E1: Into<Expr<'space>>,
-        E2: Into<Expr<'space>>,
-        F: Fn(Expr<'space>, usize) -> Expr<'space>,
+        E1: Into<Expr>,
+        E2: Into<Expr>,
+        F: Fn(Expr, usize) -> Expr,
     {
         let e1 = expr1.into();
         let e2 = expr2.into();
@@ -731,8 +734,8 @@ impl<'space> Expr<'space> {
 
     pub(crate) fn binary_rel_promote<E1, E2>(op: BinRel, expr1: E1, expr2: E2) -> Self
     where
-        E1: Into<Expr<'space>>,
-        E2: Into<Expr<'space>>,
+        E1: Into<Expr>,
+        E2: Into<Expr>,
     {
         Self::binary_rel_promote_as(op, expr1, expr2, |e, sz| Self::cast_unsigned(e, sz))
     }
@@ -741,36 +744,36 @@ impl<'space> Expr<'space> {
         op: BinRel,
         expr1: E1,
         expr2: E2,
-        formats: &Map<usize, &'space FloatFormat>,
+        formats: &Map<usize, Arc<FloatFormat>>,
     ) -> Self
     where
-        E1: Into<Expr<'space>>,
-        E2: Into<Expr<'space>>,
+        E1: Into<Expr>,
+        E2: Into<Expr>,
     {
         Self::binary_rel_promote_as(op, expr1, expr2, |e, sz| {
-            Self::cast_float(Self::cast_signed(e, sz), formats[&sz])
+            Self::cast_float(Self::cast_signed(e, sz), formats[&sz].clone())
         })
     }
 
     pub(crate) fn binary_rel_promote_signed<E1, E2>(op: BinRel, expr1: E1, expr2: E2) -> Self
     where
-        E1: Into<Expr<'space>>,
-        E2: Into<Expr<'space>>,
+        E1: Into<Expr>,
+        E2: Into<Expr>,
     {
         Self::binary_rel_promote_as(op, expr1, expr2, |e, sz| Self::cast_signed(e, sz))
     }
 
     pub(crate) fn binary_rel_promote_bool<E1, E2>(op: BinRel, expr1: E1, expr2: E2) -> Self
     where
-        E1: Into<Expr<'space>>,
-        E2: Into<Expr<'space>>,
+        E1: Into<Expr>,
+        E2: Into<Expr>,
     {
         Self::binary_rel_promote_as(op, expr1, expr2, |e, _sz| Self::cast_bool(e))
     }
 
-    pub fn load<E>(expr: E, size: usize, space: &'space AddressSpace) -> Self
+    pub fn load<E>(expr: E, size: usize, space: Arc<AddressSpace>) -> Self
     where
-        E: Into<Expr<'space>>,
+        E: Into<Expr>,
     {
         Self::Load(
             Box::new(Self::cast_unsigned(expr, space.address_size())),
@@ -779,11 +782,10 @@ impl<'space> Expr<'space> {
         )
     }
 
-    pub fn intrinsic<N, I, E>(name: N, arguments: I, bits: usize) -> Self
+    pub fn intrinsic<I, E>(name: Arc<str>, arguments: I, bits: usize) -> Self
     where
-        N: Into<&'space str>,
         I: Iterator<Item = E>,
-        E: Into<Expr<'space>>,
+        E: Into<Expr>,
     {
         Self::Intrinsic(
             name.into(),
@@ -794,67 +796,67 @@ impl<'space> Expr<'space> {
 
     pub fn extract<E>(expr: E, loff: usize, moff: usize) -> Self
     where
-        E: Into<Expr<'space>>,
+        E: Into<Expr>,
     {
         Self::Extract(Box::new(expr.into()), loff, moff)
     }
 }
 
-impl<'space> Expr<'space> {
+impl Expr {
     pub fn bool_not<E>(expr: E) -> Self
     where
-        E: Into<Expr<'space>>,
+        E: Into<Expr>,
     {
         Self::unary_op(UnOp::NOT, Self::cast_bool(expr))
     }
 
     pub fn bool_eq<E1, E2>(expr1: E1, expr2: E2) -> Self
     where
-        E1: Into<Expr<'space>>,
-        E2: Into<Expr<'space>>,
+        E1: Into<Expr>,
+        E2: Into<Expr>,
     {
         Self::binary_rel_promote_bool(BinRel::EQ, expr1, expr2)
     }
 
     pub fn bool_neq<E1, E2>(expr1: E1, expr2: E2) -> Self
     where
-        E1: Into<Expr<'space>>,
-        E2: Into<Expr<'space>>,
+        E1: Into<Expr>,
+        E2: Into<Expr>,
     {
         Self::binary_rel_promote_bool(BinRel::NEQ, expr1, expr2)
     }
 
     pub fn bool_and<E1, E2>(expr1: E1, expr2: E2) -> Self
     where
-        E1: Into<Expr<'space>>,
-        E2: Into<Expr<'space>>,
+        E1: Into<Expr>,
+        E2: Into<Expr>,
     {
         Self::binary_op_promote_bool(BinOp::AND, expr1, expr2)
     }
 
     pub fn bool_or<E1, E2>(expr1: E1, expr2: E2) -> Self
     where
-        E1: Into<Expr<'space>>,
-        E2: Into<Expr<'space>>,
+        E1: Into<Expr>,
+        E2: Into<Expr>,
     {
         Self::binary_op_promote_bool(BinOp::OR, expr1, expr2)
     }
 
     pub fn bool_xor<E1, E2>(expr1: E1, expr2: E2) -> Self
     where
-        E1: Into<Expr<'space>>,
-        E2: Into<Expr<'space>>,
+        E1: Into<Expr>,
+        E2: Into<Expr>,
     {
         Self::binary_op_promote_bool(BinOp::XOR, expr1, expr2)
     }
 
-    pub fn float_nan<E>(expr: E, formats: &Map<usize, &'space FloatFormat>) -> Self
+    pub fn float_nan<E>(expr: E, formats: &Map<usize, Arc<FloatFormat>>) -> Self
     where
-        E: Into<Expr<'space>>,
+        E: Into<Expr>,
     {
         let expr = expr.into();
         let bits = expr.bits();
-        let format = formats[&bits];
+        let format = formats[&bits].clone();
 
         Self::unary_rel(
             UnRel::NAN,
@@ -862,13 +864,13 @@ impl<'space> Expr<'space> {
         )
     }
 
-    pub fn float_neg<E>(expr: E, formats: &Map<usize, &'space FloatFormat>) -> Self
+    pub fn float_neg<E>(expr: E, formats: &Map<usize, Arc<FloatFormat>>) -> Self
     where
-        E: Into<Expr<'space>>,
+        E: Into<Expr>,
     {
         let expr = expr.into();
         let bits = expr.bits();
-        let format = formats[&bits];
+        let format = formats[&bits].clone();
 
         Self::unary_op(
             UnOp::NEG,
@@ -876,13 +878,13 @@ impl<'space> Expr<'space> {
         )
     }
 
-    pub fn float_abs<E>(expr: E, formats: &Map<usize, &'space FloatFormat>) -> Self
+    pub fn float_abs<E>(expr: E, formats: &Map<usize, Arc<FloatFormat>>) -> Self
     where
-        E: Into<Expr<'space>>,
+        E: Into<Expr>,
     {
         let expr = expr.into();
         let bits = expr.bits();
-        let format = formats[&bits];
+        let format = formats[&bits].clone();
 
         Self::unary_op(
             UnOp::ABS,
@@ -890,13 +892,13 @@ impl<'space> Expr<'space> {
         )
     }
 
-    pub fn float_sqrt<E>(expr: E, formats: &Map<usize, &'space FloatFormat>) -> Self
+    pub fn float_sqrt<E>(expr: E, formats: &Map<usize, Arc<FloatFormat>>) -> Self
     where
-        E: Into<Expr<'space>>,
+        E: Into<Expr>,
     {
         let expr = expr.into();
         let bits = expr.bits();
-        let format = formats[&bits];
+        let format = formats[&bits].clone();
 
         Self::unary_op(
             UnOp::SQRT,
@@ -904,13 +906,13 @@ impl<'space> Expr<'space> {
         )
     }
 
-    pub fn float_ceiling<E>(expr: E, formats: &Map<usize, &'space FloatFormat>) -> Self
+    pub fn float_ceiling<E>(expr: E, formats: &Map<usize, Arc<FloatFormat>>) -> Self
     where
-        E: Into<Expr<'space>>,
+        E: Into<Expr>,
     {
         let expr = expr.into();
         let bits = expr.bits();
-        let format = formats[&bits];
+        let format = formats[&bits].clone();
 
         Self::unary_op(
             UnOp::CEILING,
@@ -918,13 +920,13 @@ impl<'space> Expr<'space> {
         )
     }
 
-    pub fn float_round<E>(expr: E, formats: &Map<usize, &'space FloatFormat>) -> Self
+    pub fn float_round<E>(expr: E, formats: &Map<usize, Arc<FloatFormat>>) -> Self
     where
-        E: Into<Expr<'space>>,
+        E: Into<Expr>,
     {
         let expr = expr.into();
         let bits = expr.bits();
-        let format = formats[&bits];
+        let format = formats[&bits].clone();
 
         Self::unary_op(
             UnOp::ROUND,
@@ -932,13 +934,13 @@ impl<'space> Expr<'space> {
         )
     }
 
-    pub fn float_floor<E>(expr: E, formats: &Map<usize, &'space FloatFormat>) -> Self
+    pub fn float_floor<E>(expr: E, formats: &Map<usize, Arc<FloatFormat>>) -> Self
     where
-        E: Into<Expr<'space>>,
+        E: Into<Expr>,
     {
         let expr = expr.into();
         let bits = expr.bits();
-        let format = formats[&bits];
+        let format = formats[&bits].clone();
 
         Self::unary_op(
             UnOp::FLOOR,
@@ -946,10 +948,10 @@ impl<'space> Expr<'space> {
         )
     }
 
-    pub fn float_eq<E1, E2>(expr1: E1, expr2: E2, formats: &Map<usize, &'space FloatFormat>) -> Self
+    pub fn float_eq<E1, E2>(expr1: E1, expr2: E2, formats: &Map<usize, Arc<FloatFormat>>) -> Self
     where
-        E1: Into<Expr<'space>>,
-        E2: Into<Expr<'space>>,
+        E1: Into<Expr>,
+        E2: Into<Expr>,
     {
         Self::binary_rel_promote_float(BinRel::EQ, expr1, expr2, formats)
     }
@@ -957,27 +959,27 @@ impl<'space> Expr<'space> {
     pub fn float_neq<E1, E2>(
         expr1: E1,
         expr2: E2,
-        formats: &Map<usize, &'space FloatFormat>,
+        formats: &Map<usize, Arc<FloatFormat>>,
     ) -> Self
     where
-        E1: Into<Expr<'space>>,
-        E2: Into<Expr<'space>>,
+        E1: Into<Expr>,
+        E2: Into<Expr>,
     {
         Self::binary_rel_promote_float(BinRel::NEQ, expr1, expr2, formats)
     }
 
-    pub fn float_lt<E1, E2>(expr1: E1, expr2: E2, formats: &Map<usize, &'space FloatFormat>) -> Self
+    pub fn float_lt<E1, E2>(expr1: E1, expr2: E2, formats: &Map<usize, Arc<FloatFormat>>) -> Self
     where
-        E1: Into<Expr<'space>>,
-        E2: Into<Expr<'space>>,
+        E1: Into<Expr>,
+        E2: Into<Expr>,
     {
         Self::binary_rel_promote_float(BinRel::LT, expr1, expr2, formats)
     }
 
-    pub fn float_le<E1, E2>(expr1: E1, expr2: E2, formats: &Map<usize, &'space FloatFormat>) -> Self
+    pub fn float_le<E1, E2>(expr1: E1, expr2: E2, formats: &Map<usize, Arc<FloatFormat>>) -> Self
     where
-        E1: Into<Expr<'space>>,
-        E2: Into<Expr<'space>>,
+        E1: Into<Expr>,
+        E2: Into<Expr>,
     {
         Self::binary_rel_promote_float(BinRel::LE, expr1, expr2, formats)
     }
@@ -985,11 +987,11 @@ impl<'space> Expr<'space> {
     pub fn float_add<E1, E2>(
         expr1: E1,
         expr2: E2,
-        formats: &Map<usize, &'space FloatFormat>,
+        formats: &Map<usize, Arc<FloatFormat>>,
     ) -> Self
     where
-        E1: Into<Expr<'space>>,
-        E2: Into<Expr<'space>>,
+        E1: Into<Expr>,
+        E2: Into<Expr>,
     {
         Self::binary_op_promote_float(BinOp::ADD, expr1, expr2, formats)
     }
@@ -997,11 +999,11 @@ impl<'space> Expr<'space> {
     pub fn float_sub<E1, E2>(
         expr1: E1,
         expr2: E2,
-        formats: &Map<usize, &'space FloatFormat>,
+        formats: &Map<usize, Arc<FloatFormat>>,
     ) -> Self
     where
-        E1: Into<Expr<'space>>,
-        E2: Into<Expr<'space>>,
+        E1: Into<Expr>,
+        E2: Into<Expr>,
     {
         Self::binary_op_promote_float(BinOp::SUB, expr1, expr2, formats)
     }
@@ -1009,11 +1011,11 @@ impl<'space> Expr<'space> {
     pub fn float_div<E1, E2>(
         expr1: E1,
         expr2: E2,
-        formats: &Map<usize, &'space FloatFormat>,
+        formats: &Map<usize, Arc<FloatFormat>>,
     ) -> Self
     where
-        E1: Into<Expr<'space>>,
-        E2: Into<Expr<'space>>,
+        E1: Into<Expr>,
+        E2: Into<Expr>,
     {
         Self::binary_op_promote_float(BinOp::DIV, expr1, expr2, formats)
     }
@@ -1021,18 +1023,18 @@ impl<'space> Expr<'space> {
     pub fn float_mul<E1, E2>(
         expr1: E1,
         expr2: E2,
-        formats: &Map<usize, &'space FloatFormat>,
+        formats: &Map<usize, Arc<FloatFormat>>,
     ) -> Self
     where
-        E1: Into<Expr<'space>>,
-        E2: Into<Expr<'space>>,
+        E1: Into<Expr>,
+        E2: Into<Expr>,
     {
         Self::binary_op_promote_float(BinOp::MUL, expr1, expr2, formats)
     }
 
     pub fn int_neg<E>(expr: E) -> Self
     where
-        E: Into<Expr<'space>>,
+        E: Into<Expr>,
     {
         let expr = expr.into();
         let size = expr.bits();
@@ -1041,7 +1043,7 @@ impl<'space> Expr<'space> {
 
     pub fn int_not<E>(expr: E) -> Self
     where
-        E: Into<Expr<'space>>,
+        E: Into<Expr>,
     {
         let expr = expr.into();
         let size = expr.bits();
@@ -1050,199 +1052,199 @@ impl<'space> Expr<'space> {
 
     pub fn int_eq<E1, E2>(expr1: E1, expr2: E2) -> Self
     where
-        E1: Into<Expr<'space>>,
-        E2: Into<Expr<'space>>,
+        E1: Into<Expr>,
+        E2: Into<Expr>,
     {
         Self::binary_rel_promote(BinRel::EQ, expr1, expr2)
     }
 
     pub fn int_neq<E1, E2>(expr1: E1, expr2: E2) -> Self
     where
-        E1: Into<Expr<'space>>,
-        E2: Into<Expr<'space>>,
+        E1: Into<Expr>,
+        E2: Into<Expr>,
     {
         Self::binary_rel_promote(BinRel::NEQ, expr1, expr2)
     }
 
     pub fn int_lt<E1, E2>(expr1: E1, expr2: E2) -> Self
     where
-        E1: Into<Expr<'space>>,
-        E2: Into<Expr<'space>>,
+        E1: Into<Expr>,
+        E2: Into<Expr>,
     {
         Self::binary_rel_promote(BinRel::LT, expr1, expr2)
     }
 
     pub fn int_le<E1, E2>(expr1: E1, expr2: E2) -> Self
     where
-        E1: Into<Expr<'space>>,
-        E2: Into<Expr<'space>>,
+        E1: Into<Expr>,
+        E2: Into<Expr>,
     {
         Self::binary_rel_promote(BinRel::LE, expr1, expr2)
     }
 
     pub fn int_slt<E1, E2>(expr1: E1, expr2: E2) -> Self
     where
-        E1: Into<Expr<'space>>,
-        E2: Into<Expr<'space>>,
+        E1: Into<Expr>,
+        E2: Into<Expr>,
     {
         Self::binary_rel_promote_signed(BinRel::SLT, expr1, expr2)
     }
 
     pub fn int_sle<E1, E2>(expr1: E1, expr2: E2) -> Self
     where
-        E1: Into<Expr<'space>>,
-        E2: Into<Expr<'space>>,
+        E1: Into<Expr>,
+        E2: Into<Expr>,
     {
         Self::binary_rel_promote_signed(BinRel::SLE, expr1, expr2)
     }
 
     pub fn int_carry<E1, E2>(expr1: E1, expr2: E2) -> Self
     where
-        E1: Into<Expr<'space>>,
-        E2: Into<Expr<'space>>,
+        E1: Into<Expr>,
+        E2: Into<Expr>,
     {
         Self::binary_rel_promote(BinRel::CARRY, expr1, expr2)
     }
 
     pub fn int_scarry<E1, E2>(expr1: E1, expr2: E2) -> Self
     where
-        E1: Into<Expr<'space>>,
-        E2: Into<Expr<'space>>,
+        E1: Into<Expr>,
+        E2: Into<Expr>,
     {
         Self::binary_rel_promote_signed(BinRel::SCARRY, expr1, expr2)
     }
 
     pub fn int_sborrow<E1, E2>(expr1: E1, expr2: E2) -> Self
     where
-        E1: Into<Expr<'space>>,
-        E2: Into<Expr<'space>>,
+        E1: Into<Expr>,
+        E2: Into<Expr>,
     {
         Self::binary_rel_promote_signed(BinRel::SBORROW, expr1, expr2)
     }
 
     pub fn int_add<E1, E2>(expr1: E1, expr2: E2) -> Self
     where
-        E1: Into<Expr<'space>>,
-        E2: Into<Expr<'space>>,
+        E1: Into<Expr>,
+        E2: Into<Expr>,
     {
         Self::binary_op_promote(BinOp::ADD, expr1, expr2)
     }
 
     pub fn int_sub<E1, E2>(expr1: E1, expr2: E2) -> Self
     where
-        E1: Into<Expr<'space>>,
-        E2: Into<Expr<'space>>,
+        E1: Into<Expr>,
+        E2: Into<Expr>,
     {
         Self::binary_op_promote(BinOp::SUB, expr1, expr2)
     }
 
     pub fn int_mul<E1, E2>(expr1: E1, expr2: E2) -> Self
     where
-        E1: Into<Expr<'space>>,
-        E2: Into<Expr<'space>>,
+        E1: Into<Expr>,
+        E2: Into<Expr>,
     {
         Self::binary_op_promote(BinOp::MUL, expr1, expr2)
     }
 
     pub fn int_div<E1, E2>(expr1: E1, expr2: E2) -> Self
     where
-        E1: Into<Expr<'space>>,
-        E2: Into<Expr<'space>>,
+        E1: Into<Expr>,
+        E2: Into<Expr>,
     {
         Self::binary_op_promote(BinOp::DIV, expr1, expr2)
     }
 
     pub fn int_sdiv<E1, E2>(expr1: E1, expr2: E2) -> Self
     where
-        E1: Into<Expr<'space>>,
-        E2: Into<Expr<'space>>,
+        E1: Into<Expr>,
+        E2: Into<Expr>,
     {
         Self::binary_op_promote_signed(BinOp::SDIV, expr1, expr2)
     }
 
     pub fn int_rem<E1, E2>(expr1: E1, expr2: E2) -> Self
     where
-        E1: Into<Expr<'space>>,
-        E2: Into<Expr<'space>>,
+        E1: Into<Expr>,
+        E2: Into<Expr>,
     {
         Self::binary_op_promote(BinOp::REM, expr1, expr2)
     }
 
     pub fn int_srem<E1, E2>(expr1: E1, expr2: E2) -> Self
     where
-        E1: Into<Expr<'space>>,
-        E2: Into<Expr<'space>>,
+        E1: Into<Expr>,
+        E2: Into<Expr>,
     {
         Self::binary_op_promote_signed(BinOp::SREM, expr1, expr2)
     }
 
     pub fn int_shl<E1, E2>(expr1: E1, expr2: E2) -> Self
     where
-        E1: Into<Expr<'space>>,
-        E2: Into<Expr<'space>>,
+        E1: Into<Expr>,
+        E2: Into<Expr>,
     {
         Self::binary_op_promote(BinOp::SHL, expr1, expr2)
     }
 
     pub fn int_shr<E1, E2>(expr1: E1, expr2: E2) -> Self
     where
-        E1: Into<Expr<'space>>,
-        E2: Into<Expr<'space>>,
+        E1: Into<Expr>,
+        E2: Into<Expr>,
     {
         Self::binary_op_promote(BinOp::SHR, expr1, expr2)
     }
 
     pub fn int_sar<E1, E2>(expr1: E1, expr2: E2) -> Self
     where
-        E1: Into<Expr<'space>>,
-        E2: Into<Expr<'space>>,
+        E1: Into<Expr>,
+        E2: Into<Expr>,
     {
         Self::binary_op_promote_signed(BinOp::SAR, expr1, expr2)
     }
 
     pub fn int_and<E1, E2>(expr1: E1, expr2: E2) -> Self
     where
-        E1: Into<Expr<'space>>,
-        E2: Into<Expr<'space>>,
+        E1: Into<Expr>,
+        E2: Into<Expr>,
     {
         Self::binary_op_promote(BinOp::AND, expr1, expr2)
     }
 
     pub fn int_or<E1, E2>(expr1: E1, expr2: E2) -> Self
     where
-        E1: Into<Expr<'space>>,
-        E2: Into<Expr<'space>>,
+        E1: Into<Expr>,
+        E2: Into<Expr>,
     {
         Self::binary_op_promote(BinOp::OR, expr1, expr2)
     }
 
     pub fn int_xor<E1, E2>(expr1: E1, expr2: E2) -> Self
     where
-        E1: Into<Expr<'space>>,
-        E2: Into<Expr<'space>>,
+        E1: Into<Expr>,
+        E2: Into<Expr>,
     {
         Self::binary_op_promote(BinOp::XOR, expr1, expr2)
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum Stmt<'space> {
-    Assign(Var<'space>, Expr<'space>),
+pub enum Stmt {
+    Assign(Var, Expr),
 
-    Store(Expr<'space>, Expr<'space>, usize, &'space AddressSpace), // SPACE[T]:SIZE <- T
+    Store(Expr, Expr, usize, Arc<AddressSpace>), // SPACE[T]:SIZE <- T
 
-    Branch(BranchTarget<'space>),
-    CBranch(Expr<'space>, BranchTarget<'space>),
+    Branch(BranchTarget),
+    CBranch(Expr, BranchTarget),
 
-    Call(BranchTarget<'space>),
-    Return(BranchTarget<'space>),
+    Call(BranchTarget),
+    Return(BranchTarget),
 
     Skip, // NO-OP
 
-    Intrinsic(&'space str, SmallVec<[Box<Expr<'space>>; 4]>), // no output intrinsic
+    Intrinsic(Arc<str>, SmallVec<[Expr; 4]>), // no output intrinsic
 }
 
-impl<'space> fmt::Display for Stmt<'space> {
+impl fmt::Display for Stmt {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Assign(dest, src) => write!(f, "{} ← {}", dest, src),
@@ -1266,7 +1268,7 @@ impl<'space> fmt::Display for Stmt<'space> {
     }
 }
 
-impl<'stmt, 'space> fmt::Display for StmtFormatter<'stmt, 'space> {
+impl<'stmt, 'trans> fmt::Display for StmtFormatter<'stmt, 'trans> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.stmt {
             Stmt::Assign(dest, src) => write!(f, "{} ← {}", dest.display(self.translator.clone()), src.display(self.translator.clone())),
@@ -1290,13 +1292,13 @@ impl<'stmt, 'space> fmt::Display for StmtFormatter<'stmt, 'space> {
     }
 }
 
-pub struct StmtFormatter<'stmt, 'space> {
-    stmt: &'stmt Stmt<'space>,
-    translator: Option<&'space Translator>,
+pub struct StmtFormatter<'stmt, 'trans> {
+    stmt: &'stmt Stmt,
+    translator: Option<&'trans Translator>,
 }
 
-impl<'space> Stmt<'space> {
-    pub fn display<'stmt>(&'stmt self, translator: Option<&'space Translator>) -> StmtFormatter<'stmt, 'space> {
+impl Stmt {
+    pub fn display<'stmt, 'trans>(&'stmt self, translator: Option<&'trans Translator>) -> StmtFormatter<'stmt, 'trans> {
         StmtFormatter {
             stmt: self,
             translator,
@@ -1304,16 +1306,16 @@ impl<'space> Stmt<'space> {
     }
 }
 
-impl<'space> Stmt<'space> {
+impl Stmt {
     pub fn from_parts(
-        manager: &'space SpaceManager,
-        float_formats: &Map<usize, &'space FloatFormat>,
-        user_ops: &'space [&'space str],
-        address: &Address<'space>,
+        manager: &SpaceManager,
+        float_formats: &Map<usize, Arc<FloatFormat>>,
+        user_ops: &[Arc<str>],
+        address: &AddressValue,
         position: usize,
         opcode: Opcode,
-        inputs: SmallVec<[VarnodeData<'space>; 16]>,
-        output: Option<VarnodeData<'space>>,
+        inputs: SmallVec<[VarnodeData; 16]>,
+        output: Option<VarnodeData>,
     ) -> Self {
         let mut inputs = inputs.into_iter();
         let spaces = manager.spaces();
@@ -1336,7 +1338,7 @@ impl<'space> Stmt<'space> {
                     source.into()
                 };
 
-                Self::assign(destination, Expr::load(src, size, space))
+                Self::assign(destination, Expr::load(src, size, space.clone()))
             }
             Opcode::Store => {
                 let space = &spaces[inputs.next().unwrap().offset() as usize];
@@ -1355,7 +1357,7 @@ impl<'space> Stmt<'space> {
                     destination.into()
                 };
 
-                Self::store(dest, source, size, space)
+                Self::store(dest, source, size, space.clone())
             }
             Opcode::Branch => {
                 let mut target = Location::from(inputs.next().unwrap());
@@ -1390,7 +1392,7 @@ impl<'space> Stmt<'space> {
                 Self::call_indirect(target, space)
             }
             Opcode::CallOther => {
-                let name = user_ops[inputs.next().unwrap().offset() as usize];
+                let name = user_ops[inputs.next().unwrap().offset() as usize].clone();
                 if let Some(output) = output {
                     let output = Var::from(output);
                     let bits = output.bits();
@@ -1748,8 +1750,8 @@ impl<'space> Stmt<'space> {
                 let output = Var::from(output.unwrap());
                 let output_size = output.bits();
 
-                let input_format = float_formats[&input_size];
-                let output_format = float_formats[&output_size];
+                let input_format = float_formats[&input_size].clone();
+                let output_format = float_formats[&output_size].clone();
 
                 Self::assign(
                     output,
@@ -1763,7 +1765,7 @@ impl<'space> Stmt<'space> {
                 let output = Var::from(output.unwrap());
                 let output_size = output.bits();
 
-                let format = float_formats[&output_size];
+                let format = float_formats[&output_size].clone();
                 Self::assign(
                     output,
                     Expr::cast_float(Expr::cast_signed(input, input_size), format),
@@ -1776,12 +1778,13 @@ impl<'space> Stmt<'space> {
                 let output = Var::from(output.unwrap());
                 let output_size = output.bits();
 
-                let format = float_formats[&input_size];
+                let format = float_formats[&input_size].clone();
                 Self::assign(
                     output,
                     Expr::cast_signed(Expr::cast_float(input, format), output_size),
                 )
             }
+            Opcode::Label => Self::skip(),
             Opcode::Build
             | Opcode::CrossBuild
             | Opcode::CPoolRef
@@ -1791,7 +1794,6 @@ impl<'space> Stmt<'space> {
             | Opcode::New
             | Opcode::Insert
             | Opcode::Cast
-            | Opcode::Label
             | Opcode::SegmentOp => {
                 panic!("unimplemented due to spec.")
             }
@@ -1800,71 +1802,71 @@ impl<'space> Stmt<'space> {
 
     pub fn assign<D, S>(destination: D, source: S) -> Self
     where
-        D: Into<Var<'space>>,
-        S: Into<Expr<'space>>,
+        D: Into<Var>,
+        S: Into<Expr>,
     {
         let dest = destination.into();
         let bits = dest.bits();
         Self::Assign(dest, Expr::cast_unsigned(source, bits))
     }
 
-    pub fn store<D, S>(destination: D, source: S, size: usize, space: &'space AddressSpace) -> Self
+    pub fn store<D, S>(destination: D, source: S, size: usize, space: Arc<AddressSpace>) -> Self
     where
-        D: Into<Expr<'space>>,
-        S: Into<Expr<'space>>,
+        D: Into<Expr>,
+        S: Into<Expr>,
     {
         Self::Store(destination.into(), source.into(), size, space)
     }
 
     pub fn branch<T>(target: T) -> Self
     where
-        T: Into<BranchTarget<'space>>,
+        T: Into<BranchTarget>,
     {
         Self::Branch(target.into())
     }
 
     pub fn branch_conditional<C, T>(condition: C, target: T) -> Self
     where
-        C: Into<Expr<'space>>,
-        T: Into<BranchTarget<'space>>,
+        C: Into<Expr>,
+        T: Into<BranchTarget>,
     {
         Self::CBranch(Expr::cast_bool(condition), target.into())
     }
 
-    pub fn branch_indirect<T>(target: T, space: &'space AddressSpace) -> Self
+    pub fn branch_indirect<T>(target: T, space: Arc<AddressSpace>) -> Self
     where
-        T: Into<Expr<'space>>,
+        T: Into<Expr>,
     {
         Self::Branch(BranchTarget::computed(
-            Expr::load(target, space.address_size(), space),
-            space,
+            Expr::load(target, space.address_size(), space.clone()),
+            space.clone(),
         ))
     }
 
     pub fn call<T>(target: T) -> Self
     where
-        T: Into<BranchTarget<'space>>,
+        T: Into<BranchTarget>,
     {
         Self::Call(target.into())
     }
 
-    pub fn call_indirect<T>(target: T, space: &'space AddressSpace) -> Self
+    pub fn call_indirect<T>(target: T, space: Arc<AddressSpace>) -> Self
     where
-        T: Into<Expr<'space>>,
+        T: Into<Expr>,
     {
         Self::Call(BranchTarget::computed(
-            Expr::load(target, space.address_size(), space),
+            Expr::load(target, space.address_size(), space.clone()),
             space,
         ))
     }
 
-    pub fn return_<T>(target: T, space: &'space AddressSpace) -> Self
+    pub fn return_<T>(target: T, space: Arc<AddressSpace>) -> Self
     where
-        T: Into<Expr<'space>>,
+        T: Into<Expr>,
     {
         Self::Return(BranchTarget::computed(
-            Expr::load(target, space.address_size(), space),
-            space,
+            Expr::load(target, space.address_size(), space.clone()),
+            space.clone(),
         ))
     }
 
@@ -1872,26 +1874,25 @@ impl<'space> Stmt<'space> {
         Self::Skip
     }
 
-    pub fn intrinsic<N, I, E>(name: N, arguments: I) -> Self
+    pub fn intrinsic<I, E>(name: Arc<str>, arguments: I) -> Self
     where
-        N: Into<&'space str>,
         I: Iterator<Item = E>,
-        E: Into<Expr<'space>>,
+        E: Into<Expr>,
     {
-        Self::Intrinsic(name.into(), arguments.map(|e| Box::new(e.into())).collect())
+        Self::Intrinsic(name, arguments.map(|e| e.into()).collect())
     }
 }
 
 #[derive(Debug, Clone)]
-pub struct ECode<'space> {
-    pub address: Address<'space>,
-    pub operations: SmallVec<[Stmt<'space>; 16]>,
+pub struct ECode {
+    pub address: AddressValue,
+    pub operations: SmallVec<[Stmt; 16]>,
     pub delay_slots: usize,
     pub length: usize,
 }
 
-impl<'space> ECode<'space> {
-    pub fn nop(address: Address<'space>, length: usize) -> Self {
+impl ECode {
+    pub fn nop(address: AddressValue, length: usize) -> Self {
         Self {
             address,
             operations: smallvec![Stmt::skip()],
@@ -1900,11 +1901,11 @@ impl<'space> ECode<'space> {
         }
     }
 
-    pub fn address(&self) -> &Address<'space> {
-        &self.address
+    pub fn address(&self) -> AddressValue {
+        self.address.clone()
     }
 
-    pub fn operations(&self) -> &[Stmt<'space>] {
+    pub fn operations(&self) -> &[Stmt] {
         self.operations.as_ref()
     }
 
@@ -1916,7 +1917,7 @@ impl<'space> ECode<'space> {
         self.length
     }
 
-    pub fn display<'ecode>(&'ecode self, translator: &'space Translator) -> ECodeFormatter<'ecode, 'space> {
+    pub fn display<'ecode, 'trans>(&'ecode self, translator: &'trans Translator) -> ECodeFormatter<'ecode, 'trans> {
         ECodeFormatter {
             ecode: self,
             translator,
@@ -1924,7 +1925,7 @@ impl<'space> ECode<'space> {
     }
 }
 
-impl<'space> fmt::Display for ECode<'space> {
+impl fmt::Display for ECode {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         let len =  self.operations.len();
         if len > 0 {
@@ -1942,12 +1943,12 @@ impl<'space> fmt::Display for ECode<'space> {
     }
 }
 
-pub struct ECodeFormatter<'ecode, 'space> {
-    ecode: &'ecode ECode<'space>,
-    translator: &'space Translator,
+pub struct ECodeFormatter<'ecode, 'trans> {
+    ecode: &'ecode ECode,
+    translator: &'trans Translator,
 }
 
-impl<'a, 'b> fmt::Display for ECodeFormatter<'a, 'b> {
+impl<'ecode, 'trans> fmt::Display for ECodeFormatter<'ecode, 'trans> {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         let len =  self.ecode.operations.len();
         if len > 0 {

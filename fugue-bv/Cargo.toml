@@ -3,8 +3,10 @@ name = "fugue-bv"
 version = "0.1.0"
 authors = ["Sam Thomas <st@xv.ax>"]
 edition = "2018"
+license = "MIT"
 
 [dependencies]
+fugue-bytes = { path = "../fugue-bytes", version = "0.1", registry = "fugue" }
 num-traits = "0.2"
 paste = "1"
 rug = { version = "1", features = ["integer"] }

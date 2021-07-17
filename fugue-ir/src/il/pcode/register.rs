@@ -1,30 +1,33 @@
+use std::sync::Arc;
+
 use crate::space::AddressSpace;
 
 use super::operand::Operand;
 
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
-pub struct Register<'space> {
-    pub(crate) name: &'space str,
-    pub(crate) space: &'space AddressSpace,
+#[derive(serde::Deserialize, serde::Serialize)]
+pub struct Register {
+    pub(crate) name: Arc<str>,
+    pub(crate) space: Arc<AddressSpace>,
     pub(crate) offset: u64,
     pub(crate) size: usize,
 }
 
-impl<'space> From<Register<'space>> for Operand<'space> {
-    fn from(src: Register<'space>) -> Operand<'space> {
+impl From<Register> for Operand {
+    fn from(src: Register) -> Operand {
         Operand::Register {
             offset: src.offset(),
             size: src.size(),
-            name: src.name(),
+            name: src.name.clone(),
             space: src.space(),
         }
     }
 }
 
-impl<'space> Register<'space> {
+impl Register {
     #[inline]
-    pub fn name(&self) -> &'space str {
-        &self.name
+    pub fn name(&self) -> &str {
+        self.name.as_ref()
     }
 
     #[inline]
@@ -38,7 +41,7 @@ impl<'space> Register<'space> {
     }
 
     #[inline]
-    pub fn space(&self) -> &'space AddressSpace {
-        self.space
+    pub fn space(&self) -> Arc<AddressSpace> {
+        self.space.clone()
     }
 }

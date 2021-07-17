@@ -9,6 +9,7 @@ use std::io::Read;
 use std::path::Path;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(serde::Deserialize, serde::Serialize)]
 pub struct Specification {
     program_counter: String,
     context_set: Map<String, u32>,

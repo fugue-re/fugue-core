@@ -1,4 +1,4 @@
-use crate::address::Address;
+use crate::address::AddressValue;
 use crate::bits;
 use crate::disassembly::{Error, ParserContext, ParserWalker};
 use crate::disassembly::construct::{ConstructTpl, OpTpl, VarnodeTpl};
@@ -14,25 +14,26 @@ use fnv::FnvHashMap as Map;
 use smallvec::{smallvec, SmallVec};
 use std::fmt;
 use std::mem::swap;
+use std::sync::Arc;
 
 use crate::il::pcode::{self, PCode};
 use crate::il::ecode::{self, ECode};
 
 #[derive(Debug, Clone)]
-pub struct PCodeRaw<'a> {
-    pub address: Address<'a>,
-    pub operations: SmallVec<[PCodeData<'a>; 16]>,
+pub struct PCodeRaw {
+    pub address: AddressValue,
+    pub operations: SmallVec<[PCodeData; 16]>,
     pub delay_slots: usize,
     pub length: usize,
 }
 
 pub struct PCodeRawFormatter<'a, 'b> {
-    pcode: &'b PCodeRaw<'a>,
+    pcode: &'b PCodeRaw,
     translator: &'a Translator,
 }
 
 impl<'a, 'b> PCodeRawFormatter<'a, 'b> {
-    fn new(pcode: &'b PCodeRaw<'a>, translator: &'a Translator) -> Self {
+    fn new(pcode: &'b PCodeRaw, translator: &'a Translator) -> Self {
         Self {
             pcode,
             translator,
@@ -56,12 +57,12 @@ impl<'a, 'b> fmt::Display for PCodeRawFormatter<'a, 'b> {
     }
 }
 
-impl<'a> PCodeRaw<'a> {
-    pub fn display<'b>(&'b self, translator: &'a Translator) -> PCodeRawFormatter<'a, 'b> {
+impl PCodeRaw {
+    pub fn display<'a, 'b>(&'b self, translator: &'a Translator) -> PCodeRawFormatter<'a, 'b> {
         PCodeRawFormatter::new(self, translator)
     }
 
-    pub fn nop(address: Address<'a>, length: usize) -> Self {
+    pub fn nop(address: AddressValue, length: usize) -> Self {
         Self {
             address,
             operations: SmallVec::new(),
@@ -70,11 +71,11 @@ impl<'a> PCodeRaw<'a> {
         }
     }
 
-    pub fn address(&self) -> &Address<'a> {
-        &self.address
+    pub fn address(&self) -> AddressValue {
+        self.address.clone()
     }
 
-    pub fn operations(&self) -> &[PCodeData<'a>] {
+    pub fn operations(&self) -> &[PCodeData] {
         self.operations.as_ref()
     }
 
@@ -103,19 +104,19 @@ impl RelativeRecord {
 }
 
 #[derive(Debug, Clone)]
-pub struct PCodeData<'a> {
+pub struct PCodeData {
     pub opcode: Opcode,
-    pub output: Option<VarnodeData<'a>>,
-    pub inputs: SmallVec<[VarnodeData<'a>; 16]>,
+    pub output: Option<VarnodeData>,
+    pub inputs: SmallVec<[VarnodeData; 16]>,
 }
 
 pub struct PCodeDataFormatter<'a, 'b> {
-    pcode: &'b PCodeData<'a>,
+    pcode: &'b PCodeData,
     translator: &'a Translator,
 }
 
 impl<'a, 'b> PCodeDataFormatter<'a, 'b> {
-    fn new(pcode: &'b PCodeData<'a>, translator: &'a Translator) -> Self {
+    fn new(pcode: &'b PCodeData, translator: &'a Translator) -> Self {
         Self {
             pcode,
             translator,
@@ -141,36 +142,36 @@ impl<'a, 'b> fmt::Display for PCodeDataFormatter<'a, 'b> {
     }
 }
 
-impl<'a> PCodeData<'a> {
-    pub fn display<'b>(&'b self, translator: &'a Translator) -> PCodeDataFormatter<'a, 'b> {
+impl PCodeData {
+    pub fn display<'a, 'b>(&'b self, translator: &'a Translator) -> PCodeDataFormatter<'a, 'b> {
         PCodeDataFormatter::new(self, translator)
     }
 }
 
 pub struct IRBuilder<'a, 'b, 'c> {
-    const_space: &'a AddressSpace,
+    const_space: Arc<AddressSpace>,
     unique_mask: u64,
     unique_offset: u64,
 
-    issued: SmallVec<[PCodeData<'a>; 16]>,
+    issued: SmallVec<[PCodeData; 16]>,
 
     label_base: usize,
     label_count: usize,
     label_refs: SmallVec<[RelativeRecord; 16]>,
     labels: SmallVec<[u64; 16]>,
 
-    delay_contexts: Map<Address<'a>, &'c mut ParserContext<'a, 'b>>,
+    delay_contexts: Map<AddressValue, &'c mut ParserContext<'b>>,
 
     manager: &'a SpaceManager,
-    float_formats: Map<usize, &'a FloatFormat>,
-    registers: &'a Map<(u64, usize), &'a str>,
-    user_ops: &'a [&'a str],
+    float_formats: Map<usize, Arc<FloatFormat>>,
+    registers: &'a Map<(u64, usize), Arc<str>>,
+    user_ops: &'a [Arc<str>],
 
-    walker: ParserWalker<'a, 'b, 'c>,
+    walker: ParserWalker<'b, 'c>,
 }
 
 impl<'a, 'b, 'c> IRBuilder<'a, 'b, 'c> {
-    pub fn new(walker: ParserWalker<'a, 'b, 'c>, delay_contexts: &'c mut Map<Address<'a>, ParserContext<'a, 'b>>, manager: &'a SpaceManager, float_formats: &'a [FloatFormat], registers: &'a Map<(u64, usize), &str>, user_ops: &'a [&'a str], unique_mask: u64) -> Result<Self, Error> {
+    pub fn new(walker: ParserWalker<'b, 'c>, delay_contexts: &'c mut Map<AddressValue, ParserContext<'b>>, manager: &'a SpaceManager, float_formats: &'a [Arc<FloatFormat>], registers: &'a Map<(u64, usize), Arc<str>>, user_ops: &'a [Arc<str>], unique_mask: u64) -> Result<Self, Error> {
         Ok(Self {
             const_space: manager.constant_space(),
             unique_mask,
@@ -182,7 +183,7 @@ impl<'a, 'b, 'c> IRBuilder<'a, 'b, 'c> {
             label_refs: SmallVec::new(),
             delay_contexts: delay_contexts.iter_mut().map(|(a, v)| (a.clone(), v)).collect(),
             manager,
-            float_formats: float_formats.iter().map(|ff| (ff.bits(), ff)).collect(),
+            float_formats: float_formats.iter().map(|ff| (ff.bits(), ff.clone())).collect(),
             registers,
             user_ops,
             walker,
@@ -193,11 +194,11 @@ impl<'a, 'b, 'c> IRBuilder<'a, 'b, 'c> {
         self.label_base
     }
 
-    pub fn walker(&self) -> &ParserWalker<'a, 'b, 'c> {
+    pub fn walker(&self) -> &ParserWalker<'b, 'c> {
         &self.walker
     }
 
-    pub fn walker_mut(&mut self) -> &mut ParserWalker<'a, 'b, 'c> {
+    pub fn walker_mut(&mut self) -> &mut ParserWalker<'b, 'c> {
         &mut self.walker
     }
 
@@ -207,7 +208,7 @@ impl<'a, 'b, 'c> IRBuilder<'a, 'b, 'c> {
             .unwrap_or(0);
     }
 
-    pub fn build_empty(&mut self, ctor: &'b Constructor, section_num: Option<usize>, symbols: &'b SymbolTable<'a>) -> Result<(), Error> {
+    pub fn build_empty(&mut self, ctor: &'b Constructor, section_num: Option<usize>, symbols: &'b SymbolTable) -> Result<(), Error> {
         let nops = ctor.operand_count();
 
         for i in 0..nops {
@@ -231,7 +232,7 @@ impl<'a, 'b, 'c> IRBuilder<'a, 'b, 'c> {
         Ok(())
     }
 
-    pub fn append_build(&mut self, op: &'b OpTpl, section_num: Option<usize>, symbols: &'b SymbolTable<'a>) -> Result<(), Error> {
+    pub fn append_build(&mut self, op: &'b OpTpl, section_num: Option<usize>, symbols: &'b SymbolTable) -> Result<(), Error> {
         let index = op.input(0).offset().real() as usize;
         let operand = symbols.symbol(self.walker
                                      .constructor()?
@@ -259,7 +260,7 @@ impl<'a, 'b, 'c> IRBuilder<'a, 'b, 'c> {
         Ok(())
     }
 
-    pub fn delay_slot(&mut self, symbols: &'b SymbolTable<'a>) -> Result<(), Error> {
+    pub fn delay_slot(&mut self, symbols: &'b SymbolTable) -> Result<(), Error> {
         let old_unique_offset = self.unique_offset;
         let base_address = self.walker.address();
         let delay_count = self.walker.delay_slot();
@@ -297,7 +298,7 @@ impl<'a, 'b, 'c> IRBuilder<'a, 'b, 'c> {
         Ok(())
     }
 
-    pub fn generate_location(&mut self, varnode: &'b VarnodeTpl) -> Result<VarnodeData<'a>, Error> {
+    pub fn generate_location(&mut self, varnode: &'b VarnodeTpl) -> Result<VarnodeData, Error> {
         let space = varnode.space().fix_space(&mut self.walker, self.manager)?
             .ok_or_else(|| Error::InconsistentState)?;
         let size = varnode.size().fix(&mut self.walker, self.manager)?;
@@ -315,7 +316,7 @@ impl<'a, 'b, 'c> IRBuilder<'a, 'b, 'c> {
         Ok(VarnodeData::new(space, offset, size as usize))
     }
 
-    pub fn generate_pointer(&mut self, varnode: &'b VarnodeTpl) -> Result<(&'a AddressSpace, VarnodeData<'a>), Error> {
+    pub fn generate_pointer(&mut self, varnode: &'b VarnodeTpl) -> Result<(Arc<AddressSpace>, VarnodeData), Error> {
         let handle = self.walker.handle(
             varnode.offset().handle_index().ok_or_else(|| Error::InconsistentState)?
         )?.ok_or_else(|| Error::InvalidHandle)?;
@@ -348,7 +349,7 @@ impl<'a, 'b, 'c> IRBuilder<'a, 'b, 'c> {
             if input.is_dynamic(&mut self.walker)? {
                 let varnode = self.generate_location(input)?;
                 let (spc, ptr) = self.generate_pointer(input)?;
-                let index = VarnodeData::new(self.const_space,
+                let index = VarnodeData::new(self.const_space.clone(),
                                              spc.index() as u64,
                                              0);
                 self.issued.push(PCodeData {
@@ -377,7 +378,7 @@ impl<'a, 'b, 'c> IRBuilder<'a, 'b, 'c> {
 
             if output.is_dynamic(&mut self.walker)? {
                 let (spc, ptr) = self.generate_pointer(output)?;
-                let index = VarnodeData::new(self.const_space,
+                let index = VarnodeData::new(self.const_space.clone(),
                                              spc.index() as u64,
                                              0);
                 self.issued.push(PCodeData {
@@ -396,10 +397,12 @@ impl<'a, 'b, 'c> IRBuilder<'a, 'b, 'c> {
         Ok(())
     }
 
-    pub fn build(&mut self, constructor: &'b ConstructTpl, section_num: Option<usize>, symbols: &'b SymbolTable<'a>) -> Result<(), Error> {
+    pub fn build(&mut self, constructor: &'b ConstructTpl, section_num: Option<usize>, symbols: &'b SymbolTable) -> Result<(), Error> {
         let old_base = self.label_base;
         self.label_base = self.label_count;
         self.label_count += constructor.labels();
+
+        self.labels.resize_with(self.label_count, Default::default);
 
         for op in constructor.operations() {
             match op.opcode() {
@@ -422,19 +425,20 @@ impl<'a, 'b, 'c> IRBuilder<'a, 'b, 'c> {
         Ok(())
     }
 
-    pub fn resolve_relatives(&mut self) {
+    pub fn resolve_relatives(&mut self) -> Result<(), Error> {
         for rel in &self.label_refs {
             let varnode = &mut self.issued[rel.instruction].inputs[rel.index];
             let id = varnode.offset();
             if id >= self.labels.len() as u64 {
-                panic!("no known ways to set a label...")
+                return Err(Error::Invariant(format!("no known ways to set label {}", id)));
             }
             let res = (self.labels[id as usize] - rel.index as u64) & bits::calculate_mask(varnode.size());
             varnode.offset = res;
         }
+        Ok(())
     }
 
-    pub fn emit_raw(self, length: usize) -> PCodeRaw<'a> {
+    pub fn emit_raw(self, length: usize) -> PCodeRaw {
         let mut slf = self;
         slf.walker.base_state();
         PCodeRaw {
@@ -445,7 +449,7 @@ impl<'a, 'b, 'c> IRBuilder<'a, 'b, 'c> {
         }
     }
 
-    pub fn emit_pcode(self, length: usize) -> PCode<'a> {
+    pub fn emit_pcode(self, length: usize) -> PCode {
         let mut slf = self;
         slf.walker.base_state();
 
@@ -475,7 +479,7 @@ impl<'a, 'b, 'c> IRBuilder<'a, 'b, 'c> {
         }
     }
 
-    pub fn emit_ecode(self, length: usize) -> ECode<'a> {
+    pub fn emit_ecode(self, length: usize) -> ECode {
         let mut slf = self;
         slf.walker.base_state();
 

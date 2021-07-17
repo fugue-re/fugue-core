@@ -3,9 +3,10 @@ name = "fugue-fp"
 version = "0.1.0"
 authors = ["Sam Thomas <st@xv.ax>"]
 edition = "2018"
+license = "MIT"
 
 [dependencies]
-fugue-bv = { path = "../fugue-bv" }
-fugue-ir = { path = "../fugue-ir" }
+fugue-bv = { path = "../fugue-bv", version = "0.1", registry = "fugue" }
+fugue-ir = { path = "../fugue-ir", version = "0.1", registry = "fugue" }
 rug = { version = "1", features = ["float"] }
 thiserror = "1"

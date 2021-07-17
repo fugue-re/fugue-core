@@ -1,3 +1,5 @@
+extern crate roxmltree as xml;
+
 mod bits;
 
 pub mod address;
@@ -15,7 +17,7 @@ pub mod space;
 pub mod space_manager;
 pub mod translator;
 
-pub use address::{Address, IntoAddress};
+pub use address::{Address, AddressValue, IntoAddress};
 pub use disassembly::{IRBuilder, VarnodeData};
 pub use il::{PCode, PCodeFormatter};
 pub use language::LanguageDB;

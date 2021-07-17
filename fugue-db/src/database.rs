@@ -4,7 +4,9 @@ use std::io::BufReader;
 use std::iter::FromIterator;
 use std::path::{Path, PathBuf};
 
-use capnp::message::ReaderOptions;
+use fs_extra::file::{CopyOptions, copy as copy_file};
+
+use capnp::message::{Reader, ReaderOptions, ReaderSegments, SegmentArray};
 use capnp::serialize_packed::{read_message, write_message};
 
 use fugue_ir::LanguageDB;
@@ -12,6 +14,7 @@ use fugue_ir::LanguageDB;
 use fugue_ir::Translator;
 use interval_tree::{Interval, IntervalTree};
 use unicase::UniCase;
+use url::Url;
 
 use crate::architecture::{self, ArchitectureDef};
 use crate::BasicBlock;
@@ -22,7 +25,7 @@ use crate::Function;
 use crate::Id;
 use crate::Segment;
 
-use crate::backend::DatabaseImporterBackend;
+use crate::backend::{Backend, DatabaseImporterBackend, Imported};
 use crate::error::Error;
 use crate::schema;
 
@@ -84,6 +87,17 @@ impl Database {
 
     pub fn architectures(&self) -> impl Iterator<Item=&ArchitectureDef> {
         self.0.borrow_translators().iter().map(Translator::architecture)
+    }
+
+    pub fn default_translator(&self) -> Translator {
+        self.0.borrow_translators()
+            .first()
+            .map(|t| t.clone())
+            .expect("default translator")
+    }
+
+    pub fn translators(&self) -> impl Iterator<Item=&Translator> {
+        self.0.borrow_translators().iter()
     }
 
     pub fn segments(&self) -> &IntervalTree<u64, Segment> {
@@ -178,13 +192,31 @@ impl Database {
         self.0.borrow_export_info()
     }
 
+    pub fn from_segments(segments: Vec<Vec<u8>>, language_db: &LanguageDB) -> Result<Self, Error> {
+        let segment_refs = segments.iter().map(|seg| seg.as_ref()).collect::<Vec<_>>();
+        let segment_array = SegmentArray::new(&segment_refs);
+
+        let mut options = ReaderOptions::new();
+        options.traversal_limit_in_words(None);
+
+        let reader = Reader::new(segment_array, options);
+
+        Self::from_reader(reader, language_db)
+    }
+
     pub fn from_file<P: AsRef<Path>>(path: P, language_db: &LanguageDB) -> Result<Self, Error> {
         let path = path.as_ref();
         let file = BufReader::new(File::open(path).map_err(Error::CannotReadFile)?);
+
         let mut options = ReaderOptions::new();
         options.traversal_limit_in_words(None);
 
         let reader = read_message(file, options).map_err(Error::Deserialisation)?;
+
+        Self::from_reader(reader, language_db)
+    }
+
+    fn from_reader<S: ReaderSegments>(reader: Reader<S>, language_db: &LanguageDB) -> Result<Self, Error> {
         let database = reader
             .get_root::<schema::database::Reader>()
             .map_err(Error::Deserialisation)?;
@@ -292,32 +324,52 @@ impl Database {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct DatabaseImporter {
-    program: PathBuf,
-    idb_path: Option<PathBuf>,
+    program: Option<url::Url>,
     fdb_path: Option<PathBuf>,
-    rebase: Option<u64>,
-    rebase_relative: i32,
     overwrite_fdb: bool,
     backend_pref: Option<String>,
+    backends: Vec<DatabaseImporterBackend>,
+}
+
+impl Default for DatabaseImporter {
+    fn default() -> Self {
+        Self {
+            program: None,
+            fdb_path: None,
+            overwrite_fdb: false,
+            backend_pref: None,
+            backends: Vec::default(),
+        }
+    }
 }
 
 impl DatabaseImporter {
-    pub fn available_backends() -> impl Iterator<Item = &'static DatabaseImporterBackend> {
-        inventory::iter::<DatabaseImporterBackend>()
+    pub fn new<P: AsRef<Path>>(program: P) -> DatabaseImporter {
+        Self::new_url(Self::url_from_path(program))
     }
 
-    pub fn new<P: AsRef<Path>>(program: P) -> DatabaseImporter {
+    pub fn new_url<U: Into<Url>>(program_url: U) -> DatabaseImporter {
         Self {
-            program: program.as_ref().to_owned(),
-            idb_path: None,
-            fdb_path: None,
-            rebase: None,
-            rebase_relative: 0,
-            overwrite_fdb: false,
-            backend_pref: None,
+            program: Some(program_url.into()),
+            ..Default::default()
         }
+    }
+
+    fn url_from_path<P: AsRef<Path>>(path: P) -> Url {
+        let path = path.as_ref();
+        if path.is_absolute() {
+            Url::from_file_path(path).unwrap()
+        } else {
+            let apath = std::env::current_dir()
+                .unwrap()
+                .join(path);
+            Url::from_file_path(apath).unwrap()
+        }
+    }
+
+    pub fn available_backends(&self) -> impl Iterator<Item=&DatabaseImporterBackend> {
+        self.backends.iter()
     }
 
     pub fn prefer_backend<N: Into<String>>(&mut self, backend: N) -> &mut Self {
@@ -325,25 +377,20 @@ impl DatabaseImporter {
         self
     }
 
+    pub fn register_backend<B, E>(&mut self, backend: B) -> &mut Self
+    where B: Backend<Error = E> + 'static,
+          E: Into<Error> + 'static {
+        self.backends.push(DatabaseImporterBackend::new(backend));
+        self
+    }
+
     pub fn program<P: AsRef<Path>>(&mut self, program: P) -> &mut Self {
-        self.program = program.as_ref().to_owned();
+        self.program = Some(Self::url_from_path(program));
         self
     }
 
-    pub fn database<P: AsRef<Path>>(&mut self, database: P) -> &mut Self {
-        self.idb_path = Some(database.as_ref().to_owned());
-        self
-    }
-
-    pub fn rebase(&mut self, to: u64) -> &mut Self {
-        self.rebase = Some(to);
-        self.rebase_relative = 0;
-        self
-    }
-
-    pub fn rebase_delta(&mut self, delta: i64) -> &mut Self {
-        self.rebase = Some(delta.abs() as u64);
-        self.rebase_relative = delta.signum() as i32;
+    pub fn remote<U: Into<Url>>(&mut self, url: U) -> &mut Self {
+        self.program = Some(url.into());
         self
     }
 
@@ -358,87 +405,87 @@ impl DatabaseImporter {
     }
 
     pub fn import(&self, language_db: &LanguageDB) -> Result<Database, Error> {
-        if !self.program.exists() {
-            return Err(Error::FileNotFound(self.program.clone()));
+        let program = if let Some(ref program) = self.program {
+            program.clone()
+        } else {
+            return Err(Error::NoImportUrl)
+        };
+
+        if let Some(ref fdb_path) = self.fdb_path {
+            if fdb_path.exists() && !self.overwrite_fdb {
+                return Err(Error::ExportPathExists(fdb_path.to_owned()))
+            }
         }
 
-        let (idb_path, fdb_path) = if self.idb_path.is_none() || self.fdb_path.is_none() {
-            let tmpdir = tempfile::tempdir()
-                .map_err(Error::CannotCreateTempDir)?
-                .into_path();
-            let idb_path = if let Some(idb_path) = &self.idb_path {
-                idb_path.to_owned()
-            } else {
-                tmpdir.join("backend.db")
+        if program.scheme() == "file" {
+            let program = program.to_file_path()
+                .map_err(|_| Error::InvalidLocalImportUrl(program.clone()))?;
+
+            // importing from an existing database
+            if program
+                .extension()
+                .map(|e| e == "fdb")
+                .unwrap_or(false)
+            {
+                if let Ok(db) = Database::from_file(&program, language_db) {
+                    return Ok(db);
+                }
             };
+        }
 
-            let fdb_path = if let Some(fdb_path) = &self.fdb_path {
-                fdb_path.to_owned()
+        let mut backends = self.available_backends()
+            .filter_map(|b| if !b.is_available() {
+                None
+            } else if let Some(pref) = b.is_preferred_for(&program) {
+                Some((if pref { 5 } else { 1 }, b))
             } else {
-                tmpdir.join("exported.fdb")
-            };
-            (idb_path, fdb_path)
-        } else {
-            let idb_path = self.idb_path.as_ref().unwrap().clone();
-            let fdb_path = self.fdb_path.as_ref().unwrap().clone();
-            (idb_path, fdb_path)
-        };
-
-        // importing from an existing database
-        if self
-            .program
-            .extension()
-            .map(|e| e == "fdb")
-            .unwrap_or(false)
-        {
-            if let Ok(db) = Database::from_file(&self.program, language_db) {
-                return Ok(db);
-            }
-        };
-
-        let mut backends = inventory::iter::<DatabaseImporterBackend>()
-            .filter(|b| b.is_available())
+                None
+            })
             .collect::<Vec<_>>();
 
         if backends.is_empty() {
             return Err(Error::NoBackendsAvailable);
         }
 
-        backends.sort_by_key(|b| {
-            let base_score = if b.is_preferred_for(&self.program) { 5 } else { 1 };
+        backends.sort_by_key(|(base_score, b)| {
             -if let Some(ref pref) = self.backend_pref {
-                base_score + if UniCase::new(pref) == UniCase::new(b.name()) { 1 } else { 0 }
+                *base_score + if UniCase::new(pref) == UniCase::new(b.name()) { 1 } else { 0 }
             } else {
-                base_score
+                *base_score
             }
         });
 
-        let mut err = None;
-        for backend in backends {
-            match backend.import_full(
-                &self.program,
-                &idb_path,
-                &fdb_path,
-                self.overwrite_fdb,
-                self.rebase,
-                self.rebase_relative,
-            ) {
-                Ok(()) => {
-                    err = None;
-                    break;
-                }
-                Err(e) => {
-                    if err.is_none() {
-                        err = Some(e);
-                    }
-                }
+        let mut res = Err(Error::NoBackendsAvailable);
+        for (_, backend) in backends {
+            res = backend.import(&program);
+            if res.is_ok() {
+                break
             }
         }
 
-        if let Some(err) = err {
-            return Err(err);
+        match res {
+            Ok(Imported::File(ref path)) => {
+                let db = Database::from_file(path, language_db)?;
+                if let Some(ref fdb_path) = self.fdb_path {
+                    if path != fdb_path { // copy it
+                        copy_file(path, fdb_path, &CopyOptions {
+                            overwrite: true,
+                            skip_exist: false,
+                            ..Default::default()
+                        })
+                        .map_err(Error::ExportViaCopy)?;
+                    }
+                }
+                Ok(db)
+            },
+            Ok(Imported::Segments(segments)) => {
+                let db = Database::from_segments(segments, language_db)?;
+                if let Some(ref fdb_path) = self.fdb_path {
+                    db.to_file(fdb_path)?;
+                }
+                Ok(db)
+            },
+            Err(e) => Err(e),
         }
-
-        Database::from_file(fdb_path, language_db)
     }
 }

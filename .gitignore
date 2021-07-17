@@ -2,3 +2,4 @@
 **/Cargo.lock
 /target
 /Cargo.lock
+/fugue-fp/src/*.java

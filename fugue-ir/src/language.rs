@@ -29,6 +29,10 @@ pub struct Language {
 
 impl Language {
     pub fn from_xml<P: AsRef<Path>>(root: P, input: xml::Node) -> Result<Self, DeserialiseError> {
+        Self::from_xml_with(root, input, false)
+    }
+
+    pub fn from_xml_with<P: AsRef<Path>>(root: P, input: xml::Node, ignore_errors: bool) -> Result<Self, DeserialiseError> {
         if input.tag_name().name() != "language" {
             return Err(DeserialiseError::TagUnexpected(
                 input.tag_name().name().to_owned(),
@@ -45,7 +49,7 @@ impl Language {
                 error: Box::new(e),
             })?;
 
-        let compiler_specs = input.children()
+        let compiler_specs_it = input.children()
             .filter(|e| e.is_element() && e.tag_name().name() == "compiler")
             .map(|compiler| {
                 let id = compiler.attribute_string("id")?;
@@ -53,14 +57,30 @@ impl Language {
 
                 let mut path = root.as_ref().to_path_buf();
                 let cspec_path = compiler.attribute_string("spec")?;
+
+                log::debug!("loading compiler specification `{}`", cspec_path);
+
                 path.push(cspec_path);
 
                 Ok((id, name, path))
-            })
-            .filter_map_ok(|(id, name, path)| {
+            });
+
+        let compiler_specs = if ignore_errors {
+            compiler_specs_it.filter_map_ok(|(id, name, path)| {
                 CSpec::named_from_file(name, &path).ok().map(|cspec| (id, cspec))
             })
-            .collect::<Result<Map<_, _>, DeserialiseError>>()?;
+            .collect::<Result<Map<_, _>, DeserialiseError>>()
+        } else {
+            compiler_specs_it.map(|res| res.and_then(|(id, name, path)| {
+                CSpec::named_from_file(name, &path)
+                    .map(|cspec| (id, cspec))
+                    .map_err(|e| DeserialiseError::DeserialiseDepends {
+                        path,
+                        error: Box::new(e),
+                    })
+            }))
+            .collect::<Result<Map<_, _>, DeserialiseError>>()
+        }?;
 
         let architecture = ArchitectureDef::new(
             input.attribute_processor("processor")?,
@@ -68,6 +88,8 @@ impl Language {
             input.attribute_int("size")?,
             input.attribute_variant("variant")?,
         );
+
+        log::debug!("loaded {} compiler conventions for {}", compiler_specs.len(), architecture);
 
         let mut path = root.as_ref().to_path_buf();
         let slafile_path = input.attribute_string("slafile")?;
@@ -174,7 +196,7 @@ impl LanguageDB {
             .filter(xml::Node::is_element)
             .filter(|t| t.tag_name().name() == "language")
             .map(|t| {
-                let ldef = Language::from_xml(&root, t)?;
+                let ldef = Language::from_xml_with(&root, t, ignore_errors)?;
                 Ok((ldef.architecture.clone(), ldef))
             });
 
@@ -249,6 +271,7 @@ impl LanguageDB {
             .filter(|e| e.file_type().is_file() &&
                     e.path().extension().map(|e| e == "ldefs").unwrap_or(false))
             .try_fold(Self::default(), |mut acc, ldef| {
+                log::debug!("loading language definition from `{:?}`", ldef);
                 match Self::from_file_with(ldef.path(), ignore_errors) {
                     Ok(db) => { acc.db.extend(db.into_iter()); Ok(acc) },
                     Err(_) if ignore_errors => Ok(acc),
@@ -265,7 +288,7 @@ mod test {
 
     #[test]
     fn test_language_db_full() -> Result<(), Error> {
-        let db = LanguageDB::from_directory("./data")?;
+        let db = LanguageDB::from_directory_with("./data", true)?;
         assert_eq!(db.len(), 43);
         Ok(())
     }
@@ -309,14 +332,14 @@ mod test {
 
     #[test]
     fn test_language_def_x86() -> Result<(), Error> {
-        let ldef = LanguageDB::from_file("./data/x86/x86.ldefs")?;
+        let ldef = LanguageDB::from_file_with("./data/x86/x86.ldefs", true)?;
         assert_eq!(ldef.len(), 5);
         Ok(())
     }
 
     #[test]
     fn test_language_def_x86_translator_all() -> Result<(), Error> {
-        let ldef = LanguageDB::from_file("./data/x86/x86.ldefs")?;
+        let ldef = LanguageDB::from_file_with("./data/x86/x86.ldefs", true)?;
         assert_eq!(ldef.len(), 5);
 
         for builder in ldef.iter() {

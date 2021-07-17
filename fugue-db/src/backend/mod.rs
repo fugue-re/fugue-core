@@ -1,4 +1,12 @@
-use std::{ops::Deref, path::Path};
+use std::ops::Deref;
+use std::path::PathBuf;
+use url::Url;
+
+#[derive(Debug)]
+pub enum Imported {
+    File(PathBuf),
+    Segments(Vec<Vec<u8>>),
+}
 
 pub trait Backend {
     type Error: Into<crate::Error>;
@@ -6,17 +14,9 @@ pub trait Backend {
     fn name(&self) -> &'static str;
 
     fn is_available(&self) -> bool;
-    fn is_preferred_for(&self, path: &Path) -> bool;
+    fn is_preferred_for(&self, path: &Url) -> Option<bool>;
 
-    fn import_full(
-        &self,
-        program: &Path,
-        db_path: &Path,
-        fdb_path: &Path,
-        overwrite_fdb: bool,
-        rebase: Option<u64>,
-        rebase_relative: i32,
-    ) -> Result<(), Self::Error>;
+    fn import(&self, program: &Url) -> Result<Imported, Self::Error>;
 }
 
 #[repr(transparent)]
@@ -39,29 +39,12 @@ where
         self.0.is_available()
     }
 
-    fn is_preferred_for(&self, path: &Path) -> bool {
+    fn is_preferred_for(&self, path: &Url) -> Option<bool> {
         self.0.is_preferred_for(path)
     }
 
-    fn import_full(
-        &self,
-        program: &Path,
-        db_path: &Path,
-        fdb_path: &Path,
-        overwrite_fdb: bool,
-        rebase: Option<u64>,
-        rebase_relative: i32,
-    ) -> Result<(), Self::Error> {
-        self.0
-            .import_full(
-                program,
-                db_path,
-                fdb_path,
-                overwrite_fdb,
-                rebase,
-                rebase_relative,
-            )
-            .map_err(|e| e.into())
+    fn import(&self, program: &Url) -> Result<Imported, Self::Error> {
+        self.0.import(program).map_err(|e| e.into())
     }
 }
 
@@ -85,5 +68,3 @@ impl Deref for DatabaseImporterBackend {
         &*self.0
     }
 }
-
-inventory::collect!(DatabaseImporterBackend);

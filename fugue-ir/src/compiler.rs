@@ -10,6 +10,7 @@ use std::iter::FromIterator;
 use std::path::Path;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(serde::Deserialize, serde::Serialize)]
 pub struct DataOrganisation {
     absolute_max_alignment: u64,
     machine_alignment: u64,
@@ -121,6 +122,7 @@ impl DataOrganisation {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(serde::Deserialize, serde::Serialize)]
 pub struct StackPointer {
     pub(crate) register: String,
     pub(crate) space: String,
@@ -142,6 +144,7 @@ impl StackPointer {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(serde::Deserialize, serde::Serialize)]
 pub enum ReturnAddress {
     Register(String),
     StackRelative {
@@ -181,6 +184,7 @@ impl ReturnAddress {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(serde::Deserialize, serde::Serialize)]
 pub enum PrototypeOperand {
     Register(String),
     RegisterJoin(String, String),
@@ -219,6 +223,7 @@ impl PrototypeOperand {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(serde::Deserialize, serde::Serialize)]
 pub struct PrototypeEntry {
     pub(crate) min_size: usize,
     pub(crate) max_size: usize,
@@ -268,6 +273,7 @@ impl PrototypeEntry {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(serde::Deserialize, serde::Serialize)]
 pub struct Prototype {
     pub(crate) name: String,
     pub(crate) extra_pop: u64,
@@ -326,6 +332,7 @@ impl Prototype {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(serde::Deserialize, serde::Serialize)]
 pub struct Specification {
     pub(crate) name: String,
     pub(crate) data_organisation: DataOrganisation,
@@ -427,6 +434,12 @@ impl Specification {
     pub fn named_from_str<N: Into<String>, S: AsRef<str>>(name: N, input: S) -> Result<Self, DeserialiseError> {
         let document = xml::Document::parse(input.as_ref()).map_err(DeserialiseError::Xml)?;
 
-        Self::named_from_xml(name, document.root_element())
+        let res = Self::named_from_xml(name, document.root_element());
+
+        if let Err(ref e) = res {
+            log::debug!("load failed: {:?}", e);
+        }
+
+        res
     }
 }

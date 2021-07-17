@@ -7,23 +7,24 @@ use crate::disassembly::symbol::{Constructor, Symbol, SymbolBuilder, SymbolKind,
 use crate::space_manager::SpaceManager;
 
 use std::mem::take;
+use std::sync::Arc;
 
 #[derive(Clone)]
-pub struct SymbolTable<'a> {
+pub struct SymbolTable {
     scopes: Vec<SymbolScope>,
-    symbols: Vec<Symbol<'a>>,
+    symbols: Vec<Symbol>,
 }
 
-impl<'a> SymbolTable<'a> {
+impl SymbolTable {
     pub fn global_scope(&self) -> Option<&SymbolScope> {
         self.scopes.get(0)
     }
 
-    pub fn symbol(&self, id: usize) -> Option<&Symbol<'a>> {
+    pub fn symbol(&self, id: usize) -> Option<&Symbol> {
         self.symbols.get(id)
     }
 
-    pub (crate) fn resolve<'b, 'c>(&'b self, id: usize, walker: &mut ParserWalker<'a, 'b, 'c>) -> Result<&'b Constructor, Error> {
+    pub (crate) fn resolve<'b, 'c>(&'b self, id: usize, walker: &mut ParserWalker<'b, 'c>) -> Result<&'b Constructor, Error> {
         if let Symbol::Subtable { decision_tree, constructors, .. } = &self.symbols[id] {
             decision_tree.resolve(walker, constructors)
         } else {
@@ -31,7 +32,7 @@ impl<'a> SymbolTable<'a> {
         }
     }
 
-    pub fn from_xml(spaces: &'a SpaceManager, input: xml::Node) -> Result<Self, DeserialiseError> {
+    pub fn from_xml(spaces: &SpaceManager, input: xml::Node) -> Result<Self, DeserialiseError> {
         if input.tag_name().name() != "symbol_table" {
             return Err(DeserialiseError::TagUnexpected(
                 input.tag_name().name().to_owned(),
@@ -92,7 +93,7 @@ impl<'a> SymbolTable<'a> {
             builder.kind = kind;
             builder.id = id;
             builder.scope = scope;
-            builder.name.push_str(name);
+            builder.name = Arc::from(name);
 
             scopes[scope].add_symbol(id);
         }
