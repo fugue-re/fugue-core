@@ -11,4 +11,6 @@ rust-latest:
 before_script:
   - apt-get update -y
   - apt-get install capnproto -y
-  - git config --global url."https://gitlab-ci-token:${CI_JOB_TOKEN}@git.simulacra.to/fugue/interval-tree.git".insteadOf "ssh://git@git.simulacra.to:10022/fugue/interval-tree"
+  - mkdir -p $HOME/.cargo
+  - echo '[registries]\nfugue = { index = "ssh://git@github.com/fugue-re/fugue-registry.git" }' > $HOME/.cargo/config
+  - echo "[registries.fugue]\ntoken = \"${FUGUE_REGISTRY_TOKEN}\"" > $HOME/.cargo/credentials
