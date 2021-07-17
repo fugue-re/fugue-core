@@ -3,10 +3,11 @@ name = "fugue"
 version = "0.1.0"
 authors = ["Sam Thomas <st@xv.ax>"]
 edition = "2018"
+license = "MIT"
 
 [dependencies]
-fugue-bv = { path = "../fugue-bv" }
-fugue-bytes = { path = "../fugue-bytes" }
-fugue-db = { path = "../fugue-db" }
-fugue-fp = { path = "../fugue-fp" }
-fugue-ir = { path = "../fugue-ir" }
+fugue-bv = { path = "../fugue-bv", version = "0.1", registry = "fugue" }
+fugue-bytes = { path = "../fugue-bytes", version = "0.1", registry = "fugue" }
+fugue-db = { path = "../fugue-db", version = "0.1", registry = "fugue" }
+fugue-fp = { path = "../fugue-fp", version = "0.1", registry = "fugue" }
+fugue-ir = { path = "../fugue-ir", version = "0.1", registry = "fugue" }
