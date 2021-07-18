@@ -19,19 +19,19 @@ impl fmt::Display for BitVec {
 
 impl fmt::LowerHex for BitVec {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{:x}:{}", self.0, self.3)
+        write!(f, "{:#x}:{}", self.0, self.3)
     }
 }
 
 impl fmt::UpperHex for BitVec {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{:X}:{}", self.0, self.3)
+        write!(f, "{:#X}:{}", self.0, self.3)
     }
 }
 
 impl fmt::Binary for BitVec {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{:b}:{}", self.0, self.3)
+        write!(f, "{:#b}:{}", self.0, self.3)
     }
 }
 
