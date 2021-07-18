@@ -1892,7 +1892,7 @@ impl Stmt {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Entity<V> {
     location: Location,
     value: V,
@@ -1931,7 +1931,7 @@ impl<V> Entity<V> {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ECode {
     pub address: AddressValue,
     pub operations: SmallVec<[Stmt; 16]>,
