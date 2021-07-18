@@ -1940,6 +1940,14 @@ impl<V> Entity<V> {
         }
     }
 
+    pub fn id(&self) -> &EntityId {
+        &self.id
+    }
+
+    pub fn id_mut(&mut self) -> &mut EntityId {
+        &mut self.id
+    }
+
     pub fn location(&self) -> &Location {
         self.id.location()
     }
