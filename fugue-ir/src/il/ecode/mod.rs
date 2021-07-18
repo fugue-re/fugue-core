@@ -165,7 +165,7 @@ impl From<VarnodeData> for Location {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum BranchTarget {
     Location(Location),
-    Computed(Expr, Arc<AddressSpace>),
+    Computed(Expr),
 }
 
 impl fmt::Display for BranchTarget {
@@ -183,7 +183,7 @@ impl<'target, 'trans> fmt::Display for BranchTargetFormatter<'target, 'trans> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.target {
             BranchTarget::Location(loc) => write!(f, "{}", loc),
-            BranchTarget::Computed(expr, spc) => write!(f, "{}[{}]", spc.name(), expr.display(self.translator.clone())),
+            BranchTarget::Computed(expr) => write!(f, "{}", expr.display(self.translator.clone())),
         }
     }
 }
@@ -204,12 +204,12 @@ impl From<Location> for BranchTarget {
 }
 
 impl BranchTarget {
-    pub fn computed<E: Into<Expr>>(expr: E, space: Arc<AddressSpace>) -> Self {
-        Self::Computed(expr.into(), space)
+    pub fn computed<E: Into<Expr>>(expr: E) -> Self {
+        Self::Computed(expr.into())
     }
 
     pub fn is_computed(&self) -> bool {
-        matches!(self, Self::Computed(_, _))
+        matches!(self, Self::Computed(_))
     }
 
     pub fn location<L: Into<Location>>(location: L) -> Self {
@@ -325,7 +325,7 @@ pub enum Expr {
 impl Expr {
     fn fmt_l1<'trans>(&self, f: &mut fmt::Formatter<'_>, translator: Option<&'trans Translator>) -> fmt::Result {
         match self {
-            Expr::Val(v) => write!(f, "{}", v),
+            Expr::Val(v) => write!(f, "{:#x}", v),
             Expr::Var(v) => write!(f, "{}", v.display(translator.clone())),
 
             Expr::Intrinsic(name, args, _) => {
@@ -511,11 +511,14 @@ impl From<VarnodeData> for Expr {
                 Expr::from(val)
             };
             // address-like
+            src
+            /*
             Self::load(
                 src,
                 vnd.space().address_size() * 8,
                 vnd.space(),
             )
+            */
         }
     }
 }
@@ -1848,7 +1851,6 @@ impl Stmt {
     {
         Self::Branch(BranchTarget::computed(
             Expr::load(target, space.address_size() * 8, space.clone()),
-            space.clone(),
         ))
     }
 
@@ -1865,7 +1867,6 @@ impl Stmt {
     {
         Self::Call(BranchTarget::computed(
             Expr::load(target, space.address_size() * 8, space.clone()),
-            space,
         ))
     }
 
@@ -1875,7 +1876,6 @@ impl Stmt {
     {
         Self::Return(BranchTarget::computed(
             Expr::load(target, space.address_size() * 8, space.clone()),
-            space.clone(),
         ))
     }
 
