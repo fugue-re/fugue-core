@@ -1892,26 +1892,68 @@ impl Stmt {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct Entity<V> {
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct EntityId {
+    tag: String,
     location: Location,
-    value: V,
 }
 
-impl<V> Entity<V> {
-    pub fn new(location: Location, value: V) -> Self {
-        Self {
-            location,
-            value,
-        }
+impl fmt::Display for EntityId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}.{}", self.tag, self.location)
+    }
+}
+
+impl EntityId {
+    pub fn new<T, L>(tag: T, location: L) -> Self
+    where T: Into<String>,
+          L: Into<Location> {
+        EntityId { tag: tag.into(), location: location.into() }
+    }
+
+    pub fn tag(&self) -> &str {
+        &self.tag
     }
 
     pub fn location(&self) -> &Location {
         &self.location
     }
 
-    pub fn location_mut(&self) -> &Location {
-        &self.location
+    pub fn location_mut(&mut self) -> &mut Location {
+        &mut self.location
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Entity<V> {
+    id: EntityId,
+    value: V,
+}
+
+impl<V> Entity<V> {
+    pub fn new<T, L>(tag: T, location: L, value: V) -> Self
+    where T: Into<String>,
+          L: Into<Location> {
+        Self {
+            id: EntityId::new(tag, location),
+            value,
+        }
+    }
+
+    pub fn id(&self) -> &EntityId {
+        &self.id
+    }
+
+    pub fn id_mut(&mut self) -> &mut EntityId {
+        &mut self.id
+    }
+
+    pub fn location(&self) -> &Location {
+        self.id.location()
+    }
+
+    pub fn location_mut(&mut self) -> &mut Location {
+        self.id.location_mut()
     }
 
     pub fn value(&self) -> &V {
@@ -1926,12 +1968,12 @@ impl<V> Entity<V> {
         self.value
     }
 
-    pub fn into_parts(self) -> (Location, V) {
-        (self.location, self.value)
+    pub fn into_parts(self) -> (EntityId, V) {
+        (self.id, self.value)
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ECode {
     pub address: AddressValue,
     pub operations: SmallVec<[Stmt; 16]>,
