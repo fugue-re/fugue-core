@@ -26,3 +26,4 @@ url = "2.2"
 
 [build-dependencies]
 flatc-rust = "0.2"
+flatc = "0.2.1+2.0.0"
