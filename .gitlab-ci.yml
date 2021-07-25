@@ -3,7 +3,7 @@ stages:
 
 rust-latest:
   stage: build
-  image: rust:latest
+  image: rust:bullseye
   script:
     - cargo build --verbose
     - cargo test --verbose
