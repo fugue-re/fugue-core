@@ -12,7 +12,9 @@ pub enum Error {
     #[error(transparent)]
     CannotWriteFile(std::io::Error),
     #[error(transparent)]
-    Deserialisation(capnp::Error),
+    Deserialisation(flatbuffers::InvalidFlatbuffer),
+    #[error("field `{0}` to deserialise is missing")]
+    DeserialiseField(&'static str),
     #[error("export path `{}` for serialised database already exists", _0.display())]
     ExportPathExists(std::path::PathBuf),
     #[error("export of serialised database failed: {0}")]
@@ -31,8 +33,6 @@ pub enum Error {
     InvalidLocalImportUrl(url::Url),
     #[error("could not lift instruction at {address:#x}: {source}")]
     Lifting { address: u64, source: fugue_ir::error::Error },
-    #[error(transparent)]
-    Serialisation(capnp::Error),
     #[error(transparent)]
     Translator(fugue_ir::error::Error),
     #[error("unsupported architecture: {0}")]

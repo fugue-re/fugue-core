@@ -4,18 +4,28 @@ use crate::schema;
 pub use fugue_arch::ArchitectureDef;
 pub use fugue_bytes::endian::Endian;
 
-pub(crate) fn from_reader(reader: schema::architecture::Reader) -> Result<ArchitectureDef, Error> {
-    let name = reader.get_processor().map_err(Error::Deserialisation)?.to_string();
-    let endian = Endian::from(if reader.get_endian() { Endian::Big } else { Endian::Little });
-    let bits = reader.get_bits() as usize;
-    let variant = reader.get_variant().map_err(Error::Deserialisation)?.to_string();
+pub(crate) fn from_reader(reader: &schema::Architecture) -> Result<ArchitectureDef, Error> {
+    let name = reader.processor().ok_or(Error::DeserialiseField("processor"))?.to_string();
+    let endian = Endian::from(if reader.endian() { Endian::Big } else { Endian::Little });
+    let bits = reader.bits() as usize;
+    let variant = reader.variant().ok_or(Error::DeserialiseField("variant"))?.to_string();
     Ok(ArchitectureDef::new(name, endian, bits, variant))
 }
 
-pub(crate) fn to_builder(arch: &ArchitectureDef, builder: &mut schema::architecture::Builder) -> Result<(), Error> {
-    builder.set_processor(arch.processor());
-    builder.set_endian(arch.is_big());
-    builder.set_bits(arch.bits() as u32);
-    builder.set_variant(arch.variant());
-    Ok(())
+pub(crate) fn to_builder<'a: 'b, 'b>(
+    arch: &ArchitectureDef,
+    builder: &'b mut flatbuffers::FlatBufferBuilder<'a>
+) -> Result<flatbuffers::WIPOffset<schema::Architecture<'a>>, Error> {
+
+    let processor = builder.create_string(arch.processor());
+    let variant = builder.create_string(arch.variant());
+
+    let mut abuilder = schema::ArchitectureBuilder::new(builder);
+
+    abuilder.add_processor(processor);
+    abuilder.add_endian(arch.is_big());
+    abuilder.add_bits(arch.bits() as u32);
+    abuilder.add_variant(variant);
+
+    Ok(abuilder.finish())
 }

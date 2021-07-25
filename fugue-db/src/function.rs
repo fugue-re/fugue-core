@@ -44,39 +44,53 @@ impl<'db> Function<'db> {
         &self.references
     }
 
-    pub(crate) fn from_reader(reader: schema::function::Reader, segments: &'db IntervalTree<u64, Segment>, translators: &'db [Translator]) -> Result<Self, Error> {
+    pub(crate) fn from_reader(reader: schema::Function, segments: &'db IntervalTree<u64, Segment>, translators: &'db [Translator]) -> Result<Self, Error> {
         Ok(Self {
-            symbol: reader.get_symbol().map_err(Error::Deserialisation)?.to_string(),
-            entry: Id::from(reader.get_entry()),
-            address: reader.get_address(),
-            segment: segments.find(&reader.get_address())
-                .ok_or_else(|| Error::NoFunctionSegment(reader.get_address()))?.index().into(),
-            blocks: reader.get_blocks().map_err(Error::Deserialisation)?
+            symbol: reader.symbol().ok_or(Error::DeserialiseField("symbol"))?.to_string(),
+            entry: Id::from(reader.entry()),
+            address: reader.address(),
+            segment: segments.find(&reader.address())
+                .ok_or_else(|| Error::NoFunctionSegment(reader.address()))?.index().into(),
+            blocks: reader.blocks().ok_or(Error::DeserialiseField("blocks"))?
                 .into_iter()
                 .map(|b| BasicBlock::from_reader(b, segments, translators))
                 .collect::<Result<Vec<_>, _>>()?,
-            references: reader.get_references().map_err(Error::Deserialisation)?
+            references: reader.references().ok_or(Error::DeserialiseField("references"))?
                 .into_iter()
                 .map(InterRef::from_reader)
                 .collect::<Result<Vec<_>, _>>()?,
         })
     }
 
-    pub(crate) fn to_builder(&self, builder: &mut schema::function::Builder) -> Result<(), Error> {
-        builder.set_symbol(self.name());
-        builder.set_address(self.address());
-        builder.set_entry(self.entry.value());
-        let mut blocks = builder.reborrow().init_blocks(self.blocks.len() as u32);
-        self.blocks.iter().enumerate().try_for_each(|(i, b)| {
-            let mut builder = blocks.reborrow().get(i as u32);
-            b.to_builder(&mut builder)
-        })?;
-        let mut references = builder.reborrow().init_references(self.references.len() as u32);
-        self.references.iter().enumerate().try_for_each(|(i, b)| {
-            let mut builder = references.reborrow().get(i as u32);
-            b.to_builder(&mut builder)
-        })?;
-        Ok(())
+    pub(crate) fn to_builder<'a: 'b, 'b>(
+        &self,
+        builder: &'b mut flatbuffers::FlatBufferBuilder<'a>
+    ) -> Result<flatbuffers::WIPOffset<schema::Function<'a>>, Error> {
+        let symbol = builder.create_string(self.name());
+
+        let bvec = self.blocks
+            .iter()
+            .map(|r| r.to_builder(builder))
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let blocks = builder.create_vector_from_iter(bvec.into_iter());
+
+        let rvec = self.references
+            .iter()
+            .map(|r| r.to_builder(builder))
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let references = builder.create_vector_from_iter(rvec.into_iter());
+
+        let mut fbuilder = schema::FunctionBuilder::new(builder);
+
+        fbuilder.add_symbol(symbol);
+        fbuilder.add_address(self.address());
+        fbuilder.add_entry(self.entry.value());
+        fbuilder.add_blocks(blocks);
+        fbuilder.add_references(references);
+
+        Ok(fbuilder.finish())
     }
 }
 

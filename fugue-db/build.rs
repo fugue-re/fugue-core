@@ -1,6 +1,10 @@
+use std::path::Path;
+use flatc_rust as flatc;
+
 fn main() {
-    capnpc::CompilerCommand::new()
-        .src_prefix("schema")
-        .file("schema/fugue_db.capnp")
-        .run().expect("schema compiled successfully");
+    flatc::run(flatc::Args {
+        inputs: &[Path::new("schema/fugue.fbs")],
+        out_dir: Path::new("target/flatbuffers/"),
+        ..Default::default()
+    }).expect("schema compiled successfully");
 }

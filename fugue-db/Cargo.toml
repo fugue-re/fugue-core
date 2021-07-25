@@ -1,6 +1,6 @@
 [package]
 name = "fugue-db"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["Sam Thomas <st@xv.ax>"]
 edition = "2018"
 build = "build.rs"
@@ -11,9 +11,8 @@ fugue-arch = { path = "../fugue-arch", version = "0.1", registry = "fugue" }
 fugue-bytes = { path = "../fugue-bytes", version = "0.1", registry = "fugue" }
 fugue-ir = { path = "../fugue-ir", version = "0.1", registry = "fugue" }
 
-capnp = "0.14"
-chrono = { version = "0.4", features = ["serde"] }
 educe = "0.4"
+flatbuffers = "2.0"
 fs_extra = "1.2"
 interval-tree = { version = "0.1", registry = "fugue" }
 ouroboros = "0.9"
@@ -26,4 +25,4 @@ which = "4"
 url = "2.2"
 
 [build-dependencies]
-capnpc = "0.14"
+flatc-rust = "0.2"

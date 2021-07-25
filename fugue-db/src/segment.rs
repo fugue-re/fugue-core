@@ -1,6 +1,8 @@
 use crate::error::Error;
 use crate::schema;
 
+use fugue_bytes::Endian;
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[derive(serde::Deserialize, serde::Serialize)]
 pub struct Segment {
@@ -9,13 +11,15 @@ pub struct Segment {
     length: usize,
     alignment: usize,
     address_size: usize,
+    endian: Endian,
+    bits: usize,
     code: bool,
     data: bool,
     external: bool,
     executable: bool,
     readable: bool,
     writable: bool,
-    content: Vec<u8>,
+    bytes: Vec<u8>,
 }
 
 impl Segment {
@@ -64,40 +68,52 @@ impl Segment {
     }
 
     pub fn bytes(&self) -> &[u8] {
-        &self.content
+        &self.bytes
     }
 
-    pub(crate) fn from_reader(reader: schema::segment::Reader) -> Result<Self, Error> {
+    pub(crate) fn from_reader(reader: &schema::Segment) -> Result<Self, Error> {
         Ok(Self {
-            name: reader.get_name().map_err(Error::Deserialisation)?.to_string(),
-            address: reader.get_address(),
-            length: reader.get_length() as usize,
-            alignment: reader.get_alignment() as usize,
-            address_size: reader.get_address_size() as usize,
-            code: reader.get_code(),
-            data: reader.get_data(),
-            external: reader.get_external(),
-            executable: reader.get_executable(),
-            readable: reader.get_readable(),
-            writable: reader.get_writable(),
-            content: reader.get_content().map_err(Error::Deserialisation)?.to_vec(),
+            name: reader.name().ok_or(Error::DeserialiseField("name"))?.to_string(),
+            address: reader.address(),
+            length: reader.size_() as usize,
+            alignment: reader.alignment_() as usize,
+            endian: if reader.endian() { Endian::Big } else { Endian::Little },
+            bits: reader.bits() as usize,
+            address_size: reader.address_size() as usize,
+            code: reader.code(),
+            data: reader.data(),
+            external: reader.external(),
+            executable: reader.executable(),
+            readable: reader.readable(),
+            writable: reader.writable(),
+            bytes: reader.bytes().ok_or(Error::DeserialiseField("bytes"))?.to_vec(),
         })
     }
 
-    pub(crate) fn to_builder(&self, builder: &mut schema::segment::Builder) -> Result<(), Error> {
-        builder.set_name(self.name());
-        builder.set_address(self.address());
-        builder.set_length(self.len() as u32);
-        builder.set_alignment(self.alignment() as u32);
-        builder.set_address_size(self.address_size() as u32);
-        builder.set_code(self.is_code());
-        builder.set_data(self.is_data());
-        builder.set_external(self.is_external());
-        builder.set_executable(self.is_executable());
-        builder.set_readable(self.is_readable());
-        builder.set_writable(self.is_writable());
-        let content = builder.reborrow().init_content(self.content.len() as u32);
-        content.copy_from_slice(&self.content);
-        Ok(())
+    pub(crate) fn to_builder<'a: 'b, 'b>(
+        &self,
+        builder: &'b mut flatbuffers::FlatBufferBuilder<'a>
+    ) -> Result<flatbuffers::WIPOffset<schema::Segment<'a>>, Error> {
+        let name = builder.create_string(self.name());
+        let bytes = builder.create_vector_direct(&self.bytes);
+
+        let mut sbuilder = schema::SegmentBuilder::new(builder);
+
+        sbuilder.add_name(name);
+        sbuilder.add_address(self.address());
+        sbuilder.add_size_(self.len() as u32);
+        sbuilder.add_alignment_(self.alignment() as u32);
+        sbuilder.add_address_size(self.address_size() as u32);
+        sbuilder.add_endian(self.endian.is_big());
+        sbuilder.add_bits(self.bits as u32);
+        sbuilder.add_code(self.is_code());
+        sbuilder.add_data(self.is_data());
+        sbuilder.add_external(self.is_external());
+        sbuilder.add_executable(self.is_executable());
+        sbuilder.add_readable(self.is_readable());
+        sbuilder.add_writable(self.is_writable());
+        sbuilder.add_bytes(bytes);
+
+        Ok(sbuilder.finish())
     }
 }

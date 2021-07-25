@@ -4,8 +4,8 @@ use url::Url;
 
 #[derive(Debug)]
 pub enum Imported {
+    Bytes(Vec<u8>),
     File(PathBuf),
-    Segments(Vec<Vec<u8>>),
 }
 
 pub trait Backend {

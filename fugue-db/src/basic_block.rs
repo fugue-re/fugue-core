@@ -108,29 +108,29 @@ impl<'db> BasicBlock<'db> {
     }
 
     pub(crate) fn from_reader(
-        reader: schema::basic_block::Reader,
+        reader: schema::BasicBlock,
         segments: &'db IntervalTree<u64, Segment>,
         translators: &'db [Translator],
     ) -> Result<Self, Error> {
-        let architecture_id = Id::<ArchitectureDef>::from(reader.get_architecture());
+        let architecture_id = Id::<ArchitectureDef>::from(reader.architecture());
         let arch_index = architecture_id.index();
         Ok(Self {
-            address: reader.get_address(),
-            length: reader.get_length() as usize,
+            address: reader.address(),
+            length: reader.size_() as usize,
             architecture_id,
             segment: segments
-                .find(&reader.get_address())
-                .ok_or_else(|| Error::NoBlockSegment(reader.get_address()))?
+                .find(&reader.address())
+                .ok_or_else(|| Error::NoBlockSegment(reader.address()))?
                 .value(),
             predecessors: reader
-                .get_predecessors()
-                .map_err(Error::Deserialisation)?
+                .predecessors()
+                .ok_or(Error::DeserialiseField("predecessors"))?
                 .into_iter()
                 .map(IntraRef::from_reader)
                 .collect::<Result<Vec<_>, _>>()?,
             successors: reader
-                .get_successors()
-                .map_err(Error::Deserialisation)?
+                .successors()
+                .ok_or(Error::DeserialiseField("successors"))?
                 .into_iter()
                 .map(IntraRef::from_reader)
                 .collect::<Result<Vec<_>, _>>()?,
@@ -138,30 +138,32 @@ impl<'db> BasicBlock<'db> {
         })
     }
 
-    pub(crate) fn to_builder(
+    pub(crate) fn to_builder<'a: 'b, 'b>(
         &self,
-        builder: &mut schema::basic_block::Builder,
-    ) -> Result<(), Error> {
-        builder.set_address(self.address());
-        builder.set_length(self.len() as u32);
-        builder.set_architecture(self.architecture_id.index() as u32);
-        let mut predecessors = builder
-            .reborrow()
-            .init_predecessors(self.predecessors.len() as u32);
-        self.predecessors
+        builder: &'b mut flatbuffers::FlatBufferBuilder<'a>,
+    ) -> Result<flatbuffers::WIPOffset<schema::BasicBlock<'a>>, Error> {
+        let pvec = self.predecessors
             .iter()
-            .enumerate()
-            .try_for_each(|(i, r)| {
-                let mut builder = predecessors.reborrow().get(i as u32);
-                r.to_builder(&mut builder)
-            })?;
-        let mut successors = builder
-            .reborrow()
-            .init_successors(self.successors.len() as u32);
-        self.successors.iter().enumerate().try_for_each(|(i, r)| {
-            let mut builder = successors.reborrow().get(i as u32);
-            r.to_builder(&mut builder)
-        })?;
-        Ok(())
+            .map(|r| r.to_builder(builder))
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let predecessors = builder.create_vector_from_iter(pvec.into_iter());
+
+        let svec = self.successors
+            .iter()
+            .map(|r| r.to_builder(builder))
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let successors = builder.create_vector_from_iter(svec.into_iter());
+
+        let mut bbuilder = schema::BasicBlockBuilder::new(builder);
+
+        bbuilder.add_address(self.address());
+        bbuilder.add_size_(self.len() as u32);
+        bbuilder.add_architecture(self.architecture_id.index() as u32);
+        bbuilder.add_predecessors(predecessors);
+        bbuilder.add_successors(successors);
+
+        Ok(bbuilder.finish())
     }
 }

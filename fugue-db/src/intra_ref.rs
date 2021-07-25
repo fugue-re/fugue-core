@@ -25,18 +25,24 @@ impl<'db> IntraRef<'db> {
         self.function_id.clone()
     }
 
-    pub(crate) fn from_reader(reader: schema::intra_ref::Reader) -> Result<Self, Error> {
+    pub(crate) fn from_reader(reader: schema::IntraRef) -> Result<Self, Error> {
         Ok(Self {
-            source_id: reader.get_source().into(),
-            target_id: reader.get_target().into(),
-            function_id: reader.get_function().into(),
+            source_id: reader.source().into(),
+            target_id: reader.target().into(),
+            function_id: reader.function().into(),
         })
     }
 
-    pub(crate) fn to_builder(&self, builder: &mut schema::intra_ref::Builder) -> Result<(), Error> {
-        builder.set_source(self.source_id().value());
-        builder.set_target(self.target_id().value());
-        builder.set_function(self.function_id().index() as u32);
-        Ok(())
+    pub(crate) fn to_builder<'a: 'b, 'b>(
+        &self,
+        builder: &'b mut flatbuffers::FlatBufferBuilder<'a>
+    ) -> Result<flatbuffers::WIPOffset<schema::IntraRef<'a>>, Error> {
+        let mut ibuilder = schema::IntraRefBuilder::new(builder);
+
+        ibuilder.add_source(self.source_id().value());
+        ibuilder.add_target(self.target_id().value());
+        ibuilder.add_function(self.function_id().index() as u32);
+
+        Ok(ibuilder.finish())
     }
 }

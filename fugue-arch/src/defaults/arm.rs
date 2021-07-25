@@ -6,6 +6,13 @@ pub struct ARM {
     is_thumb: bool
 }
 
+impl ARM {
+    #[inline(always)]
+    pub fn is_thumb(&self) -> bool {
+        self.is_thumb
+    }
+}
+
 #[derive(Default)]
 pub struct AArch64;
 pub type ARM64 = AArch64;

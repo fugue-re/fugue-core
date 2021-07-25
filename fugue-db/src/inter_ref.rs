@@ -33,21 +33,27 @@ impl<'db> InterRef<'db> {
         !self.call
     }
 
-    pub(crate) fn from_reader(reader: schema::inter_ref::Reader) -> Result<Self, Error> {
+    pub(crate) fn from_reader(reader: schema::InterRef) -> Result<Self, Error> {
         Ok(Self {
-            address: reader.get_address(),
-            source_id: reader.get_source().into(),
-            target_id: reader.get_target().into(),
-            call: reader.get_call(),
+            address: reader.address(),
+            source_id: reader.source().into(),
+            target_id: reader.target().into(),
+            call: reader.call(),
         })
     }
 
-    pub(crate) fn to_builder(&self, builder: &mut schema::inter_ref::Builder) -> Result<(), Error> {
-        builder.set_address(self.address());
-        builder.set_source(self.source_id().index() as u32);
-        builder.set_target(self.target_id().index() as u32);
-        builder.set_call(self.is_call());
-        Ok(())
+    pub(crate) fn to_builder<'a: 'b, 'b>(
+        &self,
+        builder: &'b mut flatbuffers::FlatBufferBuilder<'a>
+    ) -> Result<flatbuffers::WIPOffset<schema::InterRef<'a>>, Error> {
+        let mut ibuilder = schema::InterRefBuilder::new(builder);
+
+        ibuilder.add_address(self.address());
+        ibuilder.add_source(self.source_id().index() as u32);
+        ibuilder.add_target(self.target_id().index() as u32);
+        ibuilder.add_call(self.is_call());
+
+        Ok(ibuilder.finish())
     }
 }
 

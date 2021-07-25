@@ -1,0 +1,3 @@
+[submodule "fugue-db/schema"]
+	path = fugue-db/schema
+	url = https://github.com/fugue-re/fugue-db-schema

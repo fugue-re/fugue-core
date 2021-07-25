@@ -1,13 +1,9 @@
-use std::convert::TryInto;
 use std::fs::File;
-use std::io::BufReader;
+use std::io::{BufReader, Read, Write};
 use std::iter::FromIterator;
 use std::path::{Path, PathBuf};
 
 use fs_extra::file::{CopyOptions, copy as copy_file};
-
-use capnp::message::{Reader, ReaderOptions, ReaderSegments, SegmentArray};
-use capnp::serialize_packed::{read_message, write_message};
 
 use fugue_ir::LanguageDB;
 
@@ -18,11 +14,9 @@ use url::Url;
 
 use crate::architecture::{self, ArchitectureDef};
 use crate::BasicBlock;
-use crate::Endian;
-use crate::ExportInfo;
-use crate::Format;
 use crate::Function;
 use crate::Id;
+use crate::Metadata;
 use crate::Segment;
 
 use crate::backend::{Backend, DatabaseImporterBackend, Imported};
@@ -33,15 +27,13 @@ use crate::schema;
 #[derive(educe::Educe)]
 #[educe(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct DatabaseImpl {
-    endian: Endian,
-    format: Format,
     #[educe(Debug(ignore), PartialEq(ignore), Eq(ignore), Hash(ignore))]
     translators: Box<Vec<Translator>>,
     segments: Box<IntervalTree<u64, Segment>>,
     #[borrows(segments, translators)]
     #[covariant]
     functions: Vec<Function<'this>>,
-    export_info: ExportInfo,
+    metadata: Metadata,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
@@ -51,40 +43,17 @@ pub struct Database(DatabaseImpl);
 impl Default for DatabaseImpl {
     fn default() -> Self {
         DatabaseImpl::new(
-            Endian::Little,
-            Format::ELF,
             Box::new(Vec::new()),
             Box::new(IntervalTree::from_iter(
                 Vec::<(Interval<u64>, Segment)>::new(),
             )),
             |_, _| Vec::new(),
-            ExportInfo::default(),
+            Metadata::default(),
         )
     }
 }
 
 impl Database {
-    pub fn default_with(endian: Endian) -> Self {
-        Self(DatabaseImpl::new(
-            endian,
-            Format::ELF,
-            Box::new(Vec::new()),
-            Box::new(IntervalTree::from_iter(
-                Vec::<(Interval<u64>, Segment)>::new(),
-            )),
-            |_, _| Vec::new(),
-            ExportInfo::default(),
-        ))
-    }
-
-    pub fn endian(&self) -> Endian {
-        *self.0.borrow_endian()
-    }
-
-    pub fn format(&self) -> Format {
-        *self.0.borrow_format()
-    }
-
     pub fn architectures(&self) -> impl Iterator<Item=&ArchitectureDef> {
         self.0.borrow_translators().iter().map(Translator::architecture)
     }
@@ -188,57 +157,37 @@ impl Database {
         }
     }
 
-    pub fn export_info(&self) -> &ExportInfo {
-        self.0.borrow_export_info()
+    pub fn metadata(&self) -> &Metadata {
+        self.0.borrow_metadata()
     }
 
-    pub fn from_segments(segments: Vec<Vec<u8>>, language_db: &LanguageDB) -> Result<Self, Error> {
-        let segment_refs = segments.iter().map(|seg| seg.as_ref()).collect::<Vec<_>>();
-        let segment_array = SegmentArray::new(&segment_refs);
-
-        let mut options = ReaderOptions::new();
-        options.traversal_limit_in_words(None);
-
-        let reader = Reader::new(segment_array, options);
+    pub fn from_bytes(bytes: &[u8], language_db: &LanguageDB) -> Result<Self, Error> {
+        let reader = schema::root_as_project(&bytes)
+            .map_err(Error::Deserialisation)?;
 
         Self::from_reader(reader, language_db)
     }
 
     pub fn from_file<P: AsRef<Path>>(path: P, language_db: &LanguageDB) -> Result<Self, Error> {
         let path = path.as_ref();
-        let file = BufReader::new(File::open(path).map_err(Error::CannotReadFile)?);
+        let mut file = BufReader::new(File::open(path).map_err(Error::CannotReadFile)?);
 
-        let mut options = ReaderOptions::new();
-        options.traversal_limit_in_words(None);
+        let mut bytes = Vec::new();
+        file.read_to_end(&mut bytes).map_err(Error::CannotReadFile)?;
 
-        let reader = read_message(file, options).map_err(Error::Deserialisation)?;
-
-        Self::from_reader(reader, language_db)
+        Self::from_bytes(&bytes, language_db)
     }
 
-    fn from_reader<S: ReaderSegments>(reader: Reader<S>, language_db: &LanguageDB) -> Result<Self, Error> {
-        let database = reader
-            .get_root::<schema::database::Reader>()
-            .map_err(Error::Deserialisation)?;
+    fn from_reader<'a>(database: schema::Project<'a>, language_db: &LanguageDB) -> Result<Self, Error> {
+        let metadata = Metadata::from_reader(
+            database.metadata()
+                .ok_or(Error::DeserialiseField("metadata"))?
+        )?;
 
-        let endian = Endian::from(if database.get_endian() {
-            Endian::Big
-        } else {
-            Endian::Little
-        });
-        let format = database
-            .get_format()
-            .map_err(Error::Deserialisation)?
-            .try_into()?;
-
-        let export_info =
-            ExportInfo::from_reader(database.get_export_info().map_err(Error::Deserialisation)?)?;
-
-        let architectures = database
-            .get_architectures()
-            .map_err(Error::Deserialisation)?
+        let architectures = database.architectures()
+            .ok_or(Error::DeserialiseField("architectures"))?
             .into_iter()
-            .map(architecture::from_reader)
+            .map(|r| architecture::from_reader(&r))
             .collect::<Result<Vec<_>, _>>()?;
 
         let translators = architectures
@@ -252,75 +201,74 @@ impl Database {
             })
             .collect::<Result<Vec<_>, _>>()?;
 
-        let segments = database
-            .get_segments()
-            .map_err(Error::Deserialisation)?
+        let segments = database.segments()
+            .ok_or(Error::DeserialiseField("segments"))?
             .into_iter()
             .map(|r| {
-                let seg = Segment::from_reader(r)?;
+                let seg = Segment::from_reader(&r)?;
                 Ok((seg.address()..=seg.address() + (seg.len() as u64 - 1), seg))
             })
             .collect::<Result<IntervalTree<_, _>, Error>>()?;
 
         Ok(Self(DatabaseImpl::try_new(
-            endian,
-            format,
             Box::new(translators),
             Box::new(segments),
             |segments, translators| {
-                database
-                    .get_functions()
-                    .map_err(Error::Deserialisation)?
+                database.functions()
+                    .ok_or(Error::DeserialiseField("functions"))?
                     .into_iter()
                     .map(|r| Function::from_reader(r, segments, translators))
                     .collect::<Result<Vec<_>, _>>()
             },
-            export_info,
+            metadata,
         )?))
     }
 
     pub fn to_file<P: AsRef<Path>>(&self, path: P) -> Result<(), Error> {
         let path = path.as_ref();
         let mut file = File::create(path).map_err(Error::CannotWriteFile)?;
-        let mut message = capnp::message::Builder::new_default();
-        let mut builder = message.init_root::<schema::database::Builder>();
-        self.to_builder(&mut builder)?;
-        write_message(&mut file, &mut message).map_err(Error::Serialisation)?;
+
+        let mut builder = flatbuffers::FlatBufferBuilder::new();
+
+        let project = self.to_builder(&mut builder)?;
+        schema::finish_project_buffer(&mut builder, project);
+
+        file.write_all(builder.finished_data()).map_err(Error::CannotWriteFile)?;
+
         Ok(())
     }
 
-    pub(crate) fn to_builder(&self, builder: &mut schema::database::Builder) -> Result<(), Error> {
-        builder.set_endian(self.endian().is_big());
-        builder.set_format(self.format().into());
-        let mut architectures = builder
-            .reborrow()
-            .init_architectures(self.0.borrow_translators().len() as u32);
-        self.architectures()
-            .enumerate()
-            .try_for_each(|(i, a)| {
-                let mut builder = architectures.reborrow().get(i as u32);
-                architecture::to_builder(a, &mut builder)
-            })?;
-        let mut segments = builder
-            .reborrow()
-            .init_segments(self.segments().len() as u32);
-        self.segments()
+    pub(crate) fn to_builder<'a: 'b, 'b>(
+        &self,
+        builder: &'b mut flatbuffers::FlatBufferBuilder<'a>
+    ) -> Result<flatbuffers::WIPOffset<schema::Project<'a>>, Error> {
+        let architectures = self.architectures()
+            .map(|r| architecture::to_builder(r, builder))
+            .collect::<Result<Vec<_>, _>>()?;
+        let avec = builder.create_vector_from_iter(architectures.into_iter());
+
+        let segments = self.segments()
             .values()
-            .enumerate()
-            .try_for_each(|(i, s)| {
-                let mut builder = segments.reborrow().get(i as u32);
-                s.to_builder(&mut builder)
-            })?;
-        let mut functions = builder
-            .reborrow()
-            .init_functions(self.functions().len() as u32);
-        self.functions().iter().enumerate().try_for_each(|(i, f)| {
-            let mut builder = functions.reborrow().get(i as u32);
-            f.to_builder(&mut builder)
-        })?;
-        self.export_info()
-            .to_builder(&mut builder.reborrow().init_export_info())?;
-        Ok(())
+            .map(|r| r.to_builder(builder))
+            .collect::<Result<Vec<_>, _>>()?;
+        let svec = builder.create_vector_from_iter(segments.into_iter());
+
+        let functions = self.functions()
+            .iter()
+            .map(|r| r.to_builder(builder))
+            .collect::<Result<Vec<_>, _>>()?;
+        let fvec = builder.create_vector_from_iter(functions.into_iter());
+
+        let meta = self.metadata().to_builder(builder)?;
+
+        let mut dbuilder = schema::ProjectBuilder::new(builder);
+
+        dbuilder.add_architectures(avec);
+        dbuilder.add_segments(svec);
+        dbuilder.add_functions(fvec);
+        dbuilder.add_metadata(meta);
+
+        Ok(dbuilder.finish())
     }
 }
 
@@ -478,8 +426,8 @@ impl DatabaseImporter {
                 }
                 Ok(db)
             },
-            Ok(Imported::Segments(segments)) => {
-                let db = Database::from_segments(segments, language_db)?;
+            Ok(Imported::Bytes(ref bytes)) => {
+                let db = Database::from_bytes(bytes, language_db)?;
                 if let Some(ref fdb_path) = self.fdb_path {
                     db.to_file(fdb_path)?;
                 }
