@@ -10,7 +10,7 @@ rust-latest:
 
 before_script:
   - apt-get update -y
-  - apt-get install capnproto openssh-client -y
+  - apt-get install libflatbuffers1 flatbuffers-compiler openssh-client -y
   - eval $(ssh-agent -s)
   - echo "$FUGUE_SSH_PRIVATE_KEY" | tr -d '\r' | ssh-add -
   - mkdir -p ~/.ssh
