@@ -1,15 +1,15 @@
 [package]
 name = "fugue-ir"
-version = "0.1.8"
+version = "0.2.0"
 authors = ["Sam Thomas <st@xv.ax>"]
 edition = "2018"
 license = "MIT"
 
 [dependencies]
 fnv = "1"
-fugue-arch = { path = "../fugue-arch", version = "0.1", registry = "fugue" }
-fugue-bv = { path = "../fugue-bv", version = "0.1", registry = "fugue" }
-fugue-bytes = { path = "../fugue-bytes", version = "0.1", registry = "fugue" }
+fugue-arch = { path = "../fugue-arch", version = "0.2", registry = "fugue" }
+fugue-bv = { path = "../fugue-bv", version = "0.2", registry = "fugue" }
+fugue-bytes = { path = "../fugue-bytes", version = "0.2", registry = "fugue" }
 itertools = "0.10"
 log = "0.4"
 ouroboros = "0.9"

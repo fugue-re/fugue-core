@@ -7,9 +7,9 @@ build = "build.rs"
 license = "MIT"
 
 [dependencies]
-fugue-arch = { path = "../fugue-arch", version = "0.1", registry = "fugue" }
-fugue-bytes = { path = "../fugue-bytes", version = "0.1", registry = "fugue" }
-fugue-ir = { path = "../fugue-ir", version = "0.1", registry = "fugue" }
+fugue-arch = { path = "../fugue-arch", version = "0.2", registry = "fugue" }
+fugue-bytes = { path = "../fugue-bytes", version = "0.2", registry = "fugue" }
+fugue-ir = { path = "../fugue-ir", version = "0.2", registry = "fugue" }
 
 educe = "0.4"
 flatbuffers = "2.0"
