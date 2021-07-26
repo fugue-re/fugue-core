@@ -1,6 +1,6 @@
 [package]
 name = "fugue-db"
-version = "0.2.0"
+version = "0.2.1"
 authors = ["Sam Thomas <st@xv.ax>"]
 edition = "2018"
 build = "build.rs"
