@@ -1,7 +1,8 @@
-#[allow(non_snake_case, unused)]
-#[path = "../target/flatbuffers/fugue_generated.rs"]
-mod fugue_schema;
-pub use fugue_schema::fugue::schema as schema;
+//#[allow(non_snake_case, unused)]
+//#[path = "../target/flatbuffers/fugue_generated.rs"]
+//mod fugue_schema;
+//pub use fugue_schema::fugue::schema as schema;
+
 
 pub mod architecture;
 pub mod backend;
@@ -14,6 +15,7 @@ pub mod id;
 pub mod inter_ref;
 pub mod intra_ref;
 pub mod metadata;
+pub mod schema;
 pub mod segment;
 
 pub use error::*;
