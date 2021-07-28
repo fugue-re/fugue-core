@@ -26,14 +26,28 @@ jobs:
       with:
         submodules: 'recursive'
         
+    - uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        
     - name: add registry token
       run: |
         mkdir -p ~/.cargo
         echo '[registries]' >> ~/.cargo/config.toml
         echo 'fugue = { index = "ssh://git@github.com/fugue-re/fugue-registry" }' >> ~/.cargo/config.toml
         cargo login --registry=fugue "${{ secrets.FUGUE_REGISTRY_TOKEN }}"
+        
+    - uses: actions-rs/cargo@v1
+      with:
+        command: login
+        args: --registry=fugue "${{ secrets.FUGUE_REGISTRY_TOKEN }}"
 
-    - name: build
-      run: cargo build --verbose
-    - name: test
-      run: cargo test --verbose
+    - uses: actions-rs/cargo@v1
+      with:
+        command: build
+        args: --verbose
+        
+    - uses: actions-rs/cargo@v1
+      with:
+        command: test
+        args: --verbose
