@@ -1,3 +1,14 @@
 # Fugue Binary Analysis Framework
 
-![](data/fugue-logo-border-t.png)
+## Prerequisites
+
+```
+git submodule init
+git submodule update --recursive
+```
+
+## Build
+
+```
+cargo build
+```
