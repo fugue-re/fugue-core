@@ -11,7 +11,7 @@ env:
 
 jobs:
   build:
-    runs-on: fugue-ci-runner
+    runs-on: self-hosted
     steps:
     - name: install dependencies
       run: |
