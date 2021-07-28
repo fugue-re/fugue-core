@@ -1,0 +1,39 @@
+name: build-and-test
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - name: install dependencies
+      run: |
+        sudo apt-get update -y
+        sudo apt-get install -y build-essential cmake openssh-client
+        
+    - uses: webfactory/ssh-agent@v0.5.3
+      with:
+        ssh-private-key: ${{ secrets.FUGUE_REGISTRY_KEY }}
+
+    - uses: actions/checkout@v2
+      with:
+        submodules: 'recursive'
+        
+    - name: add registry token
+      run: |
+        mkdir -p ~/.cargo
+        echo '[registries]' >> ~/.cargo/config.toml
+        echo 'fugue = { index = "ssh://git@github.com/fugue-re/fugue-registry" }' >> ~/.cargo/config.toml
+        cargo login --registry=fugue "${{ secrets.FUGUE_REGISTRY_TOKEN }}"
+
+    - name: build
+      run: cargo build --verbose
+    - name: test
+      run: cargo test --verbose
