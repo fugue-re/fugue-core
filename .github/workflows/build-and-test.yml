@@ -18,11 +18,6 @@ jobs:
         sudo apt-get update -y
         sudo apt-get install -y build-essential cmake openssh-client
         
-    - uses: actions/checkout@v2
-      with:
-        ssh-key: ${{ secrets.FUGUE_REGISTRY_KEY }}
-        submodules: 'recursive'
-        
     - uses: webfactory/ssh-agent@v0.5.3
       with:
         ssh-private-key: ${{ secrets.FUGUE_REGISTRY_KEY }}
@@ -33,6 +28,10 @@ jobs:
         echo '[registries]' >> .cargo/config.toml
         echo 'fugue = { index = "ssh://git@github.com/fugue-re/fugue-registry" }' >> .cargo/config.toml
         cargo login --registry=fugue "${{ secrets.FUGUE_REGISTRY_TOKEN }}"
+
+    - uses: actions/checkout@v2
+      with:
+        submodules: 'recursive'
 
     - name: build
       run: cargo build --verbose
