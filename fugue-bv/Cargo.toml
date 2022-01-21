@@ -1,0 +1,15 @@
+[package]
+name = "fugue-bv"
+version = "0.2.23"
+authors = ["Sam Thomas <st@xv.ax>"]
+edition = "2018"
+license = "MIT"
+
+[dependencies]
+fugue-bytes = { path = "../fugue-bytes", version = "0.2", registry = "fugue" }
+num-integer = "0.1"
+num-traits = "0.2"
+paste = "1"
+rug = { version = "1", features = ["integer", "serde"] }
+serde = { version = "1", features = ["derive", "rc"] }
+thiserror = "1"

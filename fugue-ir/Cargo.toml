@@ -1,0 +1,24 @@
+[package]
+name = "fugue-ir"
+version = "0.2.54"
+authors = ["Sam Thomas <st@xv.ax>"]
+edition = "2018"
+license = "MIT"
+
+[dependencies]
+bumpalo = { version = "3.8", features = ["boxed", "collections"] }
+fnv = "1"
+fxhash = "0.2"
+fugue-arch = { path = "../fugue-arch", version = "0.2", registry = "fugue" }
+fugue-bv = { path = "../fugue-bv", version = "0.2", registry = "fugue" }
+fugue-bytes = { path = "../fugue-bytes", version = "0.2", registry = "fugue" }
+intervals = { version = "0.1", features = ["serde_derive"], registry = "fugue" }
+itertools = "0.10"
+log = "0.4"
+roxmltree = "0.14"
+serde = { version = "1", features = ["derive", "rc"] }
+smallvec = { version = "1", features = ["serde"] }
+thiserror = "1"
+unsafe_unwrap = "0.1"
+ustr = { version = "0.8", features = ["serialization"] }
+walkdir = "2"

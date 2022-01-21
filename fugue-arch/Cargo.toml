@@ -1,0 +1,12 @@
+[package]
+name = "fugue-arch"
+version = "0.2.3"
+authors = ["Sam Thomas <st@xv.ax>"]
+edition = "2018"
+license = "MIT"
+
+[dependencies]
+fugue-bytes = { path = "../fugue-bytes", version = "0.2", registry = "fugue" }
+serde = { version = "1", features = ["derive"] }
+thiserror = "1"
+unicase = "2.6"

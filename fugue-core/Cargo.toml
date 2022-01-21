@@ -1,0 +1,14 @@
+[package]
+name = "fugue"
+version = "0.2.2"
+authors = ["Sam Thomas <st@xv.ax>"]
+edition = "2018"
+license = "MIT"
+
+[dependencies]
+fugue-arch = { path = "../fugue-arch", version = "0.2", registry = "fugue" }
+fugue-bv = { path = "../fugue-bv", version = "0.2", registry = "fugue" }
+fugue-bytes = { path = "../fugue-bytes", version = "0.2", registry = "fugue" }
+fugue-db = { path = "../fugue-db", version = "0.2", registry = "fugue" }
+fugue-fp = { path = "../fugue-fp", version = "0.2", registry = "fugue" }
+fugue-ir = { path = "../fugue-ir", version = "0.2", registry = "fugue" }

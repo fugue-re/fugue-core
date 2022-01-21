@@ -1,0 +1,14 @@
+[workspace]
+members = [
+  "fugue-bv",
+  "fugue-db",
+  "fugue-fp",
+  "fugue-ir",
+
+  "fugue-arch",
+  "fugue-bytes",
+  "fugue-core",
+]
+
+[profile.bench]
+debug = true

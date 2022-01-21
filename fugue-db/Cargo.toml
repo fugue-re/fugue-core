@@ -1,0 +1,29 @@
+[package]
+name = "fugue-db"
+version = "0.2.8"
+authors = ["Sam Thomas <st@xv.ax>"]
+edition = "2018"
+build = "build.rs"
+license = "MIT"
+
+[dependencies]
+fugue-arch = { path = "../fugue-arch", version = "0.2", registry = "fugue" }
+fugue-bytes = { path = "../fugue-bytes", version = "0.2", registry = "fugue" }
+fugue-ir = { path = "../fugue-ir", version = "0.2", registry = "fugue" }
+
+educe = "0.4"
+flatbuffers = "2.0"
+fs_extra = "1.2"
+intervals = { version = "0.1", registry = "fugue" }
+ouroboros = "0.9"
+
+serde = { version = "1", features = ["derive"] }
+tempfile = "3"
+thiserror = "1"
+unicase = "2.6"
+which = "4"
+url = "2.2"
+
+[build-dependencies]
+flatc-rust = "0.2"
+flatc = "0.2.1"
