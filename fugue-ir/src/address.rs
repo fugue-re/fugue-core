@@ -8,7 +8,7 @@ use crate::disassembly::IRBuilderArena;
 use crate::space::{AddressSpace, AddressSpaceId};
 use crate::space_manager::{FromSpace, SpaceManager};
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[derive(serde::Deserialize, serde::Serialize)]
 pub struct AddressValue {
     space: AddressSpaceId,
