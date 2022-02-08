@@ -1,16 +1,22 @@
 [package]
 name = "fugue-ir"
-version = "0.2.55"
+version = "0.2.57"
 authors = ["Sam Thomas <st@xv.ax>"]
-edition = "2018"
+edition = "2021"
 license = "MIT"
+
+[features]
+default = ["bigint"]
+bigint = ["fugue-bv/bigint"]
+fixed-u64 = ["fugue-bv/fixed-u64"]
+fixed-u128 = ["fugue-bv/fixed-u128"]
 
 [dependencies]
 bumpalo = { version = "3.8", features = ["boxed", "collections"] }
 fnv = "1"
 fxhash = "0.2"
 fugue-arch = { path = "../fugue-arch", version = "0.2", registry = "fugue" }
-fugue-bv = { path = "../fugue-bv", version = "0.2", registry = "fugue" }
+fugue-bv = { path = "../fugue-bv", version = "0.2", registry = "fugue", default-features = false }
 fugue-bytes = { path = "../fugue-bytes", version = "0.2", registry = "fugue" }
 intervals = { version = "0.1", features = ["serde_derive"], registry = "fugue" }
 itertools = "0.10"

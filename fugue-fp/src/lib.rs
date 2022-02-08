@@ -24,7 +24,6 @@ pub enum Error {
     UnsupportedFloatFormat(usize),
 }
 
-
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Sign {
     Positive,

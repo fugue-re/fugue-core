@@ -491,24 +491,6 @@ impl BitVec {
     }
 }
 
-impl<const N: usize> From<BitVec> for crate::sized::BitVec<N> {
-    fn from(bv: BitVec) -> Self {
-        if bv.bits() != N {
-            panic!(
-                "source bit-vector size `{}` does not match target size `{}`",
-                bv.3, N
-            )
-        }
-
-        let val = crate::sized::BitVec::from(bv.0);
-        if bv.2 {
-            val.signed()
-        } else {
-            val
-        }
-    }
-}
-
 impl PartialEq<Self> for BitVec {
     fn eq(&self, other: &Self) -> bool {
         if self.3 != other.3 {

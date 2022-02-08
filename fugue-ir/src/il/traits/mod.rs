@@ -104,7 +104,11 @@ pub struct BitVecFormatter<'v, 't> {
 
 impl<'v, 't> fmt::Display for BitVecFormatter<'v, 't> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        #[cfg(feature = "bigint")]
         let v = self.bv.as_bigint();
+        #[cfg(not(feature = "bigint"))]
+        let v = self.bv.as_raw();
+
         write!(
             f,
             "{}{:#x}{}:{}{}{}",

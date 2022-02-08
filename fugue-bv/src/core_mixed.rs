@@ -156,25 +156,25 @@ impl From<core_bigint::BitVec> for BitVec {
 
 impl fmt::Display for BitVec {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fold_map!(self, |slf| write!(f, "{}:{}", slf.0, slf.3))
+        fold_map!(self, |slf| write!(f, "{}:{}", slf.0, slf.bits()))
     }
 }
 
 impl fmt::LowerHex for BitVec {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fold_map!(self, |slf| write!(f, "{:#x}:{}", slf.0, slf.3))
+        fold_map!(self, |slf| write!(f, "{:#x}:{}", slf.0, slf.bits()))
     }
 }
 
 impl fmt::UpperHex for BitVec {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fold_map!(self, |slf| write!(f, "{:#X}:{}", slf.0, slf.3))
+        fold_map!(self, |slf| write!(f, "{:#X}:{}", slf.0, slf.bits()))
     }
 }
 
 impl fmt::Binary for BitVec {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fold_map!(self, |slf| write!(f, "{:#b}:{}", slf.0, slf.3))
+        fold_map!(self, |slf| write!(f, "{:#b}:{}", slf.0, slf.bits()))
     }
 }
 
@@ -220,6 +220,7 @@ impl BitVec {
         }
     }
 
+    #[allow(unused)]
     pub(crate) fn from_bigint_with(v: BigInt, mask: Arc<BigInt>) -> Self {
         let bits = mask.count_ones().unwrap() as usize;
         if bits <= 64 {
@@ -282,7 +283,7 @@ impl BitVec {
     }
 
     pub fn bits(&self) -> usize {
-        fold_map!(self, |slf| slf.3)
+        fold_map!(self, |slf| slf.bits())
     }
 
     pub fn signed(self) -> Self {
