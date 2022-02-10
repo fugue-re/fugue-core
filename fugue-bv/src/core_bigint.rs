@@ -493,13 +493,7 @@ impl BitVec {
 
 impl PartialEq<Self> for BitVec {
     fn eq(&self, other: &Self) -> bool {
-        if self.3 != other.3 {
-            panic!(
-                "bit vector of size {} cannot be compared with bit vector of size {}",
-                self.3, other.3
-            )
-        }
-        self.0 == other.0
+        self.bits() == other.bits() && self.0 == other.0
     }
 }
 impl Eq for BitVec {}
