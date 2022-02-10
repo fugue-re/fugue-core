@@ -4,6 +4,10 @@
 
 # Fugue Binary Analysis Framework
 
+
+[![DOI](https://zenodo.org/badge/386728913.svg)](https://zenodo.org/badge/latestdoi/386728913)
+
+
 Fugue is a binary analysis framework in the spirit of [B2R2] and [BAP], with
 a focus on providing reusable components to rapidly prototype new binary
 analysis tools and techniques.
