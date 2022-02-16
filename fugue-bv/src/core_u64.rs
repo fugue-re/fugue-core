@@ -718,7 +718,7 @@ impl Mul for BitVec {
                 self.bits(), rhs.bits()
             )
         }
-        Self::from_uint_with(self.0 * rhs.0, self.mask_bits())
+        Self::from_uint_with(self.0.wrapping_mul(rhs.0), self.mask_bits())
     }
 }
 
@@ -726,7 +726,7 @@ impl<'a> Mul for &'a BitVec {
     type Output = BitVec;
 
     fn mul(self, rhs: Self) -> Self::Output {
-        BitVec::from_uint_with(u64::from(&self.0 * &rhs.0), self.mask_bits())
+        BitVec::from_uint_with(self.0.wrapping_mul(rhs.0), self.mask_bits())
     }
 }
 
