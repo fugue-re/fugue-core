@@ -150,9 +150,11 @@ impl<'a> LanguageBuilder<'a> {
             &self.language.compiler_specs,
             &self.language.sla_file,
         )?;
+
         for (name, val) in self.language.processor_spec.context_set() {
             translator.set_variable_default(name.as_ref(), val);
         }
+
         Ok(translator)
     }
 }

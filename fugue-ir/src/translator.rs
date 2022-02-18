@@ -39,7 +39,7 @@ use crate::register::RegisterNames;
 use crate::space_manager::SpaceManager;
 
 // Translator is used for parsing the processor spec XML and
-// lifting instructions 
+// lifting instructions
 #[derive(Clone)]
 #[derive(serde::Deserialize, serde::Serialize)]
 pub struct Translator {
@@ -98,6 +98,8 @@ impl Translator {
     }
 
     pub fn set_variable_default<S: Borrow<str>>(&mut self, name: S, value: u32) {
+        let name = name.borrow();
+        log::trace!("setting context variable {} to {}", name, value);
         self.context_db.set_variable_default(name, value);
     }
 
