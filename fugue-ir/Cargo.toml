@@ -1,6 +1,6 @@
 [package]
 name = "fugue-ir"
-version = "0.2.58"
+version = "0.2.59"
 authors = ["Sam Thomas <st@xv.ax>"]
 edition = "2021"
 license = "MIT"

@@ -343,6 +343,7 @@ impl Symbol {
                 temporary_space: None,
                 temporary_offset: 0,
             },
+            Self::Name { pattern_value, .. } |
             Self::Value { pattern_value, .. } => FixedHandle {
                 space: manager.constant_space_ref(),
                 size: 0,
@@ -419,7 +420,7 @@ impl Symbol {
                 temporary_space: None,
                 temporary_offset: 0,
             },
-            _ => unreachable!(),
+            _ => panic!("unexpected symbol: {:?}", self),
             //_ => return Err(Error::InvalidHandle)
         }
     }
