@@ -316,9 +316,11 @@ impl Translator {
             .collect::<Result<Map<_, _>, DeserialiseError>>()?;
 
         if float_formats.is_empty() {
+            float_formats.insert(16, Arc::new(FloatFormat::float2()));
             float_formats.insert(32, Arc::new(FloatFormat::float4()));
             float_formats.insert(64, Arc::new(FloatFormat::float8()));
             float_formats.insert(80, Arc::new(FloatFormat::float10()));
+            float_formats.insert(128, Arc::new(FloatFormat::float16()));
         }
 
         let mut source_files = Map::default();

@@ -20,6 +20,20 @@ pub struct FloatFormat {
 }
 
 impl FloatFormat {
+    pub const fn float2() -> Self {
+        FloatFormat {
+            size: 2,
+            sign_pos: 15,
+            frac_pos: 0,
+            frac_size: 10,
+            exp_pos: 10,
+            exp_size: 5,
+            exp_max: (1 << 5) - 1,
+            bias: 15,
+            j_bit_implied: true,
+        }
+    }
+
     pub const fn float4() -> Self {
         FloatFormat {
             size: 4,
@@ -57,6 +71,20 @@ impl FloatFormat {
             exp_max: (1 << 15) - 1,
             frac_pos: 0,
             frac_size: 64,
+            bias: 16383,
+            j_bit_implied: true,
+        }
+    }
+
+    pub const fn float16() -> Self {
+        FloatFormat {
+            size: 16,
+            sign_pos: 127,
+            exp_pos: 112,
+            exp_size: 15,
+            exp_max: (1 << 15) - 1,
+            frac_pos: 0,
+            frac_size: 112,
             bias: 16383,
             j_bit_implied: true,
         }
