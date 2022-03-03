@@ -1,14 +1,13 @@
 use crate::compiler::{self, Specification};
-use crate::disassembly::VarnodeData;
 use crate::deserialise::error::Error as DeserialiseError;
+use crate::disassembly::VarnodeData;
 use crate::register::RegisterNames;
 use crate::space::AddressSpace;
 use crate::space_manager::SpaceManager;
 
 use std::sync::Arc;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[derive(serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 pub enum PrototypeOperand {
     Register {
         name: Arc<str>,
@@ -24,22 +23,30 @@ pub enum PrototypeOperand {
 }
 
 impl PrototypeOperand {
-    pub fn from_spec(spec: &compiler::PrototypeOperand, registers: &RegisterNames) -> Result<Self, DeserialiseError> {
+    pub fn from_spec(
+        spec: &compiler::PrototypeOperand,
+        registers: &RegisterNames,
+    ) -> Result<Self, DeserialiseError> {
         match spec {
             compiler::PrototypeOperand::Register(ref name) => {
-                let (name, offset, size) = registers.get_by_name(&**name)
-                    .ok_or_else(|| DeserialiseError::Invariant("register for prototype operand invalid"))?;
+                let (name, offset, size) = registers.get_by_name(&**name).ok_or_else(|| {
+                    DeserialiseError::Invariant("register for prototype operand invalid")
+                })?;
                 Ok(Self::Register {
                     name: name.clone(),
                     varnode: VarnodeData::new(registers.register_space(), offset, size),
                 })
-            },
+            }
             compiler::PrototypeOperand::RegisterJoin(ref first_name, ref second_name) => {
-                let (first_name, foffset, fsize) = registers.get_by_name(&**first_name)
-                    .ok_or_else(|| DeserialiseError::Invariant("register for prototype operand invalid"))?;
+                let (first_name, foffset, fsize) =
+                    registers.get_by_name(&**first_name).ok_or_else(|| {
+                        DeserialiseError::Invariant("register for prototype operand invalid")
+                    })?;
 
-                let (second_name, soffset, ssize) = registers.get_by_name(&**second_name)
-                    .ok_or_else(|| DeserialiseError::Invariant("register for prototype operand invalid"))?;
+                let (second_name, soffset, ssize) =
+                    registers.get_by_name(&**second_name).ok_or_else(|| {
+                        DeserialiseError::Invariant("register for prototype operand invalid")
+                    })?;
 
                 Ok(Self::RegisterJoin {
                     first_name: first_name.clone(),
@@ -47,16 +54,13 @@ impl PrototypeOperand {
                     second_name: second_name.clone(),
                     second_varnode: VarnodeData::new(registers.register_space(), soffset, ssize),
                 })
-            },
-            compiler::PrototypeOperand::StackRelative(offset) => {
-                Ok(Self::StackRelative(*offset))
-            },
+            }
+            compiler::PrototypeOperand::StackRelative(offset) => Ok(Self::StackRelative(*offset)),
         }
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[derive(serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 pub struct PrototypeEntry {
     min_size: usize,
     max_size: usize,
@@ -67,7 +71,10 @@ pub struct PrototypeEntry {
 }
 
 impl PrototypeEntry {
-    pub fn from_spec(spec: &compiler::PrototypeEntry, registers: &RegisterNames) -> Result<Self, DeserialiseError> {
+    pub fn from_spec(
+        spec: &compiler::PrototypeEntry,
+        registers: &RegisterNames,
+    ) -> Result<Self, DeserialiseError> {
         Ok(Self {
             min_size: spec.min_size,
             max_size: spec.max_size,
@@ -77,10 +84,33 @@ impl PrototypeEntry {
             operand: PrototypeOperand::from_spec(&spec.operand, registers)?,
         })
     }
+
+    pub fn min_size(&self) -> usize {
+        self.min_size
+    }
+
+    pub fn max_size(&self) -> usize {
+        self.max_size
+    }
+
+    pub fn alignment(&self) -> u64 {
+        self.alignment
+    }
+
+    pub fn meta_type(&self) -> &Option<String> {
+        &self.meta_type
+    }
+
+    pub fn extension(&self) -> &Option<String> {
+        &self.extension
+    }
+
+    pub fn operand(&self) -> &PrototypeOperand {
+        &self.operand
+    }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[derive(serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 pub struct Prototype {
     name: String,
     extra_pop: u64,
@@ -90,23 +120,49 @@ pub struct Prototype {
 }
 
 impl Prototype {
-    pub fn from_spec(spec: &compiler::Prototype, registers: &RegisterNames) -> Result<Self, DeserialiseError> {
+    pub fn from_spec(
+        spec: &compiler::Prototype,
+        registers: &RegisterNames,
+    ) -> Result<Self, DeserialiseError> {
         Ok(Self {
             name: spec.name.clone(),
-            extra_pop:spec.extra_pop,
+            extra_pop: spec.extra_pop,
             stack_shift: spec.stack_shift,
-            inputs: spec.inputs.iter().map(|input| PrototypeEntry::from_spec(input, registers)).collect::<Result<_, _>>()?,
-            outputs: spec.outputs.iter().map(|output| PrototypeEntry::from_spec(output, registers)).collect::<Result<_, _>>()?,
+            inputs: spec
+                .inputs
+                .iter()
+                .map(|input| PrototypeEntry::from_spec(input, registers))
+                .collect::<Result<_, _>>()?,
+            outputs: spec
+                .outputs
+                .iter()
+                .map(|output| PrototypeEntry::from_spec(output, registers))
+                .collect::<Result<_, _>>()?,
         })
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
     }
 
     pub fn extra_pop(&self) -> u64 {
         self.extra_pop
     }
+
+    pub fn stack_shift(&self) -> u64 {
+        self.stack_shift
+    }
+
+    pub fn inputs(&self) -> &[PrototypeEntry] {
+        &self.inputs
+    }
+
+    pub fn outputs(&self) -> &[PrototypeEntry] {
+        &self.outputs
+    }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[derive(serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 pub enum ReturnAddress {
     Register {
         name: Arc<str>,
@@ -119,28 +175,29 @@ pub enum ReturnAddress {
 }
 
 impl ReturnAddress {
-    pub fn from_spec(spec: &compiler::ReturnAddress, registers: &RegisterNames) -> Result<Self, DeserialiseError> {
+    pub fn from_spec(
+        spec: &compiler::ReturnAddress,
+        registers: &RegisterNames,
+    ) -> Result<Self, DeserialiseError> {
         match spec {
             compiler::ReturnAddress::Register(ref name) => {
-                let (name, offset, size) = registers.get_by_name(&**name)
-                    .ok_or_else(|| DeserialiseError::Invariant("register for return address invalid"))?;
+                let (name, offset, size) = registers.get_by_name(&**name).ok_or_else(|| {
+                    DeserialiseError::Invariant("register for return address invalid")
+                })?;
                 Ok(Self::Register {
                     name: name.clone(),
                     varnode: VarnodeData::new(registers.register_space(), offset, size),
                 })
-            },
-            compiler::ReturnAddress::StackRelative { offset, size } => {
-                Ok(Self::StackRelative {
-                    offset: *offset,
-                    size: *size,
-                })
-            },
+            }
+            compiler::ReturnAddress::StackRelative { offset, size } => Ok(Self::StackRelative {
+                offset: *offset,
+                size: *size,
+            }),
         }
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[derive(serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 pub struct StackPointer {
     name: Arc<str>,
     varnode: VarnodeData,
@@ -148,10 +205,16 @@ pub struct StackPointer {
 }
 
 impl StackPointer {
-    pub fn from_spec(spec: &compiler::StackPointer, registers: &RegisterNames, manager: &SpaceManager) -> Result<Self, DeserialiseError> {
-        let space = manager.space_by_name(&spec.space)
-            .ok_or_else(|| DeserialiseError::Invariant("stack pointer space for convention invalid"))?;
-        let (name, offset, size) = registers.get_by_name(&*spec.register)
+    pub fn from_spec(
+        spec: &compiler::StackPointer,
+        registers: &RegisterNames,
+        manager: &SpaceManager,
+    ) -> Result<Self, DeserialiseError> {
+        let space = manager.space_by_name(&spec.space).ok_or_else(|| {
+            DeserialiseError::Invariant("stack pointer space for convention invalid")
+        })?;
+        let (name, offset, size) = registers
+            .get_by_name(&*spec.register)
             .ok_or_else(|| DeserialiseError::Invariant("named stack pointer invalid"))?;
 
         Ok(Self {
@@ -166,8 +229,7 @@ impl StackPointer {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[derive(serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 pub struct Convention {
     name: String,
     data_organisation: Option<compiler::DataOrganisation>,
@@ -181,19 +243,17 @@ impl Convention {
     pub fn from_spec(
         spec: &Specification,
         registers: &RegisterNames,
-        manager: &SpaceManager
+        manager: &SpaceManager,
     ) -> Result<Self, DeserialiseError> {
         Ok(Self {
             name: spec.name.clone(),
             data_organisation: spec.data_organisation.clone(),
-            stack_pointer: StackPointer::from_spec(&spec.stack_pointer,
-                                                   registers,
-                                                   manager)?,
-            return_address: ReturnAddress::from_spec(&spec.return_address,
-                                                     registers)?,
-            default_prototype: Prototype::from_spec(&spec.default_prototype,
-                                                    registers)?,
-            additional_prototypes: spec.additional_prototypes.iter()
+            stack_pointer: StackPointer::from_spec(&spec.stack_pointer, registers, manager)?,
+            return_address: ReturnAddress::from_spec(&spec.return_address, registers)?,
+            default_prototype: Prototype::from_spec(&spec.default_prototype, registers)?,
+            additional_prototypes: spec
+                .additional_prototypes
+                .iter()
                 .map(|prototype| Prototype::from_spec(prototype, registers))
                 .collect::<Result<_, _>>()?,
         })
@@ -209,5 +269,13 @@ impl Convention {
 
     pub fn default_prototype(&self) -> &Prototype {
         &self.default_prototype
+    }
+
+    pub fn additional_prototypes(&self) -> &[Prototype] {
+        &self.additional_prototypes
+    }
+
+    pub fn prototypes(&self) -> impl Iterator<Item = &Prototype> {
+        std::iter::once(&self.default_prototype).chain(self.additional_prototypes.iter())
     }
 }
