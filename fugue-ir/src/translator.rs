@@ -479,7 +479,7 @@ impl Translator {
         Translator::resolve_handles(&mut walker, &self.manager, &self.symbol_table)?;
 
         walker.base_state();
-        walker.apply_commits(db, &self.manager, &self.symbol_table);
+        walker.apply_commits(db, &self.manager, &self.symbol_table)?;
 
         let mut fall_offset = walker.length();
 
@@ -497,7 +497,7 @@ impl Translator {
                 Translator::resolve_handles(&mut dwalker, &self.manager, &self.symbol_table)?;
 
                 dwalker.base_state();
-                dwalker.apply_commits(db, &self.manager, &self.symbol_table);
+                dwalker.apply_commits(db, &self.manager, &self.symbol_table)?;
 
                 let length = dwalker.length();
 
@@ -550,7 +550,7 @@ impl Translator {
         Translator::resolve_handles(&mut walker, &self.manager, &self.symbol_table)?;
 
         walker.base_state();
-        walker.apply_commits(db, &self.manager, &self.symbol_table);
+        walker.apply_commits(db, &self.manager, &self.symbol_table)?;
 
         let mut fall_offset = walker.length();
 
@@ -568,7 +568,7 @@ impl Translator {
                 Translator::resolve_handles(&mut dwalker, &self.manager, &self.symbol_table)?;
 
                 dwalker.base_state();
-                dwalker.apply_commits(db, &self.manager, &self.symbol_table);
+                dwalker.apply_commits(db, &self.manager, &self.symbol_table)?;
 
                 let length = dwalker.length();
 
@@ -621,7 +621,7 @@ impl Translator {
         Translator::resolve_handles(&mut walker, &self.manager, &self.symbol_table)?;
 
         walker.base_state();
-        walker.apply_commits(db, &self.manager, &self.symbol_table);
+        walker.apply_commits(db, &self.manager, &self.symbol_table)?;
 
         let mut fall_offset = walker.length();
 
@@ -639,7 +639,7 @@ impl Translator {
                 Translator::resolve_handles(&mut dwalker, &self.manager, &self.symbol_table)?;
 
                 dwalker.base_state();
-                dwalker.apply_commits(db, &self.manager, &self.symbol_table);
+                dwalker.apply_commits(db, &self.manager, &self.symbol_table)?;
 
                 let length = dwalker.length();
 
@@ -692,12 +692,12 @@ impl Translator {
                     if tsym.is_subtable() {
                         break 'inner;
                     } else {
-                        let h = tsym.fixed_handle(walker, manager, symbol_table);
+                        let h = tsym.fixed_handle(walker, manager, symbol_table)?;
                         walker.set_parent_handle(h);
                     }
                 } else {
                     let pexp = unsafe { operand.defining_expression().unsafe_unwrap() };
-                    let res = pexp.value(walker, symbol_table);
+                    let res = pexp.value(walker, symbol_table)?;
                     let const_space = manager.constant_space_ref();
                     if let Some(handle) = walker.parent_handle_mut() {
                         handle.space = const_space;
@@ -738,7 +738,7 @@ impl Translator {
     ) -> Result<(), Error> {
         let ctor = symbol_table.resolve(root, walker)?;
         walker.set_constructor(ctor);
-        ctor.apply_context(walker, symbol_table);
+        ctor.apply_context(walker, symbol_table)?;
 
         while walker.is_state() {
             let ct = walker.unchecked_constructor();
@@ -758,7 +758,7 @@ impl Translator {
                 if let Some(tsym) = operand.defining_symbol(symbol_table) {
                     if let Some(sub_ct) = tsym.resolve(walker, symbol_table)? {
                         walker.set_constructor(sub_ct);
-                        sub_ct.apply_context(walker, symbol_table);
+                        sub_ct.apply_context(walker, symbol_table)?;
                         break 'inner;
                     }
                 }

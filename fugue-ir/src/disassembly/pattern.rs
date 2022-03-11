@@ -4,7 +4,7 @@ use crate::deserialise::Error as DeserialiseError;
 use crate::deserialise::parse::XmlExt;
 use crate::disassembly::symbol::{Symbol, SymbolTable};
 use crate::disassembly::walker::ParserWalker;
-//use crate::error::disassembly as di;
+use crate::disassembly::error::Error;
 
 use std::mem::size_of;
 
@@ -77,8 +77,8 @@ impl PatternExpression {
         }
     }
 
-    pub fn value<'b, 'c, 'z>(&'b self, walker: &mut ParserWalker<'b, 'c, 'z>, symbols: &'b SymbolTable) -> i64 {
-        match self {
+    pub fn value<'b, 'c, 'z>(&'b self, walker: &mut ParserWalker<'b, 'c, 'z>, symbols: &'b SymbolTable) -> Result<i64, Error> {
+        Ok(match self {
             Self::TokenField {
                 big_endian,
                 sign_bit,
@@ -94,14 +94,14 @@ impl PatternExpression {
                 let mut tsize = size as isize;
 
                 while tsize >= size_of::<u32>() as isize {
-                    let tmp = walker.unchecked_instruction_bytes(start as usize, size_of::<u32>());
+                    let tmp = walker.instruction_bytes(start as usize, size_of::<u32>())?;
                     res = res.checked_shl(8 * size_of::<u32>() as u32).unwrap_or(0);
                     res = (res as u64 | tmp as u64) as i64;
                     start += size_of::<u32>() as isize;
                     tsize = (*byte_end as isize) - start + 1;
                 }
                 if tsize > 0 {
-                    let tmp = walker.unchecked_instruction_bytes(start as usize, tsize as usize);
+                    let tmp = walker.instruction_bytes(start as usize, tsize as usize)?;
                     res = res.checked_shl(8 * tsize as u32).unwrap_or(0);
                     res = (res as u64 | tmp as u64) as i64;
                 }
@@ -173,58 +173,58 @@ impl PatternExpression {
                         let sym = symbols.unchecked_symbol(*subsym_id); /* .ok_or_else(|| Error::InvalidSymbol)?; */
                         sym.pattern_value()
                     } else {
-                        return 0
+                        return Ok(0)
                     }
                 } else {
                     unreachable!()
                     //return Err(Error::InconsistentState)
                 };
 
-                walker.resolve_with(pexp, ctor, *index, symbols)
+                walker.resolve_with(pexp, ctor, *index, symbols)?
             },
             Self::StartInstruction => walker.address().offset() as i64,
             Self::EndInstruction => walker.next_address().map(|a| a.offset() as i64).unwrap_or(0),
             Self::Plus(ref lhs, ref rhs) => {
-                lhs.value(walker, symbols)
-                    .wrapping_add(rhs.value(walker, symbols))
+                lhs.value(walker, symbols)?
+                    .wrapping_add(rhs.value(walker, symbols)?)
             },
             Self::Sub(ref lhs, ref rhs) => {
-                lhs.value(walker, symbols)
-                    .wrapping_sub(rhs.value(walker, symbols))
+                lhs.value(walker, symbols)?
+                    .wrapping_sub(rhs.value(walker, symbols)?)
             },
             Self::Mult(ref lhs, ref rhs) => {
-                lhs.value(walker, symbols)
-                    .wrapping_mul(rhs.value(walker, symbols))
+                lhs.value(walker, symbols)?
+                    .wrapping_mul(rhs.value(walker, symbols)?)
             },
             Self::LeftShift(ref lhs, ref rhs) => {
-                let l = lhs.value(walker, symbols);
-                let r = rhs.value(walker, symbols);
+                let l = lhs.value(walker, symbols)?;
+                let r = rhs.value(walker, symbols)?;
 
                 l.checked_shl(r as u8 as u32).unwrap_or(0)
             },
             Self::RightShift(ref lhs, ref rhs) => {
-                let l = lhs.value(walker, symbols);
-                let r = rhs.value(walker, symbols);
+                let l = lhs.value(walker, symbols)?;
+                let r = rhs.value(walker, symbols)?;
 
                 l.checked_shr(r as u8 as u32)
                     .unwrap_or(if l < 0 { -1 } else { 0 })
             },
             Self::And(ref lhs, ref rhs) => {
-                lhs.value(walker, symbols) & rhs.value(walker, symbols)
+                lhs.value(walker, symbols)? & rhs.value(walker, symbols)?
             },
             Self::Or(ref lhs, ref rhs) => {
-                lhs.value(walker, symbols) | rhs.value(walker, symbols)
+                lhs.value(walker, symbols)? | rhs.value(walker, symbols)?
             },
             Self::Xor(ref lhs, ref rhs) => {
-                lhs.value(walker, symbols) ^ rhs.value(walker, symbols)
+                lhs.value(walker, symbols)? ^ rhs.value(walker, symbols)?
             },
             Self::Div(ref lhs, ref rhs) => {
-                lhs.value(walker, symbols)
-                    .wrapping_div(rhs.value(walker, symbols))
+                lhs.value(walker, symbols)?
+                    .wrapping_div(rhs.value(walker, symbols)?)
             },
-            Self::Minus(ref operand) => -operand.value(walker, symbols),
-            Self::Not(ref operand) => !operand.value(walker, symbols),
-        }
+            Self::Minus(ref operand) => -operand.value(walker, symbols)?,
+            Self::Not(ref operand) => !operand.value(walker, symbols)?,
+        })
     }
 
     pub fn from_xml(input: xml::Node) -> Result<Self, DeserialiseError> {

@@ -30,10 +30,10 @@ pub enum Context {
 }
 
 impl Context {
-    pub fn apply<'b, 'c, 'z>(&'b self, walker: &mut ParserWalker<'b, 'c, 'z>, symbols: &'b SymbolTable) {
-        match self {
+    pub fn apply<'b, 'c, 'z>(&'b self, walker: &mut ParserWalker<'b, 'c, 'z>, symbols: &'b SymbolTable) -> Result<(), Error> {
+        Ok(match self {
             Self::Operator { num, shift, mask, pattern_value } => {
-                let value = pattern_value.value(walker, symbols) as u32;
+                let value = pattern_value.value(walker, symbols)? as u32;
                 let v = value.checked_shl(*shift).unwrap_or(0);
                 walker.set_context_word(*num, v, *mask);
             },
@@ -41,7 +41,7 @@ impl Context {
                 let sym = symbols.unchecked_symbol(*symbol_id); //.ok_or_else(|| Error::InvalidSymbol)?;
                 walker.add_commit(sym, *num, *mask, *flow);
             },
-        }
+        })
     }
 
     pub fn from_xml(input: xml::Node) -> Result<Self, DeserialiseError> {
@@ -92,10 +92,11 @@ impl PartialEq for Constructor {
 impl Eq for Constructor { }
 
 impl Constructor {
-    pub fn apply_context<'b, 'c, 'z>(&'b self, walker: &mut ParserWalker<'b, 'c, 'z>, symbols: &'b SymbolTable) {
+    pub fn apply_context<'b, 'c, 'z>(&'b self, walker: &mut ParserWalker<'b, 'c, 'z>, symbols: &'b SymbolTable) -> Result<(), Error> {
         for context in &self.context {
-            context.apply(walker, symbols);
+            context.apply(walker, symbols)?;
         }
+        Ok(())
     }
 
     pub fn minimum_length(&self) -> usize {

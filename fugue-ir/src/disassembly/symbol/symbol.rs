@@ -265,7 +265,7 @@ impl Symbol {
                 ..
             } => {
                 if !*table_is_filled {
-                    let index = pattern_value.value(walker, symbols);
+                    let index = pattern_value.value(walker, symbols)?;
                     if index < 0
                         || matches!(value_table.get(index as usize), None | Some(0xbadbeef))
                     {
@@ -284,7 +284,7 @@ impl Symbol {
                 ..
             } => {
                 if !*table_is_filled {
-                    let index = pattern_value.value(walker, symbols);
+                    let index = pattern_value.value(walker, symbols)?;
                     if index < 0 || matches!(varnode_table.get(index as usize), None | Some(None)) {
                         Err(Error::InvalidSymbol)
                     } else {
@@ -301,7 +301,7 @@ impl Symbol {
                 ..
             } => {
                 if !*table_is_filled {
-                    let index = pattern_value.value(walker, symbols);
+                    let index = pattern_value.value(walker, symbols)?;
                     if index < 0
                         || index as usize >= name_table.len()
                         || (name_table[index as usize].len() == 1
@@ -332,8 +332,8 @@ impl Symbol {
         walker: &mut ParserWalker<'b, 'c, 'z>,
         manager: &'b SpaceManager,
         symbols: &'b SymbolTable,
-    ) -> FixedHandle {
-        match self {
+    ) -> Result<FixedHandle, Error> {
+        Ok(match self {
             Self::Epsilon { .. } => FixedHandle {
                 space: manager.constant_space_ref(),
                 size: 0,
@@ -348,7 +348,7 @@ impl Symbol {
                 space: manager.constant_space_ref(),
                 size: 0,
                 offset_space: None,
-                offset_offset: pattern_value.value(walker, symbols) as u64,
+                offset_offset: pattern_value.value(walker, symbols)? as u64,
                 offset_size: 0,
                 temporary_space: None,
                 temporary_offset: 0,
@@ -401,11 +401,11 @@ impl Symbol {
                 varnode_table,
                 ..
             } => {
-                let index = pattern_value.value(walker, symbols);
+                let index = pattern_value.value(walker, symbols)?;
                 let varnode = symbols.unchecked_symbol(
                     unsafe { varnode_table.get_unchecked(index as usize).unsafe_unwrap() }, //.ok_or_else(|| Error::InvalidSymbol)?
                 ); //.ok_or_else(|| Error::InvalidSymbol)?;
-                varnode.fixed_handle(walker, manager, symbols)
+                varnode.fixed_handle(walker, manager, symbols)?
             }
             Self::ValueMap {
                 pattern_value,
@@ -415,14 +415,14 @@ impl Symbol {
                 space: manager.constant_space_ref(),
                 size: 0,
                 offset_space: None,
-                offset_offset: value_table[pattern_value.value(walker, symbols) as usize] as u64,
+                offset_offset: value_table[pattern_value.value(walker, symbols)? as usize] as u64,
                 offset_size: 0,
                 temporary_space: None,
                 temporary_offset: 0,
             },
-            _ => panic!("unexpected symbol: {:?}", self),
-            //_ => return Err(Error::InvalidHandle)
-        }
+            //_ => panic!("unexpected symbol: {:?}", self),
+            _ => return Err(Error::InvalidHandle)
+        })
     }
 
     pub fn pattern_value(&self) -> &PatternExpression {
@@ -464,7 +464,7 @@ impl Symbol {
                     }
                 } else {
                     let value = if let Some(ref def_expr) = def_expr {
-                        def_expr.value(walker, symbols)
+                        def_expr.value(walker, symbols).unwrap()
                     } else {
                         unreachable!()
                     };
@@ -485,7 +485,7 @@ impl Symbol {
                 varnode_table,
                 ..
             } => {
-                let index = pattern_value.value(walker, symbols);
+                let index = pattern_value.value(walker, symbols).unwrap();
                 if index >= 0 && (index as usize) < varnode_table.len() {
                     write!(
                         fmt,
@@ -504,14 +504,14 @@ impl Symbol {
                 name_table,
                 ..
             } => {
-                let index = pattern_value.value(walker, symbols) as usize;
+                let index = pattern_value.value(walker, symbols).unwrap() as usize;
                 write!(fmt, "{}", name_table[index])
             }
             Self::Epsilon { .. } => {
                 write!(fmt, "0")
             }
             Self::Value { pattern_value, .. } => {
-                let value = pattern_value.value(walker, symbols);
+                let value = pattern_value.value(walker, symbols).unwrap();
                 if value < 0 {
                     write!(fmt, "-{:#x}", -(value as i128))
                 } else {
@@ -523,7 +523,7 @@ impl Symbol {
                 value_table,
                 ..
             } => {
-                let index = pattern_value.value(walker, symbols) as usize;
+                let index = pattern_value.value(walker, symbols).unwrap() as usize;
                 let value = *unsafe { value_table.get_unchecked(index) };
                 if value < 0 {
                     write!(fmt, "-{:#x}", -(value as i128))

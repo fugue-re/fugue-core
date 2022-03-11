@@ -359,9 +359,9 @@ impl<'b, 'z> ParserContext<'b, 'z> {
         self.context_commit.push(set);
     }
 
-    pub fn apply_commits<'a, 'c>(&'c mut self, db: &mut ContextDatabase, manager: &'b SpaceManager, symbols: &'b SymbolTable) {
+    pub fn apply_commits<'a, 'c>(&'c mut self, db: &mut ContextDatabase, manager: &'b SpaceManager, symbols: &'b SymbolTable) -> Result<(), Error> {
         if self.context_commit.is_empty() {
-            return
+            return Ok(())
         }
 
         let commits = self.context_commit.clone();
@@ -374,7 +374,7 @@ impl<'b, 'z> ParserContext<'b, 'z> {
                     //.ok_or_else(|| Error::InvalidHandle)?;
                 AddressValue::new(handle.space, handle.offset_offset)
             } else {
-                let handle = symbol.fixed_handle(&mut nwalker, manager, symbols);
+                let handle = symbol.fixed_handle(&mut nwalker, manager, symbols)?;
                 AddressValue::new(handle.space, handle.offset_offset)
             };
 
@@ -395,6 +395,8 @@ impl<'b, 'z> ParserContext<'b, 'z> {
                 }
             }
         }
+
+        Ok(())
     }
 
     pub fn constructor(&self, point: usize) -> Option<&'b Constructor> {
@@ -621,7 +623,7 @@ impl<'b, 'c, 'z> ParserWalker<'b, 'c, 'z> {
         }
     }
 
-    pub fn resolve_with<'d>(&'d mut self, pat: &'b PatternExpression, ctor: &'b Constructor, index: usize, symbols: &'b SymbolTable) -> i64 {
+    pub fn resolve_with<'d>(&'d mut self, pat: &'b PatternExpression, ctor: &'b Constructor, index: usize, symbols: &'b SymbolTable) -> Result<i64, Error> {
         //resolve_with_aux(self, pat, ctor, index, symbols)
         let mut cur_depth = self.depth;
         let mut point = self.unchecked_point();
@@ -635,11 +637,11 @@ impl<'b, 'c, 'z> ParserWalker<'b, 'c, 'z> {
                 nwalker.point = Some(nwalker.ctx.state.len());
                 nwalker.ctx.state.push(state);
 
-                let value = pat.value(&mut nwalker, symbols);
+                let value = pat.value(&mut nwalker, symbols)?;
 
                 nwalker.ctx.state.pop(); // remove temp. state
 
-                return value
+                return Ok(value)
             }
             cur_depth -= 1;
             point = self.ctx.point(unsafe { point.parent.unsafe_unwrap() });
@@ -662,18 +664,18 @@ impl<'b, 'c, 'z> ParserWalker<'b, 'c, 'z> {
         nwalker.point = Some(nwalker.ctx.state.len());
         nwalker.ctx.state.push(state);
 
-        let value = pat.value(&mut nwalker, symbols);
+        let value = pat.value(&mut nwalker, symbols)?;
 
         nwalker.ctx.state.pop(); // remove temp. state
 
-        value
+        Ok(value)
     }
 
     pub fn add_commit(&mut self, symbol: &'b Symbol, num: usize, mask: u32, flow: bool) {
         self.ctx.add_commit(symbol, num, mask, flow)
     }
 
-    pub fn apply_commits(&mut self, db: &mut ContextDatabase, manager: &'b SpaceManager, symbols: &'b SymbolTable) {
+    pub fn apply_commits(&mut self, db: &mut ContextDatabase, manager: &'b SpaceManager, symbols: &'b SymbolTable) -> Result<(), Error> {
         self.ctx.apply_commits(db, manager, symbols)
     }
 
