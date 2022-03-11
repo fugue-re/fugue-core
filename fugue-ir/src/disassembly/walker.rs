@@ -259,10 +259,14 @@ impl<'b, 'z> ParserContext<'b, 'z> {
         &mut self.state[0]
     }
 
-    pub fn instruction_bytes(&self, start: usize, size: usize, offset: usize) -> u32 {
+    pub fn instruction_bytes(&self, start: usize, size: usize, offset: usize) -> Result<u32, Error> {
         let offset = offset + start;
 
-        debug_assert!(offset < self.backing.len());
+        if offset >= self.backing.len() {
+            return Err(Error::InstructionResolution)
+        }
+
+        //debug_assert!(offset < self.backing.len());
         //debug_assert!(offset + size <= self.backing.len());
 
         let size = (self.backing.len() - offset).min(size);
@@ -275,16 +279,22 @@ impl<'b, 'z> ParserContext<'b, 'z> {
             result |= *b as u32;
         }
 
-        result
+        Ok(result)
     }
 
-    pub fn instruction_bits(&self, start: usize, size: usize, offset: usize) -> u32 {
+    pub fn instruction_bits(&self, start: usize, size: usize, offset: usize) -> Result<u32, Error> {
         let offset = offset + (start / 8);
         let start = start % 8;
         let bytes_size = (start + size - 1)/8 + 1;
 
-        debug_assert!(offset < self.backing.len());
-        debug_assert!(offset + bytes_size <= self.backing.len());
+        //debug_assert!(offset < self.backing.len());
+        //debug_assert!(offset + bytes_size <= self.backing.len());
+
+        if offset >= self.backing.len() {
+            return Err(Error::InstructionResolution)
+        }
+
+        let bytes_size = (self.backing.len() - offset).min(bytes_size);
 
         let buf = &self.backing[offset..];
         let mut result = 0u32;
@@ -297,7 +307,7 @@ impl<'b, 'z> ParserContext<'b, 'z> {
         result = result.checked_shl(8 * (size_of::<u32>() - bytes_size) as u32 + start as u32).unwrap_or(0);
         result = result.checked_shr(8 * size_of::<u32>() as u32 - size as u32).unwrap_or(0);
 
-        result
+        Ok(result)
     }
 
     pub fn context_bytes(&self, start: usize, size: usize) -> u32 {
@@ -722,21 +732,21 @@ impl<'b, 'c, 'z> ParserWalker<'b, 'c, 'z> {
 
     pub fn instruction_bytes(&self, offset: usize, size: usize) -> Result<u32, Error> {
         let point = self.ctx.point(self.point.ok_or_else(|| Error::InconsistentState)?);
-        Ok(self.ctx.instruction_bytes(offset, size, point.offset))
+        Ok(self.ctx.instruction_bytes(offset, size, point.offset)?)
     }
 
     pub fn unchecked_instruction_bytes(&self, offset: usize, size: usize) -> u32 {
         let point = self.ctx.point(unsafe { self.point.unsafe_unwrap() });
-        self.ctx.instruction_bytes(offset, size, point.offset)
+        self.ctx.instruction_bytes(offset, size, point.offset).unwrap()
     }
 
     pub fn instruction_bits(&self, offset: usize, size: usize) -> Result<u32, Error> {
         let point = self.ctx.point(self.point.ok_or_else(|| Error::InconsistentState)?);
-        Ok(self.ctx.instruction_bits(offset, size, point.offset))
+        Ok(self.ctx.instruction_bits(offset, size, point.offset)?)
     }
 
     pub fn unchecked_instruction_bits(&self, offset: usize, size: usize) -> u32 {
         let point = self.ctx.point(unsafe { self.point.unsafe_unwrap() });
-        self.ctx.instruction_bits(offset, size, point.offset)
+        self.ctx.instruction_bits(offset, size, point.offset).unwrap()
     }
 }
