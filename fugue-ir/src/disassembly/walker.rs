@@ -263,8 +263,9 @@ impl<'b, 'z> ParserContext<'b, 'z> {
         let offset = offset + start;
 
         debug_assert!(offset < self.backing.len());
-        debug_assert!(offset + size <= self.backing.len());
+        //debug_assert!(offset + size <= self.backing.len());
 
+        let size = (self.backing.len() - offset).min(size);
         let buf = &self.backing[offset..];
 
         let mut result = 0u32;
