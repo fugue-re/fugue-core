@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use rug::integer::Order as BVOrder;
 use rug::Integer as BigInt;
-use crate::error::ParseError;
+use crate::error::{ParseError, TryFromBitVecError};
 
 /// BitVec(value, mask, is_signed, number of bits)
 #[derive(Debug, Clone, Hash, serde::Deserialize, serde::Serialize)]
@@ -1116,6 +1116,26 @@ macro_rules! impl_to_u_for {
                 }
             }
         }
+
+        ::paste::paste! {
+            impl ::std::convert::TryFrom<&'_ BitVec> for [< u $t >] {
+                type Error = TryFromBitVecError;
+
+                fn try_from(bv: &BitVec) -> Result<[< u $t >], TryFromBitVecError> {
+                    bv.[< to_u $t >]().ok_or(TryFromBitVecError)
+                }
+            }
+        }
+
+        ::paste::paste! {
+            impl ::std::convert::TryFrom<BitVec> for [< u $t >] {
+                type Error = TryFromBitVecError;
+
+                fn try_from(bv: BitVec) -> Result<[< u $t >], TryFromBitVecError> {
+                    bv.[< to_u $t >]().ok_or(TryFromBitVecError)
+                }
+            }
+        }
     };
 }
 
@@ -1125,6 +1145,26 @@ macro_rules! impl_to_i_for {
             ::paste::paste! {
                 pub fn [< to_i $t >](&self) -> Option<[< i $t >]> {
                     self.0.[< to_u $t >]().map(|v| v as [< i $t >])
+                }
+            }
+        }
+
+        ::paste::paste! {
+            impl ::std::convert::TryFrom<&'_ BitVec> for [< i $t >] {
+                type Error = TryFromBitVecError;
+
+                fn try_from(bv: &BitVec) -> Result<[< i $t >], TryFromBitVecError> {
+                    bv.[< to_i $t >]().ok_or(TryFromBitVecError)
+                }
+            }
+        }
+
+        ::paste::paste! {
+            impl ::std::convert::TryFrom<BitVec> for [< i $t >] {
+                type Error = TryFromBitVecError;
+
+                fn try_from(bv: BitVec) -> Result<[< i $t >], TryFromBitVecError> {
+                    bv.[< to_i $t >]().ok_or(TryFromBitVecError)
                 }
             }
         }
