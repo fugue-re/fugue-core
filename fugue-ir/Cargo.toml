@@ -1,6 +1,6 @@
 [package]
 name = "fugue-ir"
-version = "0.2.63"
+version = "0.2.64"
 authors = ["Sam Thomas <st@xv.ax>"]
 edition = "2021"
 license = "MIT"
@@ -12,9 +12,8 @@ fixed-u64 = ["fugue-bv/fixed-u64"]
 fixed-u128 = ["fugue-bv/fixed-u128"]
 
 [dependencies]
+ahash = { version = "0.7", features = ["serde"] }
 bumpalo = { version = "3.8", features = ["boxed", "collections"] }
-fnv = "1"
-fxhash = "0.2"
 fugue-arch = { path = "../fugue-arch", version = "0.2", registry = "fugue" }
 fugue-bv = { path = "../fugue-bv", version = "0.2", registry = "fugue", default-features = false }
 fugue-bytes = { path = "../fugue-bytes", version = "0.2", registry = "fugue" }

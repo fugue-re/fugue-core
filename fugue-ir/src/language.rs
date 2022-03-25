@@ -8,7 +8,7 @@ use crate::compiler::Specification as CSpec;
 use crate::processor::Specification as PSpec;
 use crate::Translator;
 
-use fnv::FnvHashMap as Map;
+use ahash::AHashMap as Map;
 use fugue_arch::{ArchitectureDef, ArchDefParseError};
 use itertools::Itertools;
 use walkdir::WalkDir;

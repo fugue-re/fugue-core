@@ -8,9 +8,9 @@ use crate::space::{AddressSpace, AddressSpaceId};
 use crate::space_manager::SpaceManager;
 
 use std::fmt;
-use std::sync::Arc;
 
 use unsafe_unwrap::UnsafeUnwrap;
+use ustr::Ustr;
 
 #[derive(Debug, Clone)]
 pub struct FixedHandle<'space> {
@@ -62,24 +62,24 @@ pub enum Symbol {
     UserOp {
         id: usize,
         scope: usize,
-        name: Arc<str>,
+        name: Ustr,
         index: usize,
     },
     Epsilon {
         id: usize,
         scope: usize,
-        name: Arc<str>,
+        name: Ustr,
     },
     Value {
         id: usize,
         scope: usize,
-        name: Arc<str>,
+        name: Ustr,
         pattern_value: PatternExpression,
     },
     ValueMap {
         id: usize,
         scope: usize,
-        name: Arc<str>,
+        name: Ustr,
         pattern_value: PatternExpression,
         value_table: Vec<i64>,
         table_is_filled: bool,
@@ -87,7 +87,7 @@ pub enum Symbol {
     Name {
         id: usize,
         scope: usize,
-        name: Arc<str>,
+        name: Ustr,
         pattern_value: PatternExpression,
         name_table: Vec<String>,
         table_is_filled: bool,
@@ -95,7 +95,7 @@ pub enum Symbol {
     Varnode {
         id: usize,
         scope: usize,
-        name: Arc<str>,
+        name: Ustr,
         space: AddressSpaceId,
         offset: u64,
         size: usize,
@@ -103,7 +103,7 @@ pub enum Symbol {
     Context {
         id: usize,
         scope: usize,
-        name: Arc<str>,
+        name: Ustr,
         pattern_value: PatternExpression,
         varnode_id: usize,
         high: usize,
@@ -113,7 +113,7 @@ pub enum Symbol {
     VarnodeList {
         id: usize,
         scope: usize,
-        name: Arc<str>,
+        name: Ustr,
         pattern_value: PatternExpression,
         varnode_table: Vec<Option<usize>>,
         table_is_filled: bool,
@@ -121,7 +121,7 @@ pub enum Symbol {
     Operand {
         id: usize,
         scope: usize,
-        name: Arc<str>,
+        name: Ustr,
         handle_index: usize,
         offset: usize,
         base: Option<usize>,
@@ -134,31 +134,31 @@ pub enum Symbol {
     Start {
         id: usize,
         scope: usize,
-        name: Arc<str>,
+        name: Ustr,
         pattern_value: PatternExpression,
     },
     End {
         id: usize,
         scope: usize,
-        name: Arc<str>,
+        name: Ustr,
         pattern_value: PatternExpression,
     },
     Subtable {
         id: usize,
         scope: usize,
-        name: Arc<str>,
+        name: Ustr,
         constructors: Vec<Constructor>,
         decision_tree: DecisionNode,
     },
     FlowDest {
         id: usize,
         scope: usize,
-        name: Arc<str>,
+        name: Ustr,
     },
     FlowRef {
         id: usize,
         scope: usize,
-        name: Arc<str>,
+        name: Ustr,
     },
 }
 
@@ -547,7 +547,7 @@ pub struct SymbolBuilder {
     pub(super) kind: SymbolKind,
     pub(super) id: usize,
     pub(super) scope: usize,
-    pub(super) name: Arc<str>,
+    pub(super) name: Ustr,
 }
 
 impl Default for SymbolBuilder {
@@ -556,7 +556,7 @@ impl Default for SymbolBuilder {
             kind: SymbolKind::UserOp,
             id: 0,
             scope: 0,
-            name: Arc::<str>::from(""),
+            name: Ustr::from(""),
         }
     }
 }

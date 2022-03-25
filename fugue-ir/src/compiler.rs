@@ -2,7 +2,7 @@ use crate::deserialise::error::Error as DeserialiseError;
 use crate::deserialise::parse::XmlExt;
 use crate::error::Error;
 
-use fnv::FnvHashMap as Map;
+use ahash::AHashMap as Map;
 
 use std::fs::File;
 use std::io::Read;
@@ -403,7 +403,7 @@ impl Specification {
 
         Ok(Self {
             name: name.into(),
-            data_organisation: data_organisation,
+            data_organisation,
             stack_pointer: stack_pointer.unwrap(),
             return_address: return_address.unwrap(),
             default_prototype: default_prototype.unwrap(),

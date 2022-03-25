@@ -1,6 +1,5 @@
 use std::fmt;
-use std::sync::Arc;
-
+use crate::disassembly::lift::UserOpStr;
 use crate::disassembly::{Opcode, VarnodeData};
 use crate::address::AddressValue;
 use crate::space::AddressSpaceId;
@@ -54,7 +53,7 @@ pub enum PCodeOp {
         destination: Operand,
     },
     Intrinsic {
-        name: Arc<str>,
+        name: UserOpStr,
         operands: SmallVec<[Operand; 4]>,
         result: Option<Operand>,
     },
@@ -374,7 +373,7 @@ impl PCodeOp {
     pub(crate) fn from_parts<I: ExactSizeIterator<Item=VarnodeData>>(
         manager: &SpaceManager,
         registers: &RegisterNames,
-        user_ops: &[Arc<str>],
+        user_ops: &[UserOpStr],
         opcode: Opcode,
         inputs: I,
         output: Option<VarnodeData>,

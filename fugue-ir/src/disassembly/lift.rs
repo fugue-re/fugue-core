@@ -17,7 +17,8 @@ pub use bumpalo::vec as arena_vec;
 pub use bumpalo::format as arena_format;
 pub use bumpalo::Bump as Arena;
 
-use fnv::FnvHashMap as Map;
+use ahash::AHashMap as Map;
+use ustr::Ustr;
 use std::fmt;
 use std::mem::swap;
 use std::ops::Deref;
@@ -28,6 +29,9 @@ use unsafe_unwrap::UnsafeUnwrap;
 
 use crate::il::ecode::{self, ECode};
 use crate::il::pcode::{self, PCode};
+
+pub type FloatFormats = Map<usize, Arc<FloatFormat>>;
+pub type UserOpStr = Ustr;
 
 #[derive(Debug)]
 pub struct PCodeRaw<'z> {
@@ -388,18 +392,18 @@ pub struct IRBuilderBase<'b, 'z> {
     labels: ArenaVec<'z, u64>,
 
     manager: &'b SpaceManager,
-    float_formats: &'b Map<usize, Arc<FloatFormat>>,
+    float_formats: &'b FloatFormats,
     registers: &'b RegisterNames,
-    user_ops: &'b [Arc<str>],
+    user_ops: &'b [UserOpStr],
 }
 
 impl<'b, 'z> IRBuilderBase<'b, 'z> {
     pub fn empty(
         alloc: &'z IRBuilderArena,
         manager: &'b SpaceManager,
-        float_formats: &'b Map<usize, Arc<FloatFormat>>,
+        float_formats: &'b FloatFormats,
         registers: &'b RegisterNames,
-        user_ops: &'b [Arc<str>],
+        user_ops: &'b [UserOpStr],
         unique_mask: u64,
     ) -> Self {
         Self {

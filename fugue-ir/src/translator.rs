@@ -5,11 +5,13 @@ use std::io::Read;
 use std::path::Path;
 use std::sync::Arc;
 
-use fnv::FnvHashMap as Map;
+use ahash::AHashMap as Map;
+
 use fugue_arch::ArchitectureDef;
 use itertools::Itertools;
 
 use unsafe_unwrap::UnsafeUnwrap;
+use ustr::Ustr;
 
 use crate::address::AddressValue;
 
@@ -19,6 +21,8 @@ use crate::deserialise::Error as DeserialiseError;
 use crate::disassembly::ContextDatabase;
 use crate::disassembly::Error as DisassemblyError;
 use crate::disassembly::PatternExpression;
+use crate::disassembly::lift::FloatFormats;
+use crate::disassembly::lift::UserOpStr;
 use crate::disassembly::{ParserContext, ParserState, ParserWalker, PCodeRaw, IRBuilder, IRBuilderBase, IRBuilderArena};
 use crate::disassembly::VarnodeData;
 use crate::disassembly::symbol::{FixedHandle, Symbol, SymbolScope, SymbolTable};
@@ -49,7 +53,7 @@ pub struct Translator {
     unique_mask: u64,
     maximum_delay: usize,
     section_count: usize,
-    float_formats: Map<usize, Arc<FloatFormat>>,
+    float_formats: FloatFormats,
     manager: SpaceManager,
     symbol_table: SymbolTable,
     root: Arc<Symbol>,
@@ -57,7 +61,7 @@ pub struct Translator {
     registers: Arc<RegisterNames>,
     registers_size: usize,
     program_counter: VarnodeData,
-    user_ops: Vec<Arc<str>>,
+    user_ops: Vec<UserOpStr>,
     context_db: ContextDatabase,
     architecture: ArchitectureDef,
     compiler_conventions: Map<String, Convention>,
@@ -140,7 +144,7 @@ impl Translator {
         &self.symbol_table
     }
 
-    pub fn user_ops(&self) -> &[Arc<str>] {
+    pub fn user_ops(&self) -> &[UserOpStr] {
         &self.user_ops
     }
 
@@ -242,7 +246,7 @@ impl Translator {
                     } = pattern_value
                     {
                         self.context_db
-                            .register_variable(name.clone(), *bit_start, *bit_end)
+                            .register_variable(name.as_str(), *bit_start, *bit_end)
                             .ok_or_else(|| DeserialiseError::Invariant("duplicate context variable"))?;
                     } else {
                         return Err(DeserialiseError::Invariant(
@@ -254,7 +258,7 @@ impl Translator {
                     index, name, ..
                 }) => {
                     if user_ops.len() <= *index {
-                        user_ops.resize_with(index + 1, || Arc::from(""));
+                        user_ops.resize_with(index + 1, || Ustr::from(""));
                     }
                     user_ops[*index] = name.clone();
                 }

@@ -1,3 +1,5 @@
+use ustr::Ustr;
+
 use crate::deserialise::parse::XmlExt;
 use crate::deserialise::Error as DeserialiseError;
 
@@ -7,7 +9,6 @@ use crate::disassembly::symbol::{Constructor, Symbol, SymbolBuilder, SymbolKind,
 use crate::space_manager::SpaceManager;
 
 use std::mem::take;
-use std::sync::Arc;
 
 #[derive(Clone)]
 #[derive(serde::Deserialize, serde::Serialize)]
@@ -99,7 +100,7 @@ impl SymbolTable {
             builder.kind = kind;
             builder.id = id;
             builder.scope = scope;
-            builder.name = Arc::from(name);
+            builder.name = Ustr::from(name);
 
             scopes[scope].add_symbol(id);
         }

@@ -1,4 +1,4 @@
-use fxhash::FxHashSet as Set;
+use ahash::AHashSet as Set;
 
 use crate::disassembly::symbol::{Symbol, SymbolTable};
 

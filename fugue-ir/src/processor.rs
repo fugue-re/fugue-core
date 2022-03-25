@@ -2,7 +2,7 @@ use crate::deserialise::error::Error as DeserialiseError;
 use crate::deserialise::parse::XmlExt;
 use crate::error::Error;
 
-use fnv::FnvHashMap as Map;
+use ahash::AHashMap as Map;
 
 use std::fs::File;
 use std::io::Read;

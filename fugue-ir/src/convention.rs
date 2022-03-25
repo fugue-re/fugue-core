@@ -1,3 +1,5 @@
+use ustr::Ustr;
+
 use crate::compiler::{self, Specification};
 use crate::deserialise::error::Error as DeserialiseError;
 use crate::disassembly::VarnodeData;
@@ -10,13 +12,13 @@ use std::sync::Arc;
 #[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 pub enum PrototypeOperand {
     Register {
-        name: Arc<str>,
+        name: Ustr,
         varnode: VarnodeData,
     },
     RegisterJoin {
-        first_name: Arc<str>,
+        first_name: Ustr,
         first_varnode: VarnodeData,
-        second_name: Arc<str>,
+        second_name: Ustr,
         second_varnode: VarnodeData,
     },
     StackRelative(u64),
@@ -164,14 +166,8 @@ impl Prototype {
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 pub enum ReturnAddress {
-    Register {
-        name: Arc<str>,
-        varnode: VarnodeData,
-    },
-    StackRelative {
-        offset: u64,
-        size: usize,
-    },
+    Register { name: Ustr, varnode: VarnodeData },
+    StackRelative { offset: u64, size: usize },
 }
 
 impl ReturnAddress {
@@ -199,7 +195,7 @@ impl ReturnAddress {
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 pub struct StackPointer {
-    name: Arc<str>,
+    name: Ustr,
     varnode: VarnodeData,
     space: Arc<AddressSpace>,
 }

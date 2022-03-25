@@ -1,4 +1,3 @@
-use std::sync::Arc;
 use std::fmt;
 
 use crate::address::Address;
@@ -9,6 +8,7 @@ use crate::space_manager::SpaceManager;
 use crate::translator::Translator;
 
 use fugue_bv::BitVec;
+use ustr::Ustr;
 
 use super::Register;
 
@@ -25,7 +25,7 @@ pub enum Operand {
         size: usize,
     },
     Register {
-        name: Arc<str>,
+        name: Ustr,
         offset: u64,
         size: usize,
     },

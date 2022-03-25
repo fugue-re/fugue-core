@@ -1,10 +1,11 @@
-use std::sync::Arc;
+use ustr::Ustr;
+
 use super::operand::Operand;
 
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 #[derive(serde::Deserialize, serde::Serialize)]
 pub struct Register {
-    pub(crate) name: Arc<str>,
+    pub(crate) name: Ustr,
     pub(crate) offset: u64,
     pub(crate) size: usize,
 }
@@ -21,7 +22,7 @@ impl From<Register> for Operand {
 
 impl Register {
     pub fn new<N>(name: N, offset: u64, size: usize) -> Self
-    where N: Into<Arc<str>> {
+    where N: Into<Ustr> {
         Self {
             name: name.into(),
             offset,

@@ -4,6 +4,7 @@ use std::hash::Hash;
 use std::sync::Arc;
 
 use crate::address::AddressValue;
+use crate::disassembly::lift::{FloatFormats, UserOpStr};
 use crate::disassembly::{IRBuilderArena, Opcode, VarnodeData};
 use crate::float_format::FloatFormat;
 use crate::il::pcode::{Operand, PCode, PCodeOp};
@@ -12,7 +13,6 @@ use crate::space::{AddressSpace, AddressSpaceId};
 use crate::space_manager::{FromSpace, IntoSpace, SpaceManager};
 use crate::Translator;
 
-use fnv::FnvHashMap as Map;
 use fugue_bv::BitVec;
 use smallvec::{smallvec, SmallVec};
 use ustr::Ustr;
@@ -521,7 +521,7 @@ pub enum ExprT<Loc, Val, Var> {
         SmallVec<[Box<ExprT<Loc, Val, Var>>; 4]>,
         usize,
     ),
-    Intrinsic(Ustr, SmallVec<[Box<ExprT<Loc, Val, Var>>; 4]>, usize),
+    Intrinsic(UserOpStr, SmallVec<[Box<ExprT<Loc, Val, Var>>; 4]>, usize),
 
     Val(Val), // BitVec -> T
     Var(Var), // String * usize -> T
@@ -1508,7 +1508,7 @@ where
         op: BinOp,
         expr1: E1,
         expr2: E2,
-        formats: &Map<usize, Arc<FloatFormat>>,
+        formats: &FloatFormats,
     ) -> Self
     where
         E1: Into<Self>,
@@ -1561,7 +1561,7 @@ where
         op: BinRel,
         expr1: E1,
         expr2: E2,
-        formats: &Map<usize, Arc<FloatFormat>>,
+        formats: &FloatFormats,
     ) -> Self
     where
         E1: Into<Self>,
@@ -1705,7 +1705,7 @@ where
         Self::binary_op_promote_bool(BinOp::XOR, expr1, expr2)
     }
 
-    pub fn float_nan<E>(expr: E, formats: &Map<usize, Arc<FloatFormat>>) -> Self
+    pub fn float_nan<E>(expr: E, formats: &FloatFormats) -> Self
     where
         E: Into<Self>,
     {
@@ -1720,7 +1720,7 @@ where
         )
     }
 
-    pub fn float_neg<E>(expr: E, formats: &Map<usize, Arc<FloatFormat>>) -> Self
+    pub fn float_neg<E>(expr: E, formats: &FloatFormats) -> Self
     where
         E: Into<Self>,
     {
@@ -1734,7 +1734,7 @@ where
         )
     }
 
-    pub fn float_abs<E>(expr: E, formats: &Map<usize, Arc<FloatFormat>>) -> Self
+    pub fn float_abs<E>(expr: E, formats: &FloatFormats) -> Self
     where
         E: Into<Self>,
     {
@@ -1748,7 +1748,7 @@ where
         )
     }
 
-    pub fn float_sqrt<E>(expr: E, formats: &Map<usize, Arc<FloatFormat>>) -> Self
+    pub fn float_sqrt<E>(expr: E, formats: &FloatFormats) -> Self
     where
         E: Into<Self>,
     {
@@ -1762,7 +1762,7 @@ where
         )
     }
 
-    pub fn float_ceiling<E>(expr: E, formats: &Map<usize, Arc<FloatFormat>>) -> Self
+    pub fn float_ceiling<E>(expr: E, formats: &FloatFormats) -> Self
     where
         E: Into<Self>,
     {
@@ -1776,7 +1776,7 @@ where
         )
     }
 
-    pub fn float_round<E>(expr: E, formats: &Map<usize, Arc<FloatFormat>>) -> Self
+    pub fn float_round<E>(expr: E, formats: &FloatFormats) -> Self
     where
         E: Into<Self>,
     {
@@ -1790,7 +1790,7 @@ where
         )
     }
 
-    pub fn float_floor<E>(expr: E, formats: &Map<usize, Arc<FloatFormat>>) -> Self
+    pub fn float_floor<E>(expr: E, formats: &FloatFormats) -> Self
     where
         E: Into<Self>,
     {
@@ -1804,7 +1804,7 @@ where
         )
     }
 
-    pub fn float_eq<E1, E2>(expr1: E1, expr2: E2, formats: &Map<usize, Arc<FloatFormat>>) -> Self
+    pub fn float_eq<E1, E2>(expr1: E1, expr2: E2, formats: &FloatFormats) -> Self
     where
         E1: Into<Self>,
         E2: Into<Self>,
@@ -1812,7 +1812,7 @@ where
         Self::binary_rel_promote_float(BinRel::EQ, expr1, expr2, formats)
     }
 
-    pub fn float_neq<E1, E2>(expr1: E1, expr2: E2, formats: &Map<usize, Arc<FloatFormat>>) -> Self
+    pub fn float_neq<E1, E2>(expr1: E1, expr2: E2, formats: &FloatFormats) -> Self
     where
         E1: Into<Self>,
         E2: Into<Self>,
@@ -1820,7 +1820,7 @@ where
         Self::binary_rel_promote_float(BinRel::NEQ, expr1, expr2, formats)
     }
 
-    pub fn float_lt<E1, E2>(expr1: E1, expr2: E2, formats: &Map<usize, Arc<FloatFormat>>) -> Self
+    pub fn float_lt<E1, E2>(expr1: E1, expr2: E2, formats: &FloatFormats) -> Self
     where
         E1: Into<Self>,
         E2: Into<Self>,
@@ -1828,7 +1828,7 @@ where
         Self::binary_rel_promote_float(BinRel::LT, expr1, expr2, formats)
     }
 
-    pub fn float_le<E1, E2>(expr1: E1, expr2: E2, formats: &Map<usize, Arc<FloatFormat>>) -> Self
+    pub fn float_le<E1, E2>(expr1: E1, expr2: E2, formats: &FloatFormats) -> Self
     where
         E1: Into<Self>,
         E2: Into<Self>,
@@ -1836,7 +1836,7 @@ where
         Self::binary_rel_promote_float(BinRel::LE, expr1, expr2, formats)
     }
 
-    pub fn float_add<E1, E2>(expr1: E1, expr2: E2, formats: &Map<usize, Arc<FloatFormat>>) -> Self
+    pub fn float_add<E1, E2>(expr1: E1, expr2: E2, formats: &FloatFormats) -> Self
     where
         E1: Into<Self>,
         E2: Into<Self>,
@@ -1844,7 +1844,7 @@ where
         Self::binary_op_promote_float(BinOp::ADD, expr1, expr2, formats)
     }
 
-    pub fn float_sub<E1, E2>(expr1: E1, expr2: E2, formats: &Map<usize, Arc<FloatFormat>>) -> Self
+    pub fn float_sub<E1, E2>(expr1: E1, expr2: E2, formats: &FloatFormats) -> Self
     where
         E1: Into<Self>,
         E2: Into<Self>,
@@ -1852,7 +1852,7 @@ where
         Self::binary_op_promote_float(BinOp::SUB, expr1, expr2, formats)
     }
 
-    pub fn float_div<E1, E2>(expr1: E1, expr2: E2, formats: &Map<usize, Arc<FloatFormat>>) -> Self
+    pub fn float_div<E1, E2>(expr1: E1, expr2: E2, formats: &FloatFormats) -> Self
     where
         E1: Into<Self>,
         E2: Into<Self>,
@@ -1860,7 +1860,7 @@ where
         Self::binary_op_promote_float(BinOp::DIV, expr1, expr2, formats)
     }
 
-    pub fn float_mul<E1, E2>(expr1: E1, expr2: E2, formats: &Map<usize, Arc<FloatFormat>>) -> Self
+    pub fn float_mul<E1, E2>(expr1: E1, expr2: E2, formats: &FloatFormats) -> Self
     where
         E1: Into<Self>,
         E2: Into<Self>,
@@ -2347,8 +2347,8 @@ where
 impl StmtT<Location, BitVec, Var> {
     pub fn from_parts<I: ExactSizeIterator<Item = VarnodeData>>(
         manager: &SpaceManager,
-        float_formats: &Map<usize, Arc<FloatFormat>>,
-        user_ops: &[Arc<str>],
+        float_formats: &FloatFormats,
+        user_ops: &[UserOpStr],
         address: &AddressValue,
         position: usize,
         opcode: Opcode,

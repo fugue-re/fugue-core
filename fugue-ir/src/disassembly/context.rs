@@ -376,7 +376,7 @@ impl ContextDatabase {
         Some(())
     }
 
-    pub fn register_variable<S: Borrow<str>>(
+    pub fn register_variable<S: Into<String>>(
         &mut self,
         name: S,
         start_bit: usize,
@@ -398,7 +398,7 @@ impl ContextDatabase {
             self.database.default_value_mut().reset(size);
         }
 
-        self.variables.insert(name.borrow().to_owned(), bit_range);
+        self.variables.insert(name.into(), bit_range);
 
         Some(())
     }
