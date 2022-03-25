@@ -1,6 +1,6 @@
 [package]
 name = "fugue-db"
-version = "0.2.10"
+version = "0.2.11"
 authors = ["Sam Thomas <st@xv.ax>"]
 edition = "2021"
 build = "build.rs"
@@ -32,4 +32,4 @@ url = "2.2"
 
 [build-dependencies]
 flatc-rust = "0.2"
-flatc = "0.2.1"
+flatc = { version = "0.2.1", registry = "fugue" }
