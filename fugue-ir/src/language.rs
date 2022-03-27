@@ -29,6 +29,22 @@ pub struct Language {
 }
 
 impl Language {
+    pub fn id(&self) -> &str {
+        &self.id
+    }
+
+    pub fn architecture(&self) -> &ArchitectureDef {
+        &self.architecture
+    }
+
+    pub fn version(&self) -> &str {
+        &self.version
+    }
+
+    pub fn sla_file(&self) -> &Path {
+        &self.sla_file
+    }
+
     pub fn from_xml<P: AsRef<Path>>(root: P, input: xml::Node) -> Result<Self, DeserialiseError> {
         Self::from_xml_with(root, input, false)
     }
