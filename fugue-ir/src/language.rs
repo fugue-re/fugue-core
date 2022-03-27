@@ -163,6 +163,13 @@ impl<'a> LanguageBuilder<'a> {
         self.language
     }
 
+    #[inline(always)]
+    pub fn apply_context(&self, translator: &mut Translator) {
+        for (name, val) in self.language.processor_spec.context_set() {
+            translator.set_variable_default(name.as_ref(), val);
+        }
+    }
+
     pub fn build(&self) -> Result<Translator, Error> {
         let mut translator = Translator::from_file(
             self.language.processor_spec.program_counter(),
@@ -171,9 +178,7 @@ impl<'a> LanguageBuilder<'a> {
             &self.language.sla_file,
         )?;
 
-        for (name, val) in self.language.processor_spec.context_set() {
-            translator.set_variable_default(name.as_ref(), val);
-        }
+        self.apply_context(&mut translator);
 
         Ok(translator)
     }
