@@ -159,6 +159,10 @@ pub struct LanguageBuilder<'a> {
 }
 
 impl<'a> LanguageBuilder<'a> {
+    pub fn language(&self) -> &'a Language {
+        self.language
+    }
+
     pub fn build(&self) -> Result<Translator, Error> {
         let mut translator = Translator::from_file(
             self.language.processor_spec.program_counter(),
