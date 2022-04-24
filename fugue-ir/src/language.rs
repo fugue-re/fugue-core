@@ -45,6 +45,14 @@ impl Language {
         &self.sla_file
     }
 
+    pub fn processor_spec(&self) -> &PSpec {
+        &self.processor_spec
+    }
+
+    pub fn compiler_specs(&self) -> &Map<String, CSpec> {
+        &self.compiler_specs
+    }
+
     pub fn from_xml<P: AsRef<Path>>(root: P, input: xml::Node) -> Result<Self, DeserialiseError> {
         Self::from_xml_with(root, input, false)
     }
@@ -170,7 +178,8 @@ impl<'a> LanguageBuilder<'a> {
         }
     }
 
-    pub fn build(&self) -> Result<Translator, Error> {
+    #[inline(always)]
+    pub fn build_with(&self, apply_context: bool) -> Result<Translator, Error> {
         let mut translator = Translator::from_file(
             self.language.processor_spec.program_counter(),
             &self.language.architecture,
@@ -178,9 +187,15 @@ impl<'a> LanguageBuilder<'a> {
             &self.language.sla_file,
         )?;
 
-        self.apply_context(&mut translator);
+        if apply_context {
+            self.apply_context(&mut translator)
+        }
 
         Ok(translator)
+    }
+
+    pub fn build(&self) -> Result<Translator, Error> {
+        self.build_with(true)
     }
 }
 

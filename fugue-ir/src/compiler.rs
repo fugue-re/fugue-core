@@ -12,20 +12,20 @@ use std::path::Path;
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[derive(serde::Deserialize, serde::Serialize)]
 pub struct DataOrganisation {
-    absolute_max_alignment: u64,
-    machine_alignment: u64,
-    default_alignment: u64,
-    default_pointer_alignment: u64,
-    pointer_size: usize,
-    wchar_size: usize,
-    short_size: usize,
-    integer_size: usize,
-    long_size: usize,
-    long_long_size: usize,
-    float_size: usize,
-    double_size: usize,
-    long_double_size: usize,
-    size_alignment_map: Map<usize, u64>,
+    pub absolute_max_alignment: u64,
+    pub machine_alignment: u64,
+    pub default_alignment: u64,
+    pub default_pointer_alignment: u64,
+    pub pointer_size: usize,
+    pub wchar_size: usize,
+    pub short_size: usize,
+    pub integer_size: usize,
+    pub long_size: usize,
+    pub long_long_size: usize,
+    pub float_size: usize,
+    pub double_size: usize,
+    pub long_double_size: usize,
+    pub size_alignment_map: Map<usize, u64>,
 }
 
 impl Default for DataOrganisation {
