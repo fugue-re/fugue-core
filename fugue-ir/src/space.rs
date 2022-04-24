@@ -253,9 +253,37 @@ const ID_DEFAULT_SPACE: u32 = 0x4000_0000;
 const ID_REGISTER_SPACE: u32 = 0x2000_0000;
 const ID_UNIQUE_SPACE: u32 = 0x1000_0000;
 
+const ID_STACK_HINT: u32 = 0x0100_0000;
+const ID_HEAP_HINT: u32 = 0x0200_0000;
+const ID_STACK_OR_HEAP: u32 = ID_STACK_HINT | ID_HEAP_HINT;
+
 impl AddressSpaceId {
     pub fn index(&self) -> usize {
         (self.0 & 0xffff) as usize
+    }
+
+    pub fn mark_heap(&mut self) {
+        *self = (*self).heap();
+    }
+
+    pub fn heap(self) -> Self {
+        if self.is_default() {
+            Self(self.0 & !ID_STACK_OR_HEAP | ID_HEAP_HINT)
+        } else {
+            self
+        }
+    }
+
+    pub fn mark_stack(&mut self) {
+        *self = (*self).heap();
+    }
+
+    pub fn stack(self) -> Self {
+        if self.is_default() {
+            Self(self.0 & !ID_STACK_OR_HEAP | ID_STACK_HINT)
+        } else {
+            self
+        }
     }
 
     pub(crate) fn constant_id(index: usize) -> Self {
@@ -284,6 +312,21 @@ impl AddressSpaceId {
 
     pub fn is_default(&self) -> bool {
         (ID_DEFAULT_SPACE & self.0) != 0
+    }
+
+    pub fn is_global(&self) -> bool {
+        let mask = ID_DEFAULT_SPACE | ID_STACK_OR_HEAP;
+        self.0 & mask == ID_DEFAULT_SPACE
+    }
+
+    pub fn is_stack(&self) -> bool {
+        let mask = ID_DEFAULT_SPACE | ID_STACK_HINT;
+        self.0 & mask == mask
+    }
+
+    pub fn is_heap(&self) -> bool {
+        let mask = ID_DEFAULT_SPACE | ID_HEAP_HINT;
+        self.0 & mask == mask
     }
 
     pub fn is_register(&self) -> bool {
