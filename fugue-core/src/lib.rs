@@ -1,4 +1,5 @@
 pub use fugue_bv as bv;
+#[cfg(feature = "db")]
 pub use fugue_db as db;
 #[cfg(feature = "fp")]
 pub use fugue_fp as fp;

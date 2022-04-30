@@ -1,21 +1,22 @@
 [package]
 name = "fugue"
-version = "0.2.4"
+version = "0.2.5"
 authors = ["Sam Thomas <st@xv.ax>"]
 edition = "2021"
 license = "MIT"
 
 [features]
-default = ["bigint", "fp"]
-bigint = ["fugue-bv/bigint", "fugue-db/bigint", "fugue-ir/bigint"]
-fixed-u64 = ["fugue-bv/fixed-u64", "fugue-db/fixed-u64", "fugue-ir/fixed-u64"]
-fixed-u128 = ["fugue-bv/fixed-u128", "fugue-db/fixed-u128", "fugue-ir/fixed-u128"]
+default = ["bigint", "db", "fp"]
+bigint = ["fugue-bv/bigint", "fugue-db?/bigint", "fugue-ir/bigint"]
+fixed-u64 = ["fugue-bv/fixed-u64", "fugue-db?/fixed-u64", "fugue-ir/fixed-u64"]
+fixed-u128 = ["fugue-bv/fixed-u128", "fugue-db?/fixed-u128", "fugue-ir/fixed-u128"]
+db = ["fugue-db"]
 fp = ["bigint", "fugue-fp"]
 
 [dependencies]
 fugue-arch = { path = "../fugue-arch", version = "0.2", registry = "fugue" }
 fugue-bv = { path = "../fugue-bv", version = "0.2", registry = "fugue", default-features = false }
 fugue-bytes = { path = "../fugue-bytes", version = "0.2", registry = "fugue" }
-fugue-db = { path = "../fugue-db", version = "0.2", registry = "fugue", default-features = false }
+fugue-db = { path = "../fugue-db", version = "0.2", registry = "fugue", default-features = false, optional = true }
 fugue-fp = { path = "../fugue-fp", version = "0.2", registry = "fugue", optional = true }
 fugue-ir = { path = "../fugue-ir", version = "0.2", registry = "fugue", default-features = false }
