@@ -12,6 +12,8 @@ use rug::Integer as BigInt;
 use crate::{core_bigint, core_u128, core_u64};
 use crate::error::{ParseError, TryFromBitVecError};
 
+pub const MAX_BITS: Option<u32> = None;
+
 #[derive(Debug, Clone, Hash, serde::Deserialize, serde::Serialize)]
 pub enum BitVec {
     N(core_u64::BitVec),

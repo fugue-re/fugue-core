@@ -19,6 +19,8 @@ pub struct BitVec(
     pub(crate) usize,
 );
 
+pub const MAX_BITS: Option<u32> = None;
+
 impl fmt::Display for BitVec {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}:{}", self.0, self.3)

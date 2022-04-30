@@ -9,6 +9,8 @@ use std::str::FromStr;
 
 use crate::error::{ParseError, TryFromBitVecError};
 
+pub const MAX_BITS: Option<u32> = Some(128);
+
 #[derive(Debug, Clone, Hash, serde::Deserialize, serde::Serialize)]
 pub struct BitVec(
     pub(crate) u128,
