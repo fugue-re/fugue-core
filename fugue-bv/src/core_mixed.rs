@@ -3,14 +3,17 @@ use fugue_bytes::Order;
 use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::fmt;
-use std::ops::{Add, BitAnd, BitOr, BitXor, Div, Mul, Neg, Not, Rem, Shl, Shr, Sub};
+use std::ops::{
+    Add, AddAssign, BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign, Div, DivAssign,
+    Mul, MulAssign, Neg, Not, Rem, RemAssign, Shl, ShlAssign, Shr, ShrAssign, Sub, SubAssign,
+};
 use std::str::FromStr;
 use std::sync::Arc;
 
 use rug::Integer as BigInt;
 
-use crate::{core_bigint, core_u128, core_u64};
 use crate::error::{ParseError, TryFromBitVecError};
+use crate::{core_bigint, core_u128, core_u64};
 
 pub const MAX_BITS: Option<u32> = None;
 
@@ -32,6 +35,13 @@ where
 fn apply2<F, T, O>(f: F, u: T, v: T) -> O
 where
     F: FnOnce(T, T) -> O,
+{
+    f(u, v)
+}
+
+fn apply2_mut<F, T>(f: F, u: &mut T, v: &T)
+where
+    F: FnOnce(&mut T, &T),
 {
     f(u, v)
 }
@@ -128,7 +138,15 @@ macro_rules! fold_map2 {
             _ => panic!("cannot apply operation to operands with different bit sizes"),
         }
     }};
-    (ref mut $self:ident, $other:ident, $f:expr) => {{
+    (ref mut $self:ident, ref $other:ident, $f:expr) => {{
+        match ($self, $other) {
+            (BitVec::N(ref mut m), BitVec::N(ref n)) => apply2_mut($f, m, n),
+            (BitVec::B(ref mut m), BitVec::B(ref n)) => apply2_mut($f, m, n),
+            (BitVec::U(ref mut m), BitVec::U(ref n)) => apply2_mut($f, m, n),
+            _ => panic!("cannot apply operation to operands with different bit sizes"),
+        }
+    }};
+    (ref mut $self:ident, ref mut $other:ident, $f:expr) => {{
         match ($self, $other) {
             (BitVec::N(ref mut m), BitVec::N(ref mut n)) => apply2($f, m, n),
             (BitVec::B(ref mut m), BitVec::B(ref mut n)) => apply2($f, m, n),
@@ -190,7 +208,8 @@ impl FromStr for BitVec {
             BigInt::from_str_radix(cstv, 16)
         } else {
             BigInt::from_str_radix(cst, 10)
-        }.map_err(|_| ParseError::InvalidConst)?;
+        }
+        .map_err(|_| ParseError::InvalidConst)?;
 
         let bits = usize::from_str(sz).map_err(|_| ParseError::InvalidSize)?;
 
@@ -201,8 +220,8 @@ impl FromStr for BitVec {
 impl BitVec {
     pub fn from_str_radix(s: &str, radix: u32) -> Result<Self, ParseError> {
         let (cst, sz) = s.rsplit_once(':').ok_or(ParseError::InvalidFormat)?;
-        let val = BigInt::from_str_radix(cst, radix as i32)
-            .map_err(|_| ParseError::InvalidConst)?;
+        let val =
+            BigInt::from_str_radix(cst, radix as i32).map_err(|_| ParseError::InvalidConst)?;
 
         let bits = usize::from_str(sz).map_err(|_| ParseError::InvalidSize)?;
         Ok(Self::from_bigint(val, bits))
@@ -292,6 +311,10 @@ impl BitVec {
         bind!(self, |slf| slf.signed())
     }
 
+    pub fn signed_assign(&mut self) {
+        fold_map!(ref mut self, |slf| slf.signed_assign());
+    }
+
     pub fn is_zero(&self) -> bool {
         fold_map!(self, |slf| slf.is_zero())
     }
@@ -310,6 +333,10 @@ impl BitVec {
 
     pub fn unsigned(self) -> Self {
         bind!(self, |slf| slf.unsigned())
+    }
+
+    pub fn unsigned_assign(&mut self) {
+        fold_map!(ref mut self, |slf| slf.unsigned_assign());
     }
 
     pub fn is_unsigned(&self) -> bool {
@@ -495,6 +522,14 @@ impl BitVec {
         self.clone().unsigned().cast(size)
     }
 
+    pub fn signed_cast_assign(&mut self, bits: usize) {
+        fold_map!(ref mut self, |slf| slf.signed_cast_assign(bits));
+    }
+
+    pub fn unsigned_cast_assign(&mut self, bits: usize) {
+        fold_map!(ref mut self, |slf| slf.unsigned_cast_assign(bits));
+    }
+
     pub fn cast(self, size: usize) -> Self {
         let signed = self.is_signed();
         match self {
@@ -557,6 +592,77 @@ impl BitVec {
             }
         }
     }
+
+    pub fn cast_assign(&mut self, size: usize) {
+        let signed = self.is_signed();
+        match self {
+            Self::N(ref mut bv) => {
+                if size <= 64 {
+                    bv.cast_assign(size);
+                } else if size <= 128 {
+                    let mut v = core_u128::BitVec::from_u64(bv.0, bv.bits());
+                    if signed {
+                        v.signed_cast_assign(size);
+                    } else {
+                        v.cast_assign(size);
+                    }
+                    *self = Self::B(v);
+                } else {
+                    let mut v = core_bigint::BitVec::from_u64(bv.0, bv.bits());
+                    if signed {
+                        v.signed_cast_assign(size);
+                    } else {
+                        v.cast_assign(size);
+                    }
+                    *self = Self::U(v);
+                }
+            }
+            Self::B(ref mut bv) => {
+                if size <= 64 {
+                    let mut v = core_u64::BitVec::from_u64(bv.0 as u64, 64);
+                    if signed {
+                        v.signed_cast_assign(size);
+                    } else {
+                        v.cast_assign(size);
+                    }
+                    *self = Self::N(v);
+                } else if size <= 128 {
+                    bv.cast_assign(size);
+                } else {
+                    let mut v = core_bigint::BitVec::from_u128(bv.0, bv.bits());
+                    if signed {
+                        v.signed_cast_assign(size);
+                    } else {
+                        v.cast_assign(size);
+                    }
+                    *self = Self::U(v);
+                }
+            }
+            Self::U(ref mut bv) => {
+                if size <= 64 {
+                    bv.cast_assign(64);
+                    let mut v = core_u64::BitVec::from_u64(bv.to_u64().unwrap(), 64);
+                    if signed {
+                        v.signed_cast_assign(size);
+                    } else {
+                        v.cast_assign(size);
+                    }
+                    *self = Self::N(v);
+                } else if size <= 128 {
+                    bv.cast_assign(128);
+                    let mut v = core_u128::BitVec::from_u128(bv.to_u128().unwrap(), 128);
+                    if signed {
+                        v.signed_cast_assign(size);
+                    } else {
+                        v.cast_assign(size);
+                    }
+                    *self = Self::B(v);
+                } else {
+                    bv.cast_assign(size);
+                }
+            }
+        }
+    }
 }
 
 impl PartialEq<Self> for BitVec {
@@ -591,6 +697,12 @@ impl Neg for BitVec {
     }
 }
 
+impl BitVec {
+    pub fn neg_assign(&mut self) {
+        fold_map!(ref mut self, |slf| slf.neg_assign())
+    }
+}
+
 impl<'a> Neg for &'a BitVec {
     type Output = BitVec;
 
@@ -615,6 +727,12 @@ impl<'a> Not for &'a BitVec {
     }
 }
 
+impl BitVec {
+    pub fn not_assign(&mut self) {
+        fold_map!(ref mut self, |slf| slf.not_assign())
+    }
+}
+
 impl Add for BitVec {
     type Output = Self;
 
@@ -628,6 +746,18 @@ impl<'a> Add for &'a BitVec {
 
     fn add(self, rhs: Self) -> Self::Output {
         bind2!(self, rhs, |slf, rhs| slf.add(rhs))
+    }
+}
+
+impl AddAssign for BitVec {
+    fn add_assign(&mut self, rhs: Self) {
+        fold_map2!(ref mut self, ref rhs, |slf, rhs| slf.add_assign(rhs))
+    }
+}
+
+impl AddAssign<&'_ BitVec> for BitVec {
+    fn add_assign(&mut self, rhs: &BitVec) {
+        fold_map2!(ref mut self, ref rhs, |slf, rhs| slf.add_assign(rhs))
     }
 }
 
@@ -647,9 +777,25 @@ impl<'a> Div for &'a BitVec {
     }
 }
 
+impl DivAssign for BitVec {
+    fn div_assign(&mut self, rhs: Self) {
+        fold_map2!(ref mut self, ref rhs, |slf, rhs| slf.div_assign(rhs))
+    }
+}
+
+impl DivAssign<&'_ BitVec> for BitVec {
+    fn div_assign(&mut self, rhs: &BitVec) {
+        fold_map2!(ref mut self, ref rhs, |slf, rhs| slf.div_assign(rhs))
+    }
+}
+
 impl BitVec {
     pub fn signed_div(&self, rhs: &Self) -> BitVec {
         bind2!(self, rhs, |slf, rhs| slf.signed_div(rhs))
+    }
+
+    pub fn signed_div_assign(&mut self, rhs: &Self) {
+        fold_map2!(ref mut self, ref rhs, |slf, rhs| slf.signed_div_assign(rhs))
     }
 }
 
@@ -669,6 +815,18 @@ impl<'a> Mul for &'a BitVec {
     }
 }
 
+impl MulAssign for BitVec {
+    fn mul_assign(&mut self, rhs: Self) {
+        fold_map2!(ref mut self, ref rhs, |slf, rhs| slf.mul_assign(rhs))
+    }
+}
+
+impl MulAssign<&'_ BitVec> for BitVec {
+    fn mul_assign(&mut self, rhs: &BitVec) {
+        fold_map2!(ref mut self, ref rhs, |slf, rhs| slf.mul_assign(rhs))
+    }
+}
+
 impl Rem for BitVec {
     type Output = Self;
 
@@ -685,9 +843,25 @@ impl<'a> Rem for &'a BitVec {
     }
 }
 
+impl RemAssign for BitVec {
+    fn rem_assign(&mut self, rhs: Self) {
+        fold_map2!(ref mut self, ref rhs, |slf, rhs| slf.rem_assign(rhs))
+    }
+}
+
+impl RemAssign<&'_ BitVec> for BitVec {
+    fn rem_assign(&mut self, rhs: &BitVec) {
+        fold_map2!(ref mut self, ref rhs, |slf, rhs| slf.rem_assign(rhs))
+    }
+}
+
 impl BitVec {
     pub fn signed_rem(&self, rhs: &Self) -> BitVec {
         bind2!(self, rhs, |slf, rhs| slf.signed_rem(rhs))
+    }
+
+    pub fn signed_rem_assign(&mut self, rhs: &Self) {
+        fold_map2!(ref mut self, ref rhs, |slf, rhs| slf.signed_rem_assign(rhs))
     }
 }
 
@@ -707,6 +881,18 @@ impl<'a> Sub for &'a BitVec {
     }
 }
 
+impl SubAssign for BitVec {
+    fn sub_assign(&mut self, rhs: Self) {
+        fold_map2!(ref mut self, ref rhs, |slf, rhs| slf.sub_assign(rhs))
+    }
+}
+
+impl SubAssign<&'_ BitVec> for BitVec {
+    fn sub_assign(&mut self, rhs: &BitVec) {
+        fold_map2!(ref mut self, ref rhs, |slf, rhs| slf.sub_assign(rhs))
+    }
+}
+
 impl BitAnd for BitVec {
     type Output = Self;
 
@@ -720,6 +906,18 @@ impl<'a> BitAnd for &'a BitVec {
 
     fn bitand(self, rhs: Self) -> Self::Output {
         bind2!(self, rhs, |slf, rhs| slf.bitand(rhs))
+    }
+}
+
+impl BitAndAssign for BitVec {
+    fn bitand_assign(&mut self, rhs: Self) {
+        fold_map2!(ref mut self, ref rhs, |slf, rhs| slf.bitand_assign(rhs))
+    }
+}
+
+impl BitAndAssign<&'_ BitVec> for BitVec {
+    fn bitand_assign(&mut self, rhs: &BitVec) {
+        fold_map2!(ref mut self, ref rhs, |slf, rhs| slf.bitand_assign(rhs))
     }
 }
 
@@ -739,6 +937,18 @@ impl<'a> BitOr for &'a BitVec {
     }
 }
 
+impl BitOrAssign for BitVec {
+    fn bitor_assign(&mut self, rhs: Self) {
+        fold_map2!(ref mut self, ref rhs, |slf, rhs| slf.bitor_assign(rhs))
+    }
+}
+
+impl BitOrAssign<&'_ BitVec> for BitVec {
+    fn bitor_assign(&mut self, rhs: &BitVec) {
+        fold_map2!(ref mut self, ref rhs, |slf, rhs| slf.bitor_assign(rhs))
+    }
+}
+
 impl BitXor for BitVec {
     type Output = Self;
 
@@ -752,6 +962,18 @@ impl<'a> BitXor for &'a BitVec {
 
     fn bitxor(self, rhs: Self) -> Self::Output {
         bind2!(self, rhs, |slf, rhs| slf.bitxor(rhs))
+    }
+}
+
+impl BitXorAssign for BitVec {
+    fn bitxor_assign(&mut self, rhs: Self) {
+        fold_map2!(ref mut self, ref rhs, |slf, rhs| slf.bitxor_assign(rhs))
+    }
+}
+
+impl BitXorAssign<&'_ BitVec> for BitVec {
+    fn bitxor_assign(&mut self, rhs: &BitVec) {
+        fold_map2!(ref mut self, ref rhs, |slf, rhs| slf.bitxor_assign(rhs))
     }
 }
 
@@ -771,6 +993,12 @@ impl<'a> Shl<u32> for &'a BitVec {
     }
 }
 
+impl ShlAssign<u32> for BitVec {
+    fn shl_assign(&mut self, rhs: u32) {
+        fold_map!(ref mut self, |slf| slf.shl_assign(rhs))
+    }
+}
+
 impl Shl for BitVec {
     type Output = Self;
 
@@ -784,6 +1012,18 @@ impl<'a> Shl for &'a BitVec {
 
     fn shl(self, rhs: Self) -> Self::Output {
         bind2!(self, rhs, |slf, rhs| slf.shl(rhs))
+    }
+}
+
+impl ShlAssign for BitVec {
+    fn shl_assign(&mut self, rhs: Self) {
+        fold_map2!(ref mut self, ref rhs, |slf, rhs| slf.shl_assign(rhs))
+    }
+}
+
+impl ShlAssign<&'_ BitVec> for BitVec {
+    fn shl_assign(&mut self, rhs: &BitVec) {
+        fold_map2!(ref mut self, ref rhs, |slf, rhs| slf.shl_assign(rhs))
     }
 }
 
@@ -803,6 +1043,12 @@ impl<'a> Shr<u32> for &'a BitVec {
     }
 }
 
+impl ShrAssign<u32> for BitVec {
+    fn shr_assign(&mut self, rhs: u32) {
+        fold_map!(ref mut self, |slf| slf.shr_assign(rhs))
+    }
+}
+
 impl Shr for BitVec {
     type Output = Self;
 
@@ -819,9 +1065,25 @@ impl<'a> Shr for &'a BitVec {
     }
 }
 
+impl ShrAssign for BitVec {
+    fn shr_assign(&mut self, rhs: Self) {
+        fold_map2!(ref mut self, ref rhs, |slf, rhs| slf.shr_assign(rhs))
+    }
+}
+
+impl ShrAssign<&'_ BitVec> for BitVec {
+    fn shr_assign(&mut self, rhs: &BitVec) {
+        fold_map2!(ref mut self, ref rhs, |slf, rhs| slf.shr_assign(rhs))
+    }
+}
+
 impl BitVec {
     pub fn signed_shr(&self, rhs: &Self) -> BitVec {
         bind2!(self, rhs, |slf, rhs| slf.signed_shr(rhs))
+    }
+
+    pub fn signed_shr_assign(&mut self, rhs: &Self) {
+        fold_map2!(ref mut self, ref rhs, |slf, rhs| slf.signed_shr_assign(rhs))
     }
 }
 

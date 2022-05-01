@@ -2,13 +2,18 @@ use fugue_bytes::Order;
 
 use std::cmp::Ordering;
 use std::fmt;
-use std::ops::{Add, BitAnd, BitOr, BitXor, Div, Mul, Neg, Not, Rem, Shl, Shr, Sub};
+use std::ops::{
+    Add, AddAssign, BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign, Div, DivAssign,
+    Mul, MulAssign, Neg, Not, Rem, RemAssign, Shl, ShlAssign, Shr, ShrAssign, Sub, SubAssign,
+};
 use std::str::FromStr;
 use std::sync::Arc;
 
+use crate::error::{ParseError, TryFromBitVecError};
 use rug::integer::Order as BVOrder;
 use rug::Integer as BigInt;
-use crate::error::{ParseError, TryFromBitVecError};
+
+pub const MAX_BITS: Option<u32> = None;
 
 /// BitVec(value, mask, is_signed, number of bits)
 #[derive(Debug, Clone, Hash, serde::Deserialize, serde::Serialize)]
@@ -18,8 +23,6 @@ pub struct BitVec(
     pub(crate) bool,
     pub(crate) usize,
 );
-
-pub const MAX_BITS: Option<u32> = None;
 
 impl fmt::Display for BitVec {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -55,7 +58,8 @@ impl FromStr for BitVec {
             BigInt::from_str_radix(cstv, 16)
         } else {
             BigInt::from_str_radix(cst, 10)
-        }.map_err(|_| ParseError::InvalidConst)?;
+        }
+        .map_err(|_| ParseError::InvalidConst)?;
 
         let bits = usize::from_str(sz).map_err(|_| ParseError::InvalidSize)?;
 
@@ -87,6 +91,10 @@ impl BitVec {
         Self(self.0 & &*self.1, self.1, false, self.3)
     }
 
+    pub(crate) fn mask_assign(&mut self) {
+        self.0 &= &*self.1;
+    }
+
     pub fn as_raw(&self) -> &BigInt {
         &self.0
     }
@@ -100,7 +108,8 @@ impl BitVec {
     }
 
     pub fn zero(bits: usize) -> Self {
-        if bits == 0 { //|| bits % 8 != 0 {
+        if bits == 0 {
+            //|| bits % 8 != 0 {
             panic!("bits must be > 0")
             //panic!("bits must be multiple of 8 and > 0")
         }
@@ -108,7 +117,8 @@ impl BitVec {
     }
 
     pub fn one(bits: usize) -> Self {
-        if bits == 0 { //|| bits % 8 != 0 {
+        if bits == 0 {
+            //|| bits % 8 != 0 {
             panic!("bits must be > 0")
             //panic!("bits must be multiple of 8 and > 0")
         }
@@ -151,6 +161,10 @@ impl BitVec {
         Self(self.0, self.1, true, self.3)
     }
 
+    pub fn signed_assign(&mut self) {
+        self.2 = true;
+    }
+
     pub fn is_zero(&self) -> bool {
         self.0 == 0
     }
@@ -169,6 +183,10 @@ impl BitVec {
 
     pub fn unsigned(self) -> Self {
         Self(self.0, self.1, false, self.3)
+    }
+
+    pub fn unsigned_assign(&mut self) {
+        self.2 = false;
     }
 
     pub fn is_unsigned(&self) -> bool {
@@ -389,11 +407,11 @@ impl BitVec {
         }
 
         if self.is_zero() {
-            return rhs.clone()
+            return rhs.clone();
         }
 
         if rhs.is_zero() {
-            return self.clone()
+            return self.clone();
         }
 
         Self::from_bigint_with(self.0.gcd_ref(&rhs.0).into(), self.1.clone())
@@ -408,11 +426,15 @@ impl BitVec {
         }
 
         if self.is_zero() {
-            return (rhs.clone(), Self::zero(self.bits()), Self::one(self.bits()))
+            return (rhs.clone(), Self::zero(self.bits()), Self::one(self.bits()));
         }
 
         if rhs.is_zero() {
-            return (self.clone(), Self::one(self.bits()), Self::zero(self.bits()))
+            return (
+                self.clone(),
+                Self::one(self.bits()),
+                Self::zero(self.bits()),
+            );
         }
 
         let (g, a, b) = self.0.gcd_cofactors_ref(&rhs.0).into();
@@ -477,6 +499,16 @@ impl BitVec {
         self.clone().unsigned().cast(size)
     }
 
+    pub fn signed_cast_assign(&mut self, size: usize) {
+        self.signed_assign();
+        self.cast_assign(size)
+    }
+
+    pub fn unsigned_cast_assign(&mut self, size: usize) {
+        self.unsigned_assign();
+        self.cast_assign(size)
+    }
+
     pub fn cast(self, size: usize) -> Self {
         if self.is_signed() {
             if size > self.bits() && self.msb() {
@@ -489,6 +521,26 @@ impl BitVec {
             .signed()
         } else {
             Self::from_bigint(self.0, size)
+        }
+    }
+
+    pub fn cast_assign(&mut self, size: usize) {
+        if self.is_signed() {
+            if size > self.bits() && self.msb() {
+                let mask = Self::mask_value(size);
+                let extm = BigInt::from(&*self.1 ^ &*mask);
+                self.0 |= extm;
+                self.mask_assign();
+                self.signed_assign();
+            } else {
+                self.1 = Self::mask_value(size);
+                self.2 = true;
+                self.mask_assign();
+            }
+        } else {
+            self.1 = Self::mask_value(size);
+            self.2 = false;
+            self.mask_assign();
         }
     }
 }
@@ -559,6 +611,14 @@ impl<'a> Neg for &'a BitVec {
     }
 }
 
+impl BitVec {
+    pub fn neg_assign(&mut self) {
+        self.0 ^= &*self.1;
+        self.0 += 1;
+        self.mask_assign();
+    }
+}
+
 impl Not for BitVec {
     type Output = Self;
 
@@ -572,6 +632,13 @@ impl<'a> Not for &'a BitVec {
 
     fn not(self) -> Self::Output {
         BitVec::from_bigint_with(BigInt::from(&self.0 ^ &*self.1), self.1.clone())
+    }
+}
+
+impl BitVec {
+    pub fn not_assign(&mut self) {
+        self.0 ^= &*self.1;
+        self.mask_assign();
     }
 }
 
@@ -600,6 +667,34 @@ impl<'a> Add for &'a BitVec {
             )
         }
         BitVec::from_bigint_with(BigInt::from(&self.0 + &rhs.0), self.1.clone())
+    }
+}
+
+impl AddAssign for BitVec {
+    fn add_assign(&mut self, rhs: Self) {
+        if self.bits() != rhs.bits() {
+            panic!(
+                "cannot use `+` with bit vector of size {} and bit vector of size {}",
+                self.bits(),
+                rhs.bits()
+            )
+        }
+        self.0 += rhs.0;
+        self.mask_assign()
+    }
+}
+
+impl AddAssign<&'_ BitVec> for BitVec {
+    fn add_assign(&mut self, rhs: &BitVec) {
+        if self.bits() != rhs.bits() {
+            panic!(
+                "cannot use `+` with bit vector of size {} and bit vector of size {}",
+                self.bits(),
+                rhs.bits()
+            )
+        }
+        self.0 += &rhs.0;
+        self.mask_assign()
     }
 }
 
@@ -656,6 +751,86 @@ impl<'a> Div for &'a BitVec {
     }
 }
 
+impl DivAssign for BitVec {
+    fn div_assign(&mut self, mut rhs: Self) {
+        if self.bits() != rhs.bits() {
+            panic!(
+                "cannot use `/` with bit vector of size {} and bit vector of size {}",
+                self.bits(),
+                rhs.bits()
+            )
+        }
+
+        let lneg = self.is_negative();
+        let rneg = rhs.is_negative();
+
+        match (lneg, rneg) {
+            (false, false) => {
+                self.0 /= rhs.0;
+                self.mask_assign()
+            }
+            (true, false) => {
+                self.neg_assign();
+                self.0 /= rhs.0;
+                self.mask_assign();
+                self.neg_assign();
+            }
+            (false, true) => {
+                rhs.neg_assign();
+                self.0 /= rhs.0;
+                self.mask_assign();
+                self.neg_assign();
+            }
+            (true, true) => {
+                self.neg_assign();
+                rhs.neg_assign();
+                self.0 /= rhs.0;
+                self.mask_assign();
+            }
+        }
+    }
+}
+
+impl DivAssign<&'_ BitVec> for BitVec {
+    fn div_assign(&mut self, rhs: &BitVec) {
+        if self.bits() != rhs.bits() {
+            panic!(
+                "cannot use `/` with bit vector of size {} and bit vector of size {}",
+                self.bits(),
+                rhs.bits()
+            )
+        }
+
+        let lneg = self.is_negative();
+        let rneg = rhs.is_negative();
+
+        match (lneg, rneg) {
+            (false, false) => {
+                self.0 /= &rhs.0;
+                self.mask_assign()
+            }
+            (true, false) => {
+                self.neg_assign();
+                self.0 /= &rhs.0;
+                self.mask_assign();
+                self.neg_assign();
+            }
+            (false, true) => {
+                let rhs = -rhs;
+                self.0 /= rhs.0;
+                self.mask_assign();
+                self.neg_assign();
+            }
+            (true, true) => {
+                self.neg_assign();
+                let rhs = -rhs;
+                self.0 /= rhs.0;
+                self.mask_assign();
+            }
+        }
+    }
+}
+
 impl BitVec {
     pub fn signed_div(&self, rhs: &Self) -> BitVec {
         if self.3 != rhs.3 {
@@ -682,6 +857,44 @@ impl BitVec {
             }
         }
     }
+
+    pub fn signed_div_assign(&mut self, rhs: &Self) {
+        if self.bits() != rhs.bits() {
+            panic!(
+                "cannot use `/` with bit vector of size {} and bit vector of size {}",
+                self.bits(),
+                rhs.bits()
+            )
+        }
+
+        let lneg = self.msb();
+        let rneg = rhs.msb();
+
+        match (lneg, rneg) {
+            (false, false) => {
+                self.0 /= &rhs.0;
+                self.mask_assign()
+            }
+            (true, false) => {
+                self.neg_assign();
+                self.0 /= &rhs.0;
+                self.mask_assign();
+                self.neg_assign();
+            }
+            (false, true) => {
+                let rhs = -rhs;
+                self.0 /= rhs.0;
+                self.mask_assign();
+                self.neg_assign();
+            }
+            (true, true) => {
+                let rhs = -rhs;
+                self.neg_assign();
+                self.0 /= rhs.0;
+                self.mask_assign();
+            }
+        }
+    }
 }
 
 impl Mul for BitVec {
@@ -703,6 +916,35 @@ impl<'a> Mul for &'a BitVec {
 
     fn mul(self, rhs: Self) -> Self::Output {
         BitVec::from_bigint_with(BigInt::from(&self.0 * &rhs.0), self.1.clone())
+    }
+}
+
+impl MulAssign for BitVec {
+    fn mul_assign(&mut self, rhs: Self) {
+        if self.bits() != rhs.bits() {
+            panic!(
+                "cannot use `*` with bit vector of size {} and bit vector of size {}",
+                self.bits(),
+                rhs.bits()
+            )
+        }
+        self.0 *= rhs.0;
+        self.mask_assign()
+    }
+}
+
+impl MulAssign<&'_ BitVec> for BitVec {
+    fn mul_assign(&mut self, rhs: &BitVec) {
+        if self.bits() != rhs.bits() {
+            panic!(
+                "cannot use `*` with bit vector of size {} and bit vector of size {}",
+                self.bits(),
+                rhs.bits()
+            )
+        }
+
+        self.0 *= &rhs.0;
+        self.mask_assign()
     }
 }
 
@@ -753,6 +995,86 @@ impl<'a> Rem for &'a BitVec {
     }
 }
 
+impl RemAssign for BitVec {
+    fn rem_assign(&mut self, mut rhs: Self) {
+        if self.bits() != rhs.bits() {
+            panic!(
+                "cannot use `%` with bit vector of size {} and bit vector of size {}",
+                self.bits(),
+                rhs.bits()
+            )
+        }
+
+        let lneg = self.is_negative();
+        let rneg = rhs.is_negative();
+
+        match (lneg, rneg) {
+            (false, false) => {
+                self.0 %= rhs.0;
+                self.mask_assign()
+            }
+            (true, false) => {
+                self.neg_assign();
+                self.0 %= rhs.0;
+                self.mask_assign();
+                self.neg_assign();
+            }
+            (false, true) => {
+                rhs.neg_assign();
+                self.0 %= rhs.0;
+                self.mask_assign();
+                self.neg_assign();
+            }
+            (true, true) => {
+                self.neg_assign();
+                rhs.neg_assign();
+                self.0 %= rhs.0;
+                self.mask_assign();
+            }
+        }
+    }
+}
+
+impl RemAssign<&'_ BitVec> for BitVec {
+    fn rem_assign(&mut self, rhs: &BitVec) {
+        if self.bits() != rhs.bits() {
+            panic!(
+                "cannot use `%` with bit vector of size {} and bit vector of size {}",
+                self.bits(),
+                rhs.bits()
+            )
+        }
+
+        let lneg = self.is_negative();
+        let rneg = rhs.is_negative();
+
+        match (lneg, rneg) {
+            (false, false) => {
+                self.0 %= &rhs.0;
+                self.mask_assign()
+            }
+            (true, false) => {
+                self.neg_assign();
+                self.0 %= &rhs.0;
+                self.mask_assign();
+                self.neg_assign();
+            }
+            (false, true) => {
+                let rhs = -rhs;
+                self.0 %= rhs.0;
+                self.mask_assign();
+                self.neg_assign();
+            }
+            (true, true) => {
+                let rhs = -rhs;
+                self.neg_assign();
+                self.0 %= rhs.0;
+                self.mask_assign();
+            }
+        }
+    }
+}
+
 impl BitVec {
     pub fn signed_rem(&self, rhs: &Self) -> BitVec {
         if self.3 != rhs.3 {
@@ -771,6 +1093,44 @@ impl BitVec {
             (true, false) => -BitVec::from_bigint_with((-self).0 % &rhs.0, self.1.clone()),
             (false, true) => BitVec::from_bigint_with(&self.0 % (-rhs).0, self.1.clone()),
             (true, true) => -BitVec::from_bigint_with((-self).0 % (-rhs).0, self.1.clone()),
+        }
+    }
+
+    pub fn signed_rem_assign(&mut self, rhs: &Self) {
+        if self.bits() != rhs.bits() {
+            panic!(
+                "cannot use `%` with bit vector of size {} and bit vector of size {}",
+                self.bits(),
+                rhs.bits()
+            )
+        }
+
+        let lneg = self.msb();
+        let rneg = rhs.msb();
+
+        match (lneg, rneg) {
+            (false, false) => {
+                self.0 %= &rhs.0;
+                self.mask_assign()
+            }
+            (true, false) => {
+                self.neg_assign();
+                self.0 %= &rhs.0;
+                self.mask_assign();
+                self.neg_assign();
+            }
+            (false, true) => {
+                let rhs = -rhs;
+                self.0 %= rhs.0;
+                self.mask_assign();
+                self.neg_assign();
+            }
+            (true, true) => {
+                let rhs = -rhs;
+                self.neg_assign();
+                self.0 %= rhs.0;
+                self.mask_assign();
+            }
         }
     }
 }
@@ -803,6 +1163,34 @@ impl<'a> Sub for &'a BitVec {
     }
 }
 
+impl SubAssign for BitVec {
+    fn sub_assign(&mut self, rhs: Self) {
+        if self.bits() != rhs.bits() {
+            panic!(
+                "cannot use `-` with bit vector of size {} and bit vector of size {}",
+                self.bits(),
+                rhs.bits()
+            )
+        }
+        self.0 -= rhs.0;
+        self.mask_assign()
+    }
+}
+
+impl SubAssign<&'_ BitVec> for BitVec {
+    fn sub_assign(&mut self, rhs: &BitVec) {
+        if self.bits() != rhs.bits() {
+            panic!(
+                "cannot use `-` with bit vector of size {} and bit vector of size {}",
+                self.bits(),
+                rhs.bits()
+            )
+        }
+        self.0 -= &rhs.0;
+        self.mask_assign()
+    }
+}
+
 impl BitAnd for BitVec {
     type Output = Self;
 
@@ -828,6 +1216,34 @@ impl<'a> BitAnd for &'a BitVec {
             )
         }
         BitVec::from_bigint_with(BigInt::from(&self.0 & &rhs.0), self.1.clone())
+    }
+}
+
+impl BitAndAssign for BitVec {
+    fn bitand_assign(&mut self, rhs: Self) {
+        if self.bits() != rhs.bits() {
+            panic!(
+                "cannot use `&` with bit vector of size {} and bit vector of size {}",
+                self.bits(),
+                rhs.bits()
+            )
+        }
+        self.0 &= rhs.0;
+        self.mask_assign()
+    }
+}
+
+impl BitAndAssign<&'_ BitVec> for BitVec {
+    fn bitand_assign(&mut self, rhs: &BitVec) {
+        if self.bits() != rhs.bits() {
+            panic!(
+                "cannot use `&` with bit vector of size {} and bit vector of size {}",
+                self.bits(),
+                rhs.bits()
+            )
+        }
+        self.0 &= &rhs.0;
+        self.mask_assign()
     }
 }
 
@@ -859,6 +1275,34 @@ impl<'a> BitOr for &'a BitVec {
     }
 }
 
+impl BitOrAssign for BitVec {
+    fn bitor_assign(&mut self, rhs: Self) {
+        if self.bits() != rhs.bits() {
+            panic!(
+                "cannot use `|` with bit vector of size {} and bit vector of size {}",
+                self.bits(),
+                rhs.bits()
+            )
+        }
+        self.0 |= rhs.0;
+        self.mask_assign()
+    }
+}
+
+impl BitOrAssign<&'_ BitVec> for BitVec {
+    fn bitor_assign(&mut self, rhs: &BitVec) {
+        if self.bits() != rhs.bits() {
+            panic!(
+                "cannot use `|` with bit vector of size {} and bit vector of size {}",
+                self.bits(),
+                rhs.bits()
+            )
+        }
+        self.0 |= &rhs.0;
+        self.mask_assign()
+    }
+}
+
 impl BitXor for BitVec {
     type Output = Self;
 
@@ -887,6 +1331,34 @@ impl<'a> BitXor for &'a BitVec {
     }
 }
 
+impl BitXorAssign for BitVec {
+    fn bitxor_assign(&mut self, rhs: Self) {
+        if self.bits() != rhs.bits() {
+            panic!(
+                "cannot use `^` with bit vector of size {} and bit vector of size {}",
+                self.bits(),
+                rhs.bits()
+            )
+        }
+        self.0 ^= rhs.0;
+        self.mask_assign()
+    }
+}
+
+impl BitXorAssign<&'_ BitVec> for BitVec {
+    fn bitxor_assign(&mut self, rhs: &BitVec) {
+        if self.bits() != rhs.bits() {
+            panic!(
+                "cannot use `^` with bit vector of size {} and bit vector of size {}",
+                self.bits(),
+                rhs.bits()
+            )
+        }
+        self.0 ^= &rhs.0;
+        self.mask_assign()
+    }
+}
+
 impl Shl<u32> for BitVec {
     type Output = Self;
 
@@ -900,6 +1372,13 @@ impl<'a> Shl<u32> for &'a BitVec {
 
     fn shl(self, rhs: u32) -> Self::Output {
         BitVec::from_bigint_with(BigInt::from(&self.0 << rhs), self.1.clone())
+    }
+}
+
+impl ShlAssign<u32> for BitVec {
+    fn shl_assign(&mut self, rhs: u32) {
+        self.0 <<= rhs;
+        self.mask_assign()
     }
 }
 
@@ -947,6 +1426,48 @@ impl<'a> Shl for &'a BitVec {
     }
 }
 
+impl ShlAssign for BitVec {
+    fn shl_assign(&mut self, rhs: Self) {
+        if self.bits() != rhs.bits() {
+            panic!(
+                "cannot use `<<` with bit vector of size {} and bit vector of size {}",
+                self.bits(),
+                rhs.bits()
+            )
+        }
+        if rhs.0 >= self.bits() {
+            self.0 = BigInt::from(0u32);
+        } else {
+            if let Some(rhs) = rhs.0.to_u32() {
+                self.shl_assign(rhs);
+            } else {
+                self.0 = BigInt::from(0);
+            }
+        }
+    }
+}
+
+impl ShlAssign<&'_ BitVec> for BitVec {
+    fn shl_assign(&mut self, rhs: &BitVec) {
+        if self.bits() != rhs.bits() {
+            panic!(
+                "cannot use `<<` with bit vector of size {} and bit vector of size {}",
+                self.bits(),
+                rhs.bits()
+            )
+        }
+        if rhs.0 >= self.bits() {
+            self.0 = BigInt::from(0u32);
+        } else {
+            if let Some(rhs) = rhs.0.to_u32() {
+                self.shl_assign(rhs);
+            } else {
+                self.0 = BigInt::from(0);
+            }
+        }
+    }
+}
+
 impl Shr<u32> for BitVec {
     type Output = Self;
 
@@ -987,6 +1508,29 @@ impl<'a> Shr<u32> for &'a BitVec {
             BitVec::from_bigint_with(BigInt::from(&self.0 >> rhs) | mask, self.1.clone())
         } else {
             BitVec::from_bigint_with(BigInt::from(&self.0 >> rhs), self.1.clone())
+        }
+    }
+}
+
+impl ShrAssign<u32> for BitVec {
+    fn shr_assign(&mut self, rhs: u32) {
+        let size = self.bits();
+        if rhs as usize >= size {
+            if self.is_signed() {
+                self.0.clone_from(&*self.1);
+            } else {
+                self.0 = BigInt::from(0u32);
+            }
+        } else if self.is_negative() {
+            // perform ASR
+            let mask = &*self.1
+                ^ ((BigInt::from(1u32) << (size - rhs as usize) as u32) - BigInt::from(1u32));
+            self.0 >>= rhs;
+            self.0 |= mask;
+            self.mask_assign();
+        } else {
+            self.0 >>= rhs;
+            self.mask_assign();
         }
     }
 }
@@ -1061,6 +1605,44 @@ impl<'a> Shr for &'a BitVec {
     }
 }
 
+impl ShrAssign for BitVec {
+    fn shr_assign(&mut self, rhs: BitVec) {
+        let size = self.bits();
+        if rhs.0 >= size as u64 {
+            if self.is_signed() {
+                self.0.clone_from(&*self.1);
+                self.mask_assign();
+            } else {
+                self.0 = BigInt::from(0u32);
+            }
+        } else if let Some(rhs) = rhs.0.to_u32() {
+            self.shr_assign(rhs);
+        } else {
+            self.0.clone_from(&*self.1);
+            self.mask_assign();
+        }
+    }
+}
+
+impl ShrAssign<&'_ BitVec> for BitVec {
+    fn shr_assign(&mut self, rhs: &BitVec) {
+        let size = self.bits();
+        if rhs.0 >= size as u64 {
+            if self.is_signed() {
+                self.0.clone_from(&*self.1);
+                self.mask_assign();
+            } else {
+                self.0 = BigInt::from(0u32);
+            }
+        } else if let Some(rhs) = rhs.0.to_u32() {
+            self.shr_assign(rhs);
+        } else {
+            self.0.clone_from(&*self.1);
+            self.mask_assign();
+        }
+    }
+}
+
 impl BitVec {
     pub fn signed_shr(&self, rhs: &Self) -> BitVec {
         if self.3 != rhs.3 {
@@ -1087,6 +1669,11 @@ impl BitVec {
                 BitVec::zero(self.bits())
             }
         }
+    }
+
+    pub fn signed_shr_assign(&mut self, rhs: &Self) {
+        self.signed_assign();
+        self.signed_shr(rhs);
     }
 }
 
