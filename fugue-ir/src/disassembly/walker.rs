@@ -494,6 +494,13 @@ impl<'b, 'c, 'z> ParserWalker<'b, 'c, 'z> {
         Ok(self.ctx.handle(ph).map(|v| v.clone()))
     }
 
+    pub fn handle_ref(&self, index: usize) -> Option<&FixedHandle<'b>> {
+        self.point()
+            .and_then(|ctor| ctor.resolve.get(index))
+            .and_then(|v| *v)
+            .and_then(|hidx| self.ctx.handle(hidx))
+    }
+
     pub fn unchecked_handle(&self, index: usize) -> FixedHandle<'b> {
         self.unchecked_handle_ref(index).clone()
     }

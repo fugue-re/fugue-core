@@ -18,19 +18,21 @@ use crate::address::AddressValue;
 use crate::deserialise::parse::XmlExt;
 use crate::deserialise::Error as DeserialiseError;
 
+use crate::disassembly::lift::FloatFormats;
+use crate::disassembly::lift::UserOpStr;
+use crate::disassembly::symbol::{FixedHandle, Symbol, SymbolScope, SymbolTable};
+use crate::disassembly::walker::InstructionFormatter;
 use crate::disassembly::ContextDatabase;
 use crate::disassembly::Error as DisassemblyError;
 use crate::disassembly::PatternExpression;
-use crate::disassembly::lift::FloatFormats;
-use crate::disassembly::lift::UserOpStr;
-use crate::disassembly::{ParserContext, ParserState, ParserWalker, PCodeRaw, IRBuilder, IRBuilderBase, IRBuilderArena};
 use crate::disassembly::VarnodeData;
-use crate::disassembly::symbol::{FixedHandle, Symbol, SymbolScope, SymbolTable};
-use crate::disassembly::walker::InstructionFormatter;
+use crate::disassembly::{
+    IRBuilder, IRBuilderArena, IRBuilderBase, PCodeRaw, ParserContext, ParserState, ParserWalker,
+};
 
-use crate::il::Instruction;
 use crate::il::ecode::ECode;
 use crate::il::pcode::PCode;
+use crate::il::Instruction;
 
 use crate::error::Error;
 
@@ -44,8 +46,7 @@ use crate::space_manager::SpaceManager;
 
 // Translator is used for parsing the processor spec XML and
 // lifting instructions
-#[derive(Clone)]
-#[derive(serde::Deserialize, serde::Serialize)]
+#[derive(Clone, serde::Deserialize, serde::Serialize)]
 pub struct Translator {
     alignment: usize,
     big_endian: bool,
@@ -125,7 +126,8 @@ impl Translator {
     }
 
     pub fn register_by_name<S: AsRef<str>>(&self, name: S) -> Option<VarnodeData> {
-        self.registers.get_by_name(name.as_ref())
+        self.registers
+            .get_by_name(name.as_ref())
             .map(|(_, offset, size)| {
                 VarnodeData::new(&self.registers.register_space(), offset, size)
             })
@@ -183,11 +185,12 @@ impl Translator {
                 error,
             })?;
 
-        Self::from_str(program_counter, architecture, compiler_specs, &input)
-            .map_err(|error| Error::DeserialiseFile {
+        Self::from_str(program_counter, architecture, compiler_specs, &input).map_err(|error| {
+            Error::DeserialiseFile {
                 path: path.to_owned(),
                 error,
-            })
+            }
+        })
     }
 
     pub fn from_str<PC: AsRef<str>, S: AsRef<str>>(
@@ -198,11 +201,21 @@ impl Translator {
     ) -> Result<Self, DeserialiseError> {
         let document = xml::Document::parse(input.as_ref()).map_err(DeserialiseError::Xml)?;
 
-        Self::from_xml(program_counter, architecture, compiler_specs, document.root_element())
+        Self::from_xml(
+            program_counter,
+            architecture,
+            compiler_specs,
+            document.root_element(),
+        )
     }
 
-    fn build_xrefs<PC: AsRef<str>>(&mut self, program_counter: PC, compiler_specs: &Map<String, compiler::Specification>) -> Result<(), DeserialiseError> {
-        let registers = Arc::<RegisterNames>::get_mut(&mut self.registers).expect("unique access to RegisterNames");
+    fn build_xrefs<PC: AsRef<str>>(
+        &mut self,
+        program_counter: PC,
+        compiler_specs: &Map<String, compiler::Specification>,
+    ) -> Result<(), DeserialiseError> {
+        let registers = Arc::<RegisterNames>::get_mut(&mut self.registers)
+            .expect("unique access to RegisterNames");
 
         let user_ops = &mut self.user_ops;
         let mut pc = None;
@@ -224,7 +237,9 @@ impl Translator {
                     if let Some(size) = size.checked_add(*offset as usize) {
                         registers_size = registers_size.max(size);
                     } else {
-                        return Err(DeserialiseError::Invariant("offset with size of varnode overflows"));
+                        return Err(DeserialiseError::Invariant(
+                            "offset with size of varnode overflows",
+                        ));
                     }
 
                     if pc_name == name.as_ref() {
@@ -247,16 +262,16 @@ impl Translator {
                     {
                         self.context_db
                             .register_variable(name.as_str(), *bit_start, *bit_end)
-                            .ok_or_else(|| DeserialiseError::Invariant("duplicate context variable"))?;
+                            .ok_or_else(|| {
+                                DeserialiseError::Invariant("duplicate context variable")
+                            })?;
                     } else {
                         return Err(DeserialiseError::Invariant(
-                            "context symbol does not have context pattern"
-                        ))
+                            "context symbol does not have context pattern",
+                        ));
                     }
                 }
-                Some(Symbol::UserOp {
-                    index, name, ..
-                }) => {
+                Some(Symbol::UserOp { index, name, .. }) => {
                     if user_ops.len() <= *index {
                         user_ops.resize_with(index + 1, || Ustr::from(""));
                     }
@@ -272,15 +287,13 @@ impl Translator {
         } else {
             return Err(DeserialiseError::Invariant(
                 "program counter not defined as a register",
-            ))
+            ));
         }
 
         self.registers_size = registers_size;
 
         for (name, spec) in compiler_specs.iter() {
-            let conv = Convention::from_spec(spec,
-                                             &self.registers,
-                                             &self.manager)?;
+            let conv = Convention::from_spec(spec, &self.registers, &self.manager)?;
             log::debug!("loaded compiler convention `{}`", name);
             self.compiler_conventions.insert(name.clone(), conv);
         }
@@ -329,7 +342,12 @@ impl Translator {
 
         let mut source_files = Map::default();
 
-        if version >= 3 && matches!(children.peek().map(|node| node.tag_name().name()), Some("sourcefiles")) {
+        if version >= 3
+            && matches!(
+                children.peek().map(|node| node.tag_name().name()),
+                Some("sourcefiles")
+            )
+        {
             let sources = children.next().unwrap();
             for source in sources.children().filter(xml::Node::is_element) {
                 let name = source.attribute_string("name")?;
@@ -359,17 +377,16 @@ impl Translator {
             symbol_table
                 .global_scope()
                 .ok_or_else(|| DeserialiseError::Invariant("global scope not defined"))?
-                .to_owned()
+                .to_owned(),
         );
 
         let root = Arc::new(
-            symbol_table.global_scope()
+            symbol_table
+                .global_scope()
                 .ok_or_else(|| DeserialiseError::Invariant("global scope not defined"))?
                 .find("instruction", &symbol_table)
-                .ok_or_else(|| {
-                    DeserialiseError::Invariant("instruction root symbol not defined")
-                })?
-                .to_owned()
+                .ok_or_else(|| DeserialiseError::Invariant("instruction root symbol not defined"))?
+                .to_owned(),
         );
 
         let mut slf = Self {
@@ -399,16 +416,31 @@ impl Translator {
         Ok(slf)
     }
 
-    pub fn disassemble<'a, 'z>(&'a self, db: &mut ContextDatabase, builder: &'z IRBuilderArena, address: AddressValue, bytes: &[u8]) -> Result<Instruction<'z>, Error> {
+    pub fn disassemble<'a, 'z>(
+        &'a self,
+        db: &mut ContextDatabase,
+        builder: &'z IRBuilderArena,
+        address: AddressValue,
+        bytes: &[u8],
+    ) -> Result<Instruction<'z>, Error> {
         let arena = IRBuilderArena::with_capacity(4096);
         let mut ctxt = ParserContext::empty(&arena, self.manager());
         self.disassemble_with(db, &mut ctxt, &arena, builder, address, bytes)
     }
 
-    pub fn disassemble_cached_with<'a, 'az, 'z>(&'a self, db: &mut ContextDatabase, context: &mut ParserContext<'a, 'az>, arena: &'az IRBuilderArena, builder: &'z IRBuilderArena, cache: &mut Map<[u8; 2], Instruction<'z>>, address: AddressValue, bytes: &[u8]) -> Result<Instruction<'z>, Error> {
+    pub fn disassemble_cached_with<'a, 'az, 'z>(
+        &'a self,
+        db: &mut ContextDatabase,
+        context: &mut ParserContext<'a, 'az>,
+        arena: &'az IRBuilderArena,
+        builder: &'z IRBuilderArena,
+        cache: &mut Map<[u8; 2], Instruction<'z>>,
+        address: AddressValue,
+        bytes: &[u8],
+    ) -> Result<Instruction<'z>, Error> {
         if bytes.len() >= 2 {
             if let Some(insn) = cache.get(&bytes[..2]) {
-                return Ok(insn.clone())
+                return Ok(insn.clone());
             }
         }
 
@@ -416,18 +448,26 @@ impl Translator {
             Ok(insn) if insn.length() == 2 => {
                 cache.insert(<[u8; 2]>::try_from(&bytes[..2]).unwrap(), insn.clone());
                 Ok(insn)
-            },
+            }
             r => r,
         }
     }
 
-    pub fn disassemble_with<'a, 'az, 'z>(&'a self, db: &mut ContextDatabase, context: &mut ParserContext<'a, 'az>, arena: &'az IRBuilderArena, builder: &'z IRBuilderArena, address: AddressValue, bytes: &[u8]) -> Result<Instruction<'z>, Error> {
+    pub fn disassemble_with<'a, 'az, 'z>(
+        &'a self,
+        db: &mut ContextDatabase,
+        context: &mut ParserContext<'a, 'az>,
+        arena: &'az IRBuilderArena,
+        builder: &'z IRBuilderArena,
+        address: AddressValue,
+        bytes: &[u8],
+    ) -> Result<Instruction<'z>, Error> {
         if self.alignment() != 1 {
             if address.offset() % self.alignment() as u64 != 0 {
                 return Err(DisassemblyError::IncorrectAlignment {
                     address: address.offset(),
                     alignment: self.alignment(),
-                })?
+                })?;
             }
         }
 
@@ -456,28 +496,40 @@ impl Translator {
         })
     }
 
-    pub fn lift_pcode_raw<'z>(&self, db: &mut ContextDatabase, builder: &'z IRBuilderArena, address: AddressValue, bytes: &[u8]) -> Result<PCodeRaw<'z>, Error> {
+    pub fn lift_pcode_raw<'z>(
+        &self,
+        db: &mut ContextDatabase,
+        builder: &'z IRBuilderArena,
+        address: AddressValue,
+        bytes: &[u8],
+    ) -> Result<PCodeRaw<'z>, Error> {
         let arena = IRBuilderArena::with_capacity(1024);
         let mut context = ParserContext::empty(&arena, self.manager());
         let mut base = builder.builder(self);
         self.lift_pcode_raw_with(db, &mut context, &arena, &mut base, address, bytes)
     }
 
-    pub fn lift_pcode_raw_with<'a, 'az, 'z>(&'a self, db: &mut ContextDatabase, context: &mut ParserContext<'a, 'az>, arena: &'az IRBuilderArena, builder: &mut IRBuilderBase<'a, 'z>, address: AddressValue, bytes: &[u8]) -> Result<PCodeRaw<'z>, Error> {
+    pub fn lift_pcode_raw_with<'a, 'az, 'z>(
+        &'a self,
+        db: &mut ContextDatabase,
+        context: &mut ParserContext<'a, 'az>,
+        arena: &'az IRBuilderArena,
+        builder: &mut IRBuilderBase<'a, 'z>,
+        address: AddressValue,
+        bytes: &[u8],
+    ) -> Result<PCodeRaw<'z>, Error> {
         if self.alignment != 1 {
             if address.offset() % self.alignment as u64 != 0 {
                 return Err(DisassemblyError::IncorrectAlignment {
                     address: address.offset(),
                     alignment: self.alignment,
-                })?
+                })?;
             }
         }
 
         // Main instruction
         context.reinitialise(arena, db, address.clone(), bytes);
         let mut walker = ParserWalker::new(context);
-
-        log::debug!("lift_pcode_raw: {}", address);
 
         Translator::resolve(&mut walker, self.root.id(), &self.symbol_table)?;
         Translator::resolve_handles(&mut walker, &self.manager, &self.symbol_table)?;
@@ -493,8 +545,12 @@ impl Translator {
         if delay_slots > 0 {
             let mut byte_count = 0;
             loop {
-                let mut dcontext =
-                    ParserContext::new(arena, db, address.clone() + fall_offset, &bytes[fall_offset..]);
+                let mut dcontext = ParserContext::new(
+                    arena,
+                    db,
+                    address.clone() + fall_offset,
+                    &bytes[fall_offset..],
+                );
                 let mut dwalker = ParserWalker::new(&mut dcontext);
 
                 Translator::resolve(&mut dwalker, self.root.id(), &self.symbol_table)?;
@@ -519,8 +575,9 @@ impl Translator {
 
         if let Some(ctor) = walker.constructor()? {
             let tmpl = ctor.unchecked_template();
-            let mut builder = IRBuilder::new(builder, ParserWalker::new(context), &mut delay_contexts);
-            builder.build(tmpl, None, &self.symbol_table);
+            let mut builder =
+                IRBuilder::new(builder, ParserWalker::new(context), &mut delay_contexts);
+            builder.build(tmpl, None, &self.symbol_table)?;
             builder.resolve_relatives()?;
             Ok(builder.emit_raw(fall_offset))
         } else {
@@ -528,19 +585,31 @@ impl Translator {
         }
     }
 
-    pub fn lift_pcode(&self, db: &mut ContextDatabase, address: AddressValue, bytes: &[u8]) -> Result<PCode, Error> {
+    pub fn lift_pcode(
+        &self,
+        db: &mut ContextDatabase,
+        address: AddressValue,
+        bytes: &[u8],
+    ) -> Result<PCode, Error> {
         let arena = IRBuilderArena::with_capacity(4096);
         let mut context = ParserContext::empty(&arena, self.manager());
         self.lift_pcode_with(db, &mut context, &arena, address, bytes)
     }
 
-    pub fn lift_pcode_with<'a, 'az>(&'a self, db: &mut ContextDatabase, context: &mut ParserContext<'a, 'az>, arena: &'az IRBuilderArena, address: AddressValue, bytes: &[u8]) -> Result<PCode, Error> {
+    pub fn lift_pcode_with<'a, 'az>(
+        &'a self,
+        db: &mut ContextDatabase,
+        context: &mut ParserContext<'a, 'az>,
+        arena: &'az IRBuilderArena,
+        address: AddressValue,
+        bytes: &[u8],
+    ) -> Result<PCode, Error> {
         if self.alignment != 1 {
             if address.offset() % self.alignment as u64 != 0 {
                 return Err(DisassemblyError::IncorrectAlignment {
                     address: address.offset(),
                     alignment: self.alignment,
-                })?
+                })?;
             }
         }
 
@@ -564,8 +633,12 @@ impl Translator {
         if delay_slots > 0 {
             let mut byte_count = 0;
             loop {
-                let mut dcontext =
-                    ParserContext::new(arena, db, address.clone() + fall_offset, &bytes[fall_offset..]);
+                let mut dcontext = ParserContext::new(
+                    arena,
+                    db,
+                    address.clone() + fall_offset,
+                    &bytes[fall_offset..],
+                );
                 let mut dwalker = ParserWalker::new(&mut dcontext);
 
                 Translator::resolve(&mut dwalker, self.root.id(), &self.symbol_table)?;
@@ -591,8 +664,9 @@ impl Translator {
         if let Some(ctor) = walker.constructor()? {
             let tmpl = ctor.unchecked_template();
             let mut base = arena.builder(self);
-            let mut builder = IRBuilder::new(&mut base, ParserWalker::new(context), &mut delay_contexts);
-            builder.build(tmpl, None, &self.symbol_table);
+            let mut builder =
+                IRBuilder::new(&mut base, ParserWalker::new(context), &mut delay_contexts);
+            builder.build(tmpl, None, &self.symbol_table)?;
             builder.resolve_relatives()?;
             Ok(builder.emit_pcode(fall_offset))
         } else {
@@ -600,19 +674,31 @@ impl Translator {
         }
     }
 
-    pub fn lift_ecode(&self, db: &mut ContextDatabase, address: AddressValue, bytes: &[u8]) -> Result<ECode, Error> {
+    pub fn lift_ecode(
+        &self,
+        db: &mut ContextDatabase,
+        address: AddressValue,
+        bytes: &[u8],
+    ) -> Result<ECode, Error> {
         let arena = IRBuilderArena::with_capacity(1024);
         let mut context = ParserContext::empty(&arena, self.manager());
         self.lift_ecode_with(db, &mut context, &arena, address, bytes)
     }
 
-    pub fn lift_ecode_with<'a, 'az>(&'a self, db: &mut ContextDatabase, context: &mut ParserContext<'a, 'az>, arena: &'az IRBuilderArena, address: AddressValue, bytes: &[u8]) -> Result<ECode, Error> {
+    pub fn lift_ecode_with<'a, 'az>(
+        &'a self,
+        db: &mut ContextDatabase,
+        context: &mut ParserContext<'a, 'az>,
+        arena: &'az IRBuilderArena,
+        address: AddressValue,
+        bytes: &[u8],
+    ) -> Result<ECode, Error> {
         if self.alignment != 1 {
             if address.offset() % self.alignment as u64 != 0 {
                 return Err(DisassemblyError::IncorrectAlignment {
                     address: address.offset(),
                     alignment: self.alignment,
-                })?
+                })?;
             }
         }
 
@@ -635,8 +721,12 @@ impl Translator {
         if delay_slots > 0 {
             let mut byte_count = 0;
             loop {
-                let mut dcontext =
-                    ParserContext::new(arena, db, address.clone() + fall_offset, &bytes[fall_offset..]);
+                let mut dcontext = ParserContext::new(
+                    arena,
+                    db,
+                    address.clone() + fall_offset,
+                    &bytes[fall_offset..],
+                );
                 let mut dwalker = ParserWalker::new(&mut dcontext);
 
                 Translator::resolve(&mut dwalker, self.root.id(), &self.symbol_table)?;
@@ -662,8 +752,9 @@ impl Translator {
         if let Some(ctor) = walker.constructor()? {
             let tmpl = ctor.unchecked_template();
             let mut base = arena.builder(self);
-            let mut builder = IRBuilder::new(&mut base, ParserWalker::new(context), &mut delay_contexts);
-            builder.build(tmpl, None, &self.symbol_table);
+            let mut builder =
+                IRBuilder::new(&mut base, ParserWalker::new(context), &mut delay_contexts);
+            builder.build(tmpl, None, &self.symbol_table)?;
             builder.resolve_relatives()?;
             Ok(builder.emit_ecode(fall_offset))
         } else {
@@ -686,9 +777,8 @@ impl Translator {
             let mut op = walker.operand();
 
             'inner: while op < nops {
-                let operand = symbol_table
-                    .unchecked_symbol(ct.operand(op));
-                    //.ok_or_else(|| DisassemblyError::InvalidSymbol)?;
+                let operand = symbol_table.unchecked_symbol(ct.operand(op));
+                //.ok_or_else(|| DisassemblyError::InvalidSymbol)?;
 
                 walker.unchecked_push_operand(op);
 
@@ -750,9 +840,8 @@ impl Translator {
             let mut op = walker.operand();
 
             'inner: while op < nops {
-                let operand = symbol_table
-                    .unchecked_symbol(ct.operand(op));
-                    //.ok_or_else(|| DisassemblyError::InvalidSymbol)?;
+                let operand = symbol_table.unchecked_symbol(ct.operand(op));
+                //.ok_or_else(|| DisassemblyError::InvalidSymbol)?;
 
                 let offset = walker.offset(operand.offset_base()) + operand.relative_offset();
 
@@ -784,6 +873,38 @@ impl Translator {
         }
         walker.set_next_address(walker.address() + walker.length());
         walker.set_state(ParserState::Disassembly);
+
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use fugue_bytes::Endian;
+
+    use super::*;
+
+    #[test]
+    #[ignore = "test for bug"]
+    fn test_aarch64_bug() -> Result<(), Error> {
+        let mut translator = Translator::from_file(
+            "pc",
+            &ArchitectureDef::new("AARCH64", Endian::Little, 64, "v8A"),
+            &Map::default(),
+            "./data/processors/AARCH64/AARCH64.sla",
+        )?;
+
+        translator.set_variable_default("ShowPAC", 0);
+        translator.set_variable_default("PAC_clobber", 0);
+        translator.set_variable_default("ShowBTI", 0);
+        translator.set_variable_default("ShowMemTag", 0);
+
+        let bytes = [0x20, 0xf8, 0x48, 0x4f];
+
+        let mut db = translator.context_database();
+
+        let addr = translator.address(0x10cbe0u64);
+        let _insn = translator.lift_pcode(&mut db, addr, &bytes)?;
 
         Ok(())
     }

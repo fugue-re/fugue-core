@@ -11,18 +11,18 @@ use crate::space::AddressSpace;
 use crate::space_manager::SpaceManager;
 use crate::Translator;
 
-pub use bumpalo::collections::Vec as ArenaVec;
 pub use bumpalo::collections::String as ArenaString;
-pub use bumpalo::vec as arena_vec;
+pub use bumpalo::collections::Vec as ArenaVec;
 pub use bumpalo::format as arena_format;
+pub use bumpalo::vec as arena_vec;
 pub use bumpalo::Bump as Arena;
 
 use ahash::AHashMap as Map;
-use ustr::Ustr;
 use std::fmt;
 use std::mem::swap;
 use std::ops::Deref;
 use std::sync::Arc;
+use ustr::Ustr;
 
 use smallvec::SmallVec;
 use unsafe_unwrap::UnsafeUnwrap;
@@ -300,7 +300,10 @@ impl<'a, T> ArenaRef<'a, T> {
     }
 }
 
-impl<'a, T> ArenaRef<'a, T> where T: Clone {
+impl<'a, T> ArenaRef<'a, T>
+where
+    T: Clone,
+{
     pub fn cloned<'b>(&self, arena: &'b IRBuilderArena) -> ArenaRef<'b, T> {
         ArenaRef::new_in(arena, self.deref().clone())
     }
@@ -314,19 +317,25 @@ impl<'a, T> ArenaRef<'a, T> where T: Clone {
                 } else {
                     unreachable!()
                 }
-            },
+            }
             Self::Owned(v) => v,
         }
     }
 }
 
-impl<'a, T> fmt::Debug for ArenaRef<'a, T> where T: fmt::Debug {
+impl<'a, T> fmt::Debug for ArenaRef<'a, T>
+where
+    T: fmt::Debug,
+{
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         (**self).fmt(f)
     }
 }
 
-impl<'a, T> fmt::Display for ArenaRef<'a, T> where T: fmt::Display {
+impl<'a, T> fmt::Display for ArenaRef<'a, T>
+where
+    T: fmt::Display,
+{
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         (**self).fmt(f)
     }
@@ -520,7 +529,7 @@ impl<'b, 'c, 'cz, 'z> IRBuilder<'b, 'c, 'cz, 'z> {
         ctor: &'b Constructor,
         section_num: Option<usize>,
         symbols: &'b SymbolTable,
-    ) {
+    ) -> Result<(), Error> {
         let nops = ctor.operand_count();
 
         for i in 0..nops {
@@ -536,12 +545,13 @@ impl<'b, 'c, 'cz, 'z> IRBuilder<'b, 'c, 'cz, 'z> {
                 .unchecked_constructor()
                 .named_template(unsafe { section_num.unsafe_unwrap() })
             {
-                self.build(ctpl, section_num, symbols);
+                self.build(ctpl, section_num, symbols)?;
             } else {
-                self.build_empty(self.walker.unchecked_constructor(), section_num, symbols);
+                self.build_empty(self.walker.unchecked_constructor(), section_num, symbols)?;
             }
             self.walker.unchecked_pop_operand(); //?;
         }
+        Ok(())
     }
 
     pub fn append_build(
@@ -549,31 +559,32 @@ impl<'b, 'c, 'cz, 'z> IRBuilder<'b, 'c, 'cz, 'z> {
         op: &'b OpTpl,
         section_num: Option<usize>,
         symbols: &'b SymbolTable,
-    ) {
+    ) -> Result<(), Error> {
         let index = op.input(0).offset().real() as usize;
         let operand = symbols.unchecked_symbol(self.walker.unchecked_constructor().operand(index));
         let symbol = operand.defining_symbol(symbols);
         if symbol.is_none() || !symbol.as_ref().unwrap().is_subtable() {
-            return;
+            return Ok(());
         }
 
-        self.walker.unchecked_push_operand(index); //?;
+        self.walker.unchecked_push_operand(index);
         let constructor = self.walker.unchecked_constructor();
         if let Some(section_num) = section_num {
             if let Some(ctpl) = constructor.named_template(section_num) {
-                self.build(ctpl, Some(section_num), symbols);
+                self.build(ctpl, Some(section_num), symbols)?;
             } else {
-                self.build_empty(constructor, Some(section_num), symbols);
+                self.build_empty(constructor, Some(section_num), symbols)?;
             }
         } else {
             if let Some(ctpl) = constructor.template() {
-                self.build(ctpl, None, symbols);
+                self.build(ctpl, None, symbols)?;
             }
         }
-        self.walker.unchecked_pop_operand(); //?;
+        self.walker.unchecked_pop_operand();
+        Ok(())
     }
 
-    pub fn delay_slot(&mut self, symbols: &'b SymbolTable) {
+    pub fn delay_slot(&mut self, symbols: &'b SymbolTable) -> Result<(), Error> {
         let old_unique_offset = self.unique_offset;
         let base_address = self.walker.address();
         let delay_count = self.walker.delay_slot();
@@ -594,7 +605,7 @@ impl<'b, 'c, 'cz, 'z> IRBuilder<'b, 'c, 'cz, 'z> {
             self.walker.base_state();
 
             if let Some(ctpl) = self.walker.unchecked_constructor().template() {
-                self.build(ctpl, None, symbols);
+                self.build(ctpl, None, symbols)?;
             }
 
             fall_offset += length;
@@ -608,16 +619,18 @@ impl<'b, 'c, 'cz, 'z> IRBuilder<'b, 'c, 'cz, 'z> {
         }
 
         self.unique_offset = old_unique_offset;
+
+        Ok(())
     }
 
-    pub fn generate_location(&mut self, varnode: &'b VarnodeTpl) -> VarnodeData {
-        let space = unsafe {
-            varnode
-                .space()
-                .unchecked_fix_space(&mut self.walker, self.base.manager)
-                .unsafe_unwrap()
-            //.ok_or_else(|| Error::InconsistentState)?;
-        };
+    pub fn generate_location(&mut self, varnode: &'b VarnodeTpl) -> Result<VarnodeData, Error> {
+        let space = varnode
+            .space()
+            .fix_space(&mut self.walker, self.base.manager)
+            .ok()
+            .and_then(|v| v)
+            .ok_or(Error::InvalidHandle)?;
+
         let size = varnode.size().fix(&mut self.walker, self.base.manager);
 
         let offset = if space.is_constant() {
@@ -630,17 +643,24 @@ impl<'b, 'c, 'cz, 'z> IRBuilder<'b, 'c, 'cz, 'z> {
             space.wrap_offset(varnode.offset().fix(&mut self.walker, self.base.manager))
         };
 
-        VarnodeData::new(space, offset, size as usize)
+        Ok(VarnodeData::new(space, offset, size as usize))
     }
 
-    pub fn generate_pointer(&mut self, varnode: &'b VarnodeTpl) -> (&'b AddressSpace, VarnodeData) {
+    pub fn generate_pointer(
+        &mut self,
+        varnode: &'b VarnodeTpl,
+    ) -> Result<(&'b AddressSpace, VarnodeData), Error> {
+        let handle_index = varnode
+            .offset()
+            .handle_index()
+            .ok_or(Error::InvalidHandle)?;
+
         let handle = self
             .walker
-            .unchecked_handle(unsafe { varnode.offset().handle_index().unsafe_unwrap() }); //?
-                                                                                           //.ok_or_else(|| Error::InvalidHandle)?;
+            .handle_ref(handle_index)
+            .ok_or(Error::InvalidHandle)?;
 
-        let space = unsafe { handle.offset_space.unsafe_unwrap() };
-        //.ok_or_else(|| Error::InconsistentState)?;
+        let space = handle.offset_space.ok_or(Error::InvalidHandle)?;
         let size = handle.offset_size;
 
         let offset = if space.is_constant() {
@@ -651,8 +671,7 @@ impl<'b, 'c, 'cz, 'z> IRBuilder<'b, 'c, 'cz, 'z> {
             space.wrap_offset(handle.offset_offset)
         };
 
-        (handle.space, VarnodeData::new(space, offset, size))
-        //Ok((handle.space, VarnodeData::new(space, offset, size)))
+        Ok((handle.space, VarnodeData::new(space, offset, size)))
     }
 
     pub fn add_label_ref(&mut self, instruction: usize, input: usize) {
@@ -661,59 +680,51 @@ impl<'b, 'c, 'cz, 'z> IRBuilder<'b, 'c, 'cz, 'z> {
             .push(RelativeRecord::new(instruction, input))
     }
 
-    pub fn dump(&mut self, op: &'b OpTpl) {
+    pub fn dump(&mut self, op: &'b OpTpl) -> Result<(), Error> {
         let input_count = op.input_count();
-        //let mut inputs = ArenaVec::with_capacity_in(8, &self.base.alloc);
         let mut pcode = PCodeData::new_in(&self.base.arena(), op.opcode(), input_count);
 
         for i in 0..input_count {
             let input = op.input(i);
-            if input.is_dynamic(&mut self.walker) {
-                let varnode = self.generate_location(input);
-                let (spc, ptr) = self.generate_pointer(input); //?;
+            if input.is_dynamic(&mut self.walker)? {
+                let varnode = self.generate_location(input)?;
+                let (spc, ptr) = self.generate_pointer(input)?;
                 let index = VarnodeData::new(self.const_space, spc.index() as u64, 0);
                 self.issued.push(PCodeData {
                     opcode: Opcode::Load,
-                    //inputs: [index, ptr, VarnodeData::default()],
                     inputs: arena_vec![in self.base.alloc; index, ptr],
-                    //inputs_length: 2,
-                    //inputs_spill: ArenaVec::new_in(&self.base.alloc),
                     output: Some(varnode.clone()),
                 });
                 pcode.inputs.push(varnode);
-                //*unsafe { pcode.input_unchecked_mut(i) } = varnode;
             } else {
-                pcode.inputs.push(self.generate_location(input));
-                //*unsafe { pcode.input_unchecked_mut(i) } = self.generate_location(input);
+                pcode.inputs.push(self.generate_location(input)?);
             }
         }
 
         if input_count > 0 && op.input(0).is_relative() {
-            /* unsafe { pcode.input_unchecked_mut(0) }*/ pcode.inputs[0].offset += self.label_base() as u64;
+            pcode.inputs[0].offset += self.label_base() as u64;
             self.add_label_ref(self.issued.len(), 0);
         }
 
         if let Some(output) = op.output() {
-            let outp = self.generate_location(output);
+            let outp = self.generate_location(output)?;
             pcode.output = Some(outp);
             self.issued.push(pcode);
 
-            if output.is_dynamic(&mut self.walker) {
-                let (spc, ptr) = self.generate_pointer(output); //?;
+            if output.is_dynamic(&mut self.walker)? {
+                let (spc, ptr) = self.generate_pointer(output)?;
                 let index = VarnodeData::new(self.const_space, spc.index() as u64, 0);
-                //let inputs = arena_vec![in &self.base.alloc; index, ptr, outp];
                 self.issued.push(PCodeData {
                     opcode: Opcode::Store,
-                    //inputs: [index, ptr, outp],
                     inputs: arena_vec![in self.base.alloc; index, ptr, outp],
-                    //inputs_length: 3,
-                    //inputs_spill: ArenaVec::new_in(&self.base.alloc),
                     output: None,
                 })
             }
         } else {
             self.issued.push(pcode);
         }
+
+        Ok(())
     }
 
     pub fn build(
@@ -721,7 +732,7 @@ impl<'b, 'c, 'cz, 'z> IRBuilder<'b, 'c, 'cz, 'z> {
         constructor: &'b ConstructTpl,
         section_num: Option<usize>,
         symbols: &'b SymbolTable,
-    ) {
+    ) -> Result<(), Error> {
         let old_base = self.label_base;
         self.base.label_base = self.label_count;
         self.base.label_count += constructor.labels();
@@ -731,19 +742,23 @@ impl<'b, 'c, 'cz, 'z> IRBuilder<'b, 'c, 'cz, 'z> {
         for op in constructor.operations() {
             match op.opcode() {
                 Opcode::Build => {
-                    self.append_build(op, section_num, symbols);
+                    self.append_build(op, section_num, symbols)?;
                 }
                 Opcode::DelaySlot => {
-                    self.delay_slot(symbols);
+                    self.delay_slot(symbols)?;
                 }
-                Opcode::CrossBuild => unreachable!(),
+                Opcode::CrossBuild => {
+                    return Err(Error::Invariant("unexpected cross-build directive".into()))
+                }
                 _ => {
-                    self.dump(op);
+                    self.dump(op)?;
                 }
             }
         }
 
         self.base.label_base = old_base;
+
+        Ok(())
     }
 
     pub fn resolve_relatives(&mut self) -> Result<(), Error> {
@@ -793,12 +808,12 @@ impl<'b, 'c, 'cz, 'z> IRBuilder<'b, 'c, 'cz, 'z> {
 
         for op in slf.issued.drain(..) {
             operations.push(pcode::PCodeOp::from_parts(
-                    manager,
-                    registers,
-                    user_ops,
-                    op.opcode,
-                    op.inputs.into_iter(),
-                    op.output
+                manager,
+                registers,
+                user_ops,
+                op.opcode,
+                op.inputs.into_iter(),
+                op.output,
             ));
         }
 
@@ -825,14 +840,14 @@ impl<'b, 'c, 'cz, 'z> IRBuilder<'b, 'c, 'cz, 'z> {
 
         for (i, op) in slf.issued.drain(..).enumerate() {
             operations.push(ecode::Stmt::from_parts(
-                    manager,
-                    &float_formats,
-                    user_ops,
-                    &address,
-                    i,
-                    op.opcode,
-                    op.inputs.into_iter(),
-                    op.output,
+                manager,
+                &float_formats,
+                user_ops,
+                &address,
+                i,
+                op.opcode,
+                op.inputs.into_iter(),
+                op.output,
             ));
         }
 
