@@ -1,6 +1,6 @@
 use std::borrow::Borrow;
 use std::fmt;
-use std::ops::{Add, Sub};
+use std::ops::{Add, AddAssign, Sub, SubAssign};
 
 use fugue_bv::BitVec;
 
@@ -434,6 +434,82 @@ impl Sub<u64> for Address {
 
     fn sub(self, rhs: u64) -> Self {
         Self(self.0.wrapping_sub(rhs))
+    }
+}
+
+impl Add<u32> for Address {
+    type Output = Self;
+
+    fn add(self, rhs: u32) -> Self {
+        Self(self.0.wrapping_add(rhs as u64))
+    }
+}
+
+impl Sub<u32> for Address {
+    type Output = Self;
+
+    fn sub(self, rhs: u32) -> Self {
+        Self(self.0.wrapping_sub(rhs as u64))
+    }
+}
+
+impl AddAssign<Address> for Address {
+    fn add_assign(&mut self, rhs: Address) {
+        self.0 = self.0.wrapping_add(rhs.0)
+    }
+}
+
+impl SubAssign<Address> for Address {
+    fn sub_assign(&mut self, rhs: Address) {
+        self.0 = self.0.wrapping_sub(rhs.0)
+    }
+}
+
+impl AddAssign<&'_ Address> for Address {
+    fn add_assign(&mut self, rhs: &'_ Address) {
+        self.0 = self.0.wrapping_add(rhs.0)
+    }
+}
+
+impl SubAssign<&'_ Address> for Address {
+    fn sub_assign(&mut self, rhs: &'_ Address) {
+        self.0 = self.0.wrapping_sub(rhs.0)
+    }
+}
+
+impl AddAssign<usize> for Address {
+    fn add_assign(&mut self, rhs: usize) {
+        self.0 = self.0.wrapping_add(rhs as u64)
+    }
+}
+
+impl SubAssign<usize> for Address {
+    fn sub_assign(&mut self, rhs: usize) {
+        self.0 = self.0.wrapping_sub(rhs as u64)
+    }
+}
+
+impl AddAssign<u64> for Address {
+    fn add_assign(&mut self, rhs: u64) {
+        self.0 = self.0.wrapping_add(rhs)
+    }
+}
+
+impl SubAssign<u64> for Address {
+    fn sub_assign(&mut self, rhs: u64) {
+        self.0 = self.0.wrapping_sub(rhs)
+    }
+}
+
+impl AddAssign<u32> for Address {
+    fn add_assign(&mut self, rhs: u32) {
+        self.0 = self.0.wrapping_add(rhs as u64)
+    }
+}
+
+impl SubAssign<u32> for Address {
+    fn sub_assign(&mut self, rhs: u32) {
+        self.0 = self.0.wrapping_sub(rhs as u64)
     }
 }
 
