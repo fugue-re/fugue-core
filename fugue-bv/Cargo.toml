@@ -1,6 +1,6 @@
 [package]
 name = "fugue-bv"
-version = "0.2.29"
+version = "0.2.30"
 authors = ["Sam Thomas <st@xv.ax>"]
 edition = "2021"
 license = "MIT"

@@ -523,32 +523,40 @@ impl BitVec {
     }
 
     pub fn signed_cast_assign(&mut self, bits: usize) {
-        fold_map!(ref mut self, |slf| slf.signed_cast_assign(bits));
+        self.cast_assign_with(true, bits)
     }
 
     pub fn unsigned_cast_assign(&mut self, bits: usize) {
-        fold_map!(ref mut self, |slf| slf.unsigned_cast_assign(bits));
+        self.cast_assign_with(false, bits)
     }
 
     pub fn cast(self, size: usize) -> Self {
         let signed = self.is_signed();
+        self.cast_with(signed, size)
+    }
+
+    fn cast_with(self, signed: bool, size: usize) -> Self {
         match self {
             Self::N(bv) => {
                 if size <= 64 {
-                    Self::N(bv.cast(size))
+                    if signed {
+                        Self::N(bv.signed().cast(size).signed())
+                    } else {
+                        Self::N(bv.unsigned().cast(size))
+                    }
                 } else if size <= 128 {
                     let v = core_u128::BitVec::from_u64(bv.0, bv.bits());
                     Self::B(if signed {
-                        v.signed().cast(size)
+                        v.signed().cast(size).signed()
                     } else {
-                        v.cast(size)
+                        v.unsigned().cast(size)
                     })
                 } else {
                     let v = core_bigint::BitVec::from_u64(bv.0, bv.bits());
                     Self::U(if signed {
-                        v.signed().cast(size)
+                        v.signed().cast(size).signed()
                     } else {
-                        v.cast(size)
+                        v.unsigned().cast(size)
                     })
                 }
             }
@@ -556,18 +564,22 @@ impl BitVec {
                 if size <= 64 {
                     let v = core_u64::BitVec::from_u64(bv.0 as u64, 64);
                     Self::N(if signed {
-                        v.cast(size).signed()
+                        v.signed().cast(size).signed()
                     } else {
-                        v.cast(size)
+                        v.unsigned().cast(size)
                     })
                 } else if size <= 128 {
-                    Self::B(bv.cast(size))
+                    if signed {
+                        Self::B(bv.signed().cast(size).signed())
+                    } else {
+                        Self::B(bv.unsigned().cast(size))
+                    }
                 } else {
                     let v = core_bigint::BitVec::from_u128(bv.0, bv.bits());
                     Self::U(if signed {
-                        v.signed().cast(size)
+                        v.signed().cast(size).signed()
                     } else {
-                        v.cast(size)
+                        v.unsigned().cast(size)
                     })
                 }
             }
@@ -575,19 +587,23 @@ impl BitVec {
                 if size <= 64 {
                     let v = core_u64::BitVec::from_u64(bv.cast(64).to_u64().unwrap(), 64);
                     Self::N(if signed {
-                        v.cast(size).signed()
+                        v.signed().cast(size).signed()
                     } else {
-                        v.cast(size)
+                        v.unsigned().cast(size)
                     })
                 } else if size <= 128 {
                     let v = core_u128::BitVec::from_u128(bv.cast(128).to_u128().unwrap(), 128);
                     Self::B(if signed {
-                        v.cast(size).signed()
+                        v.signed().cast(size).signed()
                     } else {
-                        v.cast(size)
+                        v.unsigned().cast(size)
                     })
                 } else {
-                    Self::U(bv.cast(size))
+                    if signed {
+                        Self::U(bv.signed().cast(size).signed())
+                    } else {
+                        Self::U(bv.unsigned().cast(size))
+                    }
                 }
             }
         }
@@ -595,16 +611,24 @@ impl BitVec {
 
     pub fn cast_assign(&mut self, size: usize) {
         let signed = self.is_signed();
+        self.cast_assign_with(signed, size)
+    }
+
+    fn cast_assign_with(&mut self, signed: bool, size: usize) {
         match self {
             Self::N(ref mut bv) => {
                 if size <= 64 {
-                    bv.cast_assign(size);
+                    if signed {
+                        bv.signed_cast_assign(size);
+                    } else {
+                        bv.unsigned_cast_assign(size);
+                    }
                 } else if size <= 128 {
                     let mut v = core_u128::BitVec::from_u64(bv.0, bv.bits());
                     if signed {
                         v.signed_cast_assign(size);
                     } else {
-                        v.cast_assign(size);
+                        v.unsigned_cast_assign(size);
                     }
                     *self = Self::B(v);
                 } else {
@@ -612,7 +636,7 @@ impl BitVec {
                     if signed {
                         v.signed_cast_assign(size);
                     } else {
-                        v.cast_assign(size);
+                        v.unsigned_cast_assign(size);
                     }
                     *self = Self::U(v);
                 }
@@ -623,42 +647,58 @@ impl BitVec {
                     if signed {
                         v.signed_cast_assign(size);
                     } else {
-                        v.cast_assign(size);
+                        v.unsigned_cast_assign(size);
                     }
                     *self = Self::N(v);
                 } else if size <= 128 {
-                    bv.cast_assign(size);
+                    if signed {
+                        bv.signed_cast_assign(size);
+                    } else {
+                        bv.unsigned_cast_assign(size);
+                    }
                 } else {
                     let mut v = core_bigint::BitVec::from_u128(bv.0, bv.bits());
                     if signed {
                         v.signed_cast_assign(size);
                     } else {
-                        v.cast_assign(size);
+                        v.unsigned_cast_assign(size);
                     }
                     *self = Self::U(v);
                 }
             }
             Self::U(ref mut bv) => {
                 if size <= 64 {
-                    bv.cast_assign(64);
+                    if signed {
+                        bv.signed_cast_assign(64);
+                    } else {
+                        bv.unsigned_cast_assign(64);
+                    }
                     let mut v = core_u64::BitVec::from_u64(bv.to_u64().unwrap(), 64);
                     if signed {
                         v.signed_cast_assign(size);
                     } else {
-                        v.cast_assign(size);
+                        v.unsigned_cast_assign(size);
                     }
                     *self = Self::N(v);
                 } else if size <= 128 {
-                    bv.cast_assign(128);
+                    if signed {
+                        bv.signed_cast_assign(128);
+                    } else {
+                        bv.unsigned_cast_assign(128);
+                    }
                     let mut v = core_u128::BitVec::from_u128(bv.to_u128().unwrap(), 128);
                     if signed {
                         v.signed_cast_assign(size);
                     } else {
-                        v.cast_assign(size);
+                        v.unsigned_cast_assign(size);
                     }
                     *self = Self::B(v);
                 } else {
-                    bv.cast_assign(size);
+                    if signed {
+                        bv.signed_cast_assign(size);
+                    } else {
+                        bv.unsigned_cast_assign(size);
+                    }
                 }
             }
         }
