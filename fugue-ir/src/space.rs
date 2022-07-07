@@ -256,6 +256,7 @@ const ID_UNIQUE_SPACE: u32 = 0x1000_0000;
 const ID_STACK_HINT: u32 = 0x0100_0000;
 const ID_HEAP_HINT: u32 = 0x0200_0000;
 const ID_STACK_OR_HEAP: u32 = ID_STACK_HINT | ID_HEAP_HINT;
+const ID_UNMAPPED_HINT: u32 = 0x0400_0000;
 
 impl AddressSpaceId {
     pub fn index(&self) -> usize {
@@ -286,24 +287,28 @@ impl AddressSpaceId {
         }
     }
 
-    pub(crate) fn constant_id(index: usize) -> Self {
+    pub fn constant_id(index: usize) -> Self {
         Self((index & 0xffff) as u32 | ID_CONSTANT_SPACE)
     }
 
-    pub(crate) fn default_id(index: usize) -> Self {
+    pub fn default_id(index: usize) -> Self {
         Self((index & 0xffff) as u32 | ID_DEFAULT_SPACE)
     }
 
-    pub(crate) fn register_id(index: usize) -> Self {
+    pub fn register_id(index: usize) -> Self {
         Self((index & 0xffff) as u32 | ID_REGISTER_SPACE)
     }
 
-    pub(crate) fn unique_id(index: usize) -> Self {
+    pub fn unique_id(index: usize) -> Self {
         Self((index & 0xffff) as u32 | ID_UNIQUE_SPACE)
     }
 
-    pub(crate) fn other_id(index: usize) -> Self {
+    pub fn other_id(index: usize) -> Self {
         Self((index & 0xffff) as u32)
+    }
+
+    pub fn unmapped_id(index: usize) -> Self {
+        Self((index & 0xffff) as u32 | ID_UNMAPPED_HINT)
     }
 
     pub fn is_constant(&self) -> bool {
@@ -335,6 +340,10 @@ impl AddressSpaceId {
 
     pub fn is_unique(&self) -> bool {
         (ID_UNIQUE_SPACE & self.0) != 0
+    }
+
+    pub fn is_unmapped(&self) -> bool {
+        (ID_UNMAPPED_HINT & self.0) != 0
     }
 }
 
