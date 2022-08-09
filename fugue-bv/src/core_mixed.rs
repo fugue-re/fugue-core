@@ -267,6 +267,11 @@ impl BitVec {
         }
     }
 
+    #[inline(always)]
+    pub fn as_raw(&self) -> Cow<BigInt> {
+        self.as_bigint()
+    }
+
     pub fn zero(bits: usize) -> Self {
         if bits <= 64 {
             Self::N(core_u64::BitVec::zero(bits))
