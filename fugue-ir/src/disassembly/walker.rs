@@ -109,6 +109,7 @@ pub struct ContextSet<'b> {
     number: usize,
     mask: u32,
     value: u32,
+    point: usize,
     flow: bool,
 }
 
@@ -358,12 +359,13 @@ impl<'b, 'z> ParserContext<'b, 'z> {
         self.context[num] = (self.context[num] & !mask) | (mask & value);
     }
 
-    pub fn add_commit(&mut self, symbol: &'b Symbol, num: usize, mask: u32, flow: bool) {
+    pub fn add_commit(&mut self, symbol: &'b Symbol, num: usize, mask: u32, point: usize, flow: bool) {
         let set = ContextSet {
             triple: symbol,
             number: num,
             mask,
             value: self.context[num] & mask,
+            point,
             flow,
         };
         self.context_commit.push(set);
@@ -380,7 +382,7 @@ impl<'b, 'z> ParserContext<'b, 'z> {
         for commit in commits {
             let symbol = commit.triple;
             let mut address = if let Symbol::Operand { handle_index, .. } = symbol {
-                let handle = nwalker.unchecked_handle_ref(*handle_index); //?
+                let handle = nwalker.unchecked_handle_ref_via(commit.point, *handle_index); //?
                     //.ok_or_else(|| Error::InvalidHandle)?;
                 AddressValue::new(handle.space, handle.offset_offset)
             } else {
@@ -501,6 +503,13 @@ impl<'b, 'c, 'z> ParserWalker<'b, 'c, 'z> {
             .and_then(|hidx| self.ctx.handle(hidx))
     }
 
+    pub fn handle_ref_via(&self, point: usize, index: usize) -> Option<&FixedHandle<'b>> {
+        self.ctx.point(point)
+            .resolve.get(index)
+            .and_then(|v| *v)
+            .and_then(|hidx| self.ctx.handle(hidx))
+    }
+
     pub fn unchecked_handle(&self, index: usize) -> FixedHandle<'b> {
         self.unchecked_handle_ref(index).clone()
     }
@@ -508,6 +517,15 @@ impl<'b, 'c, 'z> ParserWalker<'b, 'c, 'z> {
     pub fn unchecked_handle_ref(&self, index: usize) -> &FixedHandle<'b> {
         let ph = unsafe {
             self.unchecked_point()
+                .resolve.get_unchecked(index)
+                .unsafe_unwrap()
+        };
+        self.ctx.unchecked_handle(ph)
+    }
+
+    pub fn unchecked_handle_ref_via(&self, point: usize, index: usize) -> &FixedHandle<'b> {
+        let ph = unsafe {
+            self.ctx.point(point)
                 .resolve.get_unchecked(index)
                 .unsafe_unwrap()
         };
@@ -689,7 +707,8 @@ impl<'b, 'c, 'z> ParserWalker<'b, 'c, 'z> {
     }
 
     pub fn add_commit(&mut self, symbol: &'b Symbol, num: usize, mask: u32, flow: bool) {
-        self.ctx.add_commit(symbol, num, mask, flow)
+        let point = unsafe { self.point.unsafe_unwrap() };
+        self.ctx.add_commit(symbol, num, mask, point, flow)
     }
 
     pub fn apply_commits(&mut self, db: &mut ContextDatabase, manager: &'b SpaceManager, symbols: &'b SymbolTable) -> Result<(), Error> {
