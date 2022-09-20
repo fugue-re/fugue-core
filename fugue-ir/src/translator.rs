@@ -908,4 +908,29 @@ mod test {
 
         Ok(())
     }
+
+    #[test]
+    #[ignore = "test arm32 bug #6"]
+    fn test_arm32_bug_6() -> Result<(), Box<dyn std::error::Error>> {
+        let mut translator = Translator::from_file(
+            "pc",
+            &ArchitectureDef::new("ARM", Endian::Little, 32, "V8T"),
+            &Default::default(),
+            "./data/processors/ARM/ARM8_le.sla",
+        )?;
+
+        translator.set_variable_default("TMode", 1);
+        translator.set_variable_default("LRset", 0);
+        translator.set_variable_default("spsr", 0);
+
+        let bytes = [0xF5, 0xF7, 0x8C, 0xEF];
+
+        let mut db = translator.context_database();
+        let irb = IRBuilderArena::with_capacity(4096);
+
+        let addr = translator.address(0x1000u64);
+        let _insn = translator.disassemble(&mut db, &irb, addr, &bytes)?;
+
+        Ok(())
+    }
 }
