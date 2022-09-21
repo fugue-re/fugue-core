@@ -9,8 +9,7 @@ use crate::address::AddressValue;
 use crate::disassembly::partmap::{BoundKind, PartMap};
 use crate::disassembly::VarnodeData;
 
-#[derive(Debug, Clone)]
-#[derive(serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct ContextBitRange {
     word: usize,
     start_bit: usize,
@@ -57,27 +56,39 @@ impl ContextBitRange {
         self.mask
     }
 
+    #[inline]
     fn get(&self, values: &[u32]) -> u32 {
         values[self.word()].checked_shr(self.shift()).unwrap_or(0) & self.mask()
     }
 
+    #[inline]
     fn set(&self, values: &mut [u32], value: u32) {
         let mut nvalue = values[self.word()];
         nvalue &= !(self.mask().checked_shl(self.shift()).unwrap_or(0));
         nvalue |= (value & self.mask()).checked_shl(self.shift()).unwrap_or(0);
         values[self.word()] = nvalue;
     }
+
+    #[inline]
+    fn set_full(&self, values: &mut [u32], masks: &mut [u32], value: u32) {
+        let mut nvalue = values[self.word()];
+        let nmask = self.mask().checked_shl(self.shift()).unwrap_or(0);
+
+        nvalue &= !(self.mask().checked_shl(self.shift()).unwrap_or(0));
+        nvalue |= (value & self.mask()).checked_shl(self.shift()).unwrap_or(0);
+
+        values[self.word()] = nvalue;
+        masks[self.word()] |= nmask;
+    }
 }
 
-#[derive(Debug, Clone)]
-#[derive(serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct TrackedContext {
     location: VarnodeData,
     value: u32,
 }
 
-#[derive(Debug, Clone)]
-#[derive(serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct TrackedSet(Vec<TrackedContext>);
 
 impl Default for TrackedSet {
@@ -100,8 +111,7 @@ impl DerefMut for TrackedSet {
     }
 }
 
-#[derive(Debug, Clone)]
-#[derive(serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 struct FreeArray {
     values: Vec<u32>,
     masks: Vec<u32>,
@@ -292,8 +302,7 @@ impl ContextCache {
 }
 */
 
-#[derive(Debug, Clone)]
-#[derive(serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct ContextDatabase {
     size: usize,
     variables: Map<String, ContextBitRange>,
@@ -363,15 +372,11 @@ impl ContextDatabase {
         Some(())
     }
 
-    pub fn set_variable_default<S: Borrow<str>>(
-        &mut self,
-        name: S,
-        value: u32,
-    ) -> Option<()> {
+    pub fn set_variable_default<S: Borrow<str>>(&mut self, name: S, value: u32) -> Option<()> {
         let context = self.variables.get(name.borrow())?;
         let default = self.database.default_value_mut();
 
-        context.set(&mut default.values, value);
+        context.set_full(&mut default.values, &mut default.masks, value);
 
         Some(())
     }
@@ -442,12 +447,15 @@ impl ContextDatabase {
 
     pub fn set_context_change_point(
         &mut self,
-        address: AddressValue,
+        current_address: AddressValue,
+        commit_address: AddressValue,
         num: usize,
         mask: u32,
         value: u32,
-    ) where {
-        get_region_to_change_point(&mut self.database, address, num, mask, |change| {
+    ) {
+        self.database.split(&current_address);
+
+        get_region_to_change_point(&mut self.database, commit_address, num, mask, |change| {
             let val = &mut change[num];
             *val &= !mask;
             *val |= value;
@@ -481,9 +489,7 @@ impl ContextDatabase {
             addr2,
             context.word(),
             context.mask(),
-            |change| {
-                context.set(change, value)
-            }
+            |change| context.set(change, value),
         );
         Some(())
     }
@@ -494,13 +500,16 @@ fn get_region_to_change_point<'a, F>(
     addr: AddressValue,
     num: usize,
     mask: u32,
-    mut f: F
-) where F: FnMut(&mut Vec<u32>) {
+    mut f: F,
+) where
+    F: FnMut(&mut Vec<u32>),
+{
     use itertools::Position;
 
     db.split(&addr);
 
-    for change in db.range_mut(addr..)
+    for change in db
+        .range_mut(addr..)
         .with_position()
         .take_while(move |pos| match pos {
             Position::First(_) | Position::Only(_) => true,
@@ -512,7 +521,8 @@ fn get_region_to_change_point<'a, F>(
                 &mut fa.values
             }
             Position::Middle((_, fa)) | Position::Last((_, fa)) => &mut fa.values,
-        }) {
+        })
+    {
         f(change)
     }
 }
@@ -523,8 +533,10 @@ fn get_region_for_set<'a, F>(
     addr2: Option<AddressValue>,
     num: usize,
     mask: u32,
-    mut f: F
-) where F: FnMut(&'a mut Vec<u32>) {
+    mut f: F,
+) where
+    F: FnMut(&'a mut Vec<u32>),
+{
     db.split(&addr1);
 
     let ranges = if let Some(addr2) = addr2 {
