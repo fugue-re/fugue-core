@@ -376,6 +376,7 @@ impl<'b, 'z> ParserContext<'b, 'z> {
             return Ok(())
         }
 
+        let curr_address = self.address.clone();
         let commits = self.context_commit.clone();
         let mut nwalker = ParserWalker::<'b, 'c, 'z>::new(self);
 
@@ -397,11 +398,11 @@ impl<'b, 'z> ParserContext<'b, 'z> {
             }
 
             if commit.flow {
-                db.set_context_change_point(address, commit.number, commit.mask, commit.value);
+                db.set_context_change_point(curr_address, address, commit.number, commit.mask, commit.value);
             } else {
                 let naddress = address.clone() + 1usize;
                 if naddress.offset() < address.offset() {
-                    db.set_context_change_point(address, commit.number, commit.mask, commit.value);
+                    db.set_context_change_point(curr_address, address, commit.number, commit.mask, commit.value);
                 } else {
                     db.set_context_region(address, Some(naddress), commit.number, commit.mask, commit.value);
                 }

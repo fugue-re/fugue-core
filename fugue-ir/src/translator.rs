@@ -475,7 +475,10 @@ impl Translator {
         let mut walker = ParserWalker::new(context);
 
         Translator::resolve(&mut walker, self.root.id(), &self.symbol_table)?;
+        Translator::resolve_handles(&mut walker, &self.manager, &self.symbol_table)?;
+
         walker.base_state();
+        walker.apply_commits(db, &self.manager, &self.symbol_table)?;
 
         let delay_slots = walker.delay_slot();
         let length = walker.length();
@@ -930,6 +933,45 @@ mod test {
 
         let addr = translator.address(0x1000u64);
         let _insn = translator.disassemble(&mut db, &irb, addr, &bytes)?;
+
+        Ok(())
+    }
+
+    #[test]
+    #[ignore = "test arm32 bug #9"]
+    fn test_arm32_bug_9() -> Result<(), Box<dyn std::error::Error>> {
+        let mut translator = Translator::from_file(
+            "pc",
+            &ArchitectureDef::new("ARM", Endian::Little, 32, "V8T"),
+            &Default::default(),
+            "./data/processors/ARM/ARM8_le.sla",
+        )?;
+
+        translator.set_variable_default("TMode", 1);
+        translator.set_variable_default("LRset", 0);
+        translator.set_variable_default("spsr", 0);
+
+        let bytes = [0xf5, 0xf7, 0x8c, 0xef, 0x00, 0xb1, 0x08, 0xbd];
+
+        let mut db = translator.context_database();
+        let irb = IRBuilderArena::with_capacity(4096);
+
+        let addr = translator.address(0x0u64);
+        let mut offset = 0;
+        while offset < bytes.len() {
+            let insn = translator.lift_pcode_raw(&mut db, &irb, addr + offset, &bytes[offset..])?;
+            println!("{}", insn.display(&translator));
+            offset += insn.length();
+        }
+
+        let mut db = translator.context_database();
+        let addr = translator.address(0xb000u64);
+        let mut offset = 0;
+        while offset < bytes.len() {
+            let insn = translator.lift_pcode_raw(&mut db, &irb, addr + offset, &bytes[offset..])?;
+            println!("{}", insn.display(&translator));
+            offset += insn.length();
+        }
 
         Ok(())
     }
