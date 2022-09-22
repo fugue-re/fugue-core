@@ -33,6 +33,8 @@ use crate::il::pcode::{self, PCode};
 pub type FloatFormats = Map<usize, Arc<FloatFormat>>;
 pub type UserOpStr = Ustr;
 
+const INVALID_LABEL: u64 = 0xdeaded;
+
 #[derive(Debug)]
 pub struct PCodeRaw<'z> {
     pub address: AddressValue,
@@ -508,18 +510,22 @@ impl<'b, 'c, 'cz, 'z> IRBuilder<'b, 'c, 'cz, 'z> {
         }
     }
 
+    #[inline]
     pub fn label_base(&self) -> usize {
         self.base.label_base
     }
 
+    #[inline]
     pub fn walker(&self) -> &ParserWalker<'b, 'c, 'cz> {
         &self.walker
     }
 
+    #[inline]
     pub fn walker_mut(&mut self) -> &mut ParserWalker<'b, 'c, 'cz> {
         &mut self.walker
     }
 
+    #[inline]
     pub fn set_unique_offset(&mut self, offset: u64) {
         self.unique_offset = (offset & self.unique_mask).checked_shl(4).unwrap_or(0);
     }
@@ -674,10 +680,25 @@ impl<'b, 'c, 'cz, 'z> IRBuilder<'b, 'c, 'cz, 'z> {
         Ok((handle.space, VarnodeData::new(space, offset, size)))
     }
 
+    #[inline]
     pub fn add_label_ref(&mut self, instruction: usize, input: usize) {
         self.base
             .label_refs
             .push(RelativeRecord::new(instruction, input))
+    }
+
+    #[inline]
+    pub fn add_label(&mut self, id: usize) {
+        if id >= self.base.labels.len() {
+            self.base.labels.resize(id + 1, INVALID_LABEL);
+        }
+        self.base.labels[id] = self.issued.len() as u64;
+    }
+
+    #[inline]
+    pub fn set_label(&mut self, op: &'b OpTpl) {
+        // offset of label is not offset, it's label id
+        self.add_label(op.input(0).offset().real() as usize + self.label_base());
     }
 
     pub fn dump(&mut self, op: &'b OpTpl) -> Result<(), Error> {
@@ -747,6 +768,9 @@ impl<'b, 'c, 'cz, 'z> IRBuilder<'b, 'c, 'cz, 'z> {
                 Opcode::DelaySlot => {
                     self.delay_slot(symbols)?;
                 }
+                Opcode::Label => {
+                    self.set_label(op);
+                }
                 Opcode::CrossBuild => {
                     return Err(Error::Invariant("unexpected cross-build directive".into()))
                 }
@@ -765,16 +789,23 @@ impl<'b, 'c, 'cz, 'z> IRBuilder<'b, 'c, 'cz, 'z> {
         for rel in &self.base.label_refs {
             let varnode = &mut self.issued[rel.instruction].inputs[rel.index];
             let id = varnode.offset();
-            if id >= self.base.labels.len() as u64 {
-                return Err(Error::Invariant(format!(
-                    "no known ways to set label {}",
-                    id
-                )));
+
+            match self.base.labels.get(id as usize) {
+                // >= self.base.labels.len() or INVALID_LABEL
+                None | Some(0xdeaded) => {
+                    return Err(Error::Invariant(format!(
+                        "no known ways to set label {}",
+                        id
+                    )));
+                }
+                Some(label) => {
+                    let res =
+                        label.wrapping_sub(rel.instruction as u64) & bits::calculate_mask(varnode.size());
+                    varnode.offset = res;
+                }
             }
-            let res = (self.base.labels[id as usize] - rel.index as u64)
-                & bits::calculate_mask(varnode.size());
-            varnode.offset = res;
         }
+
         Ok(())
     }
 
