@@ -975,4 +975,30 @@ mod test {
 
         Ok(())
     }
+
+    #[test]
+    #[ignore = "test sha2a bug #4"]
+    fn test_sh2a_bug_4() -> Result<(), Box<dyn std::error::Error>> {
+        let translator = Translator::from_file(
+            "pc",
+            &ArchitectureDef::new("SuperH", Endian::Big, 32, "SH-2A"),
+            &Default::default(),
+            "./data/processors/SuperH/sh-2a.sla",
+        )?;
+
+        let bytes = [0xe2, 0xf5, 0x40, 0x08, 0x44, 0x2d];
+
+        let mut db = translator.context_database();
+        let irb = IRBuilderArena::with_capacity(4096);
+
+        let addr = translator.address(0xd92u64);
+        let mut offset = 0;
+        while offset < bytes.len() {
+            let insn = translator.lift_pcode_raw(&mut db, &irb, addr + offset, &bytes[offset..])?;
+            println!("{}", insn.display(&translator));
+            offset += insn.length();
+        }
+
+        Ok(())
+    }
 }
