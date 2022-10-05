@@ -437,7 +437,7 @@ impl Specification {
         let res = Self::named_from_xml(name, document.root_element());
 
         if let Err(ref e) = res {
-            log::debug!("load failed: {:?}", e);
+            log::warn!("load failed: {:?}", e);
         }
 
         res
