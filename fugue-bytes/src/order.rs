@@ -1,5 +1,6 @@
 use byteorder::ByteOrder;
 use std::cmp::Ordering;
+use ux::u24;
 
 use crate::{BE, LE};
 use crate::endian::Endian;
@@ -35,6 +36,9 @@ pub trait Order: ByteOrder + Send + Sync + 'static {
             buf[0] = n;
         }
     }
+
+    fn read_u24(buf: &[u8]) -> u24;
+    fn write_u24(buf: &mut [u8], n: u24);
 
     fn read_isize(buf: &[u8]) -> isize;
     fn write_isize(buf: &mut [u8], n: isize);
@@ -87,6 +91,18 @@ impl Order for BE {
     #[cfg(target_pointer_width = "64")]
     fn write_usize(buf: &mut [u8], n: usize) {
         Self::write_u64(buf, n as u64)
+    }
+
+    fn read_u24(buf: &[u8]) -> u24 {
+        let temp_u32 = u32::from_be_bytes([0, buf[0], buf[1], buf[2]]);
+        u24::new(temp_u32)
+    }
+
+    fn write_u24(buf: &mut [u8], n: u24) {
+        let temp = u32::from(n).to_be_bytes();
+        buf[0] = temp[1];
+        buf[1] = temp[2];
+        buf[2] = temp[3];
     }
 
     fn subpiece(destination: &mut [u8], source: &[u8], amount: usize) {
@@ -149,6 +165,18 @@ impl Order for LE {
     #[cfg(target_pointer_width = "64")]
     fn write_usize(buf: &mut [u8], n: usize) {
         Self::write_u64(buf, n as u64)
+    }
+
+    fn read_u24(buf: &[u8]) -> u24 {
+        let temp_u32 = u32::from_le_bytes([buf[0], buf[1], buf[2], 0]);
+        u24::new(temp_u32)
+    }
+
+    fn write_u24(buf: &mut [u8], n: u24) {
+        let temp = u32::from(n).to_le_bytes();
+        buf[0] = temp[0];
+        buf[1] = temp[1];
+        buf[2] = temp[2];
     }
 
     fn subpiece(destination: &mut [u8], source: &[u8], amount: usize) {
