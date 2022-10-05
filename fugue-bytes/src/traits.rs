@@ -1,4 +1,5 @@
 use paste::paste;
+use ux::u24;
 
 use crate::order::Order;
 
@@ -52,3 +53,17 @@ impl ByteCast for bool {
 
 impls_for! { [i8, i16, i32, i64, i128, isize], true }
 impls_for! { [u8, u16, u32, u64, u128, usize], false }
+
+
+impl ByteCast for u24 {
+    const SIZEOF: usize = std::mem::size_of::<u24>();
+    const SIGNED: bool = false;
+
+    fn from_bytes<O: Order>(buf: &[u8]) -> Self {
+        <O as Order>::read_u24(buf)
+    }
+
+    fn into_bytes<O: Order>(&self, buf: &mut [u8]) {
+        <O as Order>::write_u24(buf, *self)
+    }
+}
