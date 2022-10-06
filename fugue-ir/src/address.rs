@@ -60,6 +60,12 @@ impl PartialEq<Address> for u64 {
     }
 }
 
+impl From<&Address> for Address {
+    fn from(v: &Address) -> Self {
+        Self(v.0)
+    }
+}
+
 impl From<u64> for Address {
     fn from(v: u64) -> Self {
         Self(v)
