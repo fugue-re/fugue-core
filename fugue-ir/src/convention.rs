@@ -119,6 +119,9 @@ pub struct Prototype {
     stack_shift: u64,
     inputs: Vec<PrototypeEntry>,
     outputs: Vec<PrototypeEntry>,
+    unaffected: Vec<PrototypeOperand>,
+    killed_by_call: Vec<PrototypeOperand>,
+    likely_trashed: Vec<PrototypeOperand>,
 }
 
 impl Prototype {
@@ -139,6 +142,21 @@ impl Prototype {
                 .outputs
                 .iter()
                 .map(|output| PrototypeEntry::from_spec(output, registers))
+                .collect::<Result<_, _>>()?,
+            unaffected: spec
+                .unaffected
+                .iter()
+                .map(|unaffected| PrototypeOperand::from_spec(unaffected, registers))
+                .collect::<Result<_, _>>()?,
+            killed_by_call: spec
+                .killed_by_call
+                .iter()
+                .map(|killed| PrototypeOperand::from_spec(killed, registers))
+                .collect::<Result<_, _>>()?,
+            likely_trashed: spec
+                .likely_trashed
+                .iter()
+                .map(|trashed| PrototypeOperand::from_spec(trashed, registers))
                 .collect::<Result<_, _>>()?,
         })
     }
@@ -161,6 +179,18 @@ impl Prototype {
 
     pub fn outputs(&self) -> &[PrototypeEntry] {
         &self.outputs
+    }
+
+    pub fn unaffected(&self) -> &[PrototypeOperand] {
+        &self.unaffected
+    }
+
+    pub fn killed_by_call(&self) -> &[PrototypeOperand] {
+        &self.killed_by_call
+    }
+
+    pub fn likely_trashed(&self) -> &[PrototypeOperand] {
+        &self.likely_trashed
     }
 }
 

@@ -225,6 +225,7 @@ impl PrototypeOperand {
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[derive(serde::Deserialize, serde::Serialize)]
 pub struct PrototypeEntry {
+    pub(crate) killed_by_call: bool,
     pub(crate) min_size: usize,
     pub(crate) max_size: usize,
     pub(crate) alignment: u64,
@@ -234,7 +235,7 @@ pub struct PrototypeEntry {
 }
 
 impl PrototypeEntry {
-    pub fn from_xml(input: xml::Node) -> Result<Self, DeserialiseError> {
+    pub fn from_xml(input: xml::Node, killed_by_call: bool) -> Result<Self, DeserialiseError> {
         if input.tag_name().name() != "pentry" {
             return Err(DeserialiseError::TagUnexpected(
                     input.tag_name().name().to_owned(),
@@ -262,6 +263,7 @@ impl PrototypeEntry {
         let operand = PrototypeOperand::from_xml(node.unwrap())?;
 
         Ok(Self {
+            killed_by_call,
             min_size,
             max_size,
             alignment,
@@ -280,6 +282,9 @@ pub struct Prototype {
     pub(crate) stack_shift: u64,
     pub(crate) inputs: Vec<PrototypeEntry>,
     pub(crate) outputs: Vec<PrototypeEntry>,
+    pub(crate) unaffected: Vec<PrototypeOperand>,
+    pub(crate) killed_by_call: Vec<PrototypeOperand>,
+    pub(crate) likely_trashed: Vec<PrototypeOperand>,
 }
 
 impl Prototype {
@@ -300,22 +305,47 @@ impl Prototype {
 
         let mut inputs = Vec::new();
         let mut outputs = Vec::new();
+        let mut unaffected = Vec::new();
+        let mut killed_by_call = Vec::new();
+        let mut likely_trashed = Vec::new();
 
         for child in input.children().filter(xml::Node::is_element) {
             match child.tag_name().name() {
                 "input" => {
                     let mut values = child.children()
                         .filter(xml::Node::is_element)
-                        .map(PrototypeEntry::from_xml)
+                        .map(|v| PrototypeEntry::from_xml(v, false))
                         .collect::<Result<Vec<_>, _>>()?;
                     inputs.append(&mut values);
                 },
                 "output" => {
+                    let killed = child.attribute_bool("killedbycall").unwrap_or(false);
                     let mut values = child.children()
                         .filter(xml::Node::is_element)
-                        .map(PrototypeEntry::from_xml)
+                        .map(|v| PrototypeEntry::from_xml(v, killed))
                         .collect::<Result<Vec<_>, _>>()?;
                     outputs.append(&mut values);
+                },
+                "unaffected" => {
+                    let mut values = child.children()
+                        .filter(xml::Node::is_element)
+                        .filter_map(|op| PrototypeOperand::from_xml(op).ok())
+                        .collect::<Vec<_>>();
+                    unaffected.append(&mut values);
+                },
+                "killedbycall" => {
+                    let mut values = child.children()
+                        .filter(xml::Node::is_element)
+                        .filter_map(|op| PrototypeOperand::from_xml(op).ok())
+                        .collect::<Vec<_>>();
+                    killed_by_call.append(&mut values);
+                },
+                "likelytrash" => {
+                    let mut values = child.children()
+                        .filter(xml::Node::is_element)
+                        .filter_map(|op| PrototypeOperand::from_xml(op).ok())
+                        .collect::<Vec<_>>();
+                    likely_trashed.append(&mut values);
                 },
                 _ => (),
             }
@@ -327,6 +357,9 @@ impl Prototype {
             stack_shift,
             inputs,
             outputs,
+            unaffected,
+            killed_by_call,
+            likely_trashed,
         })
     }
 }
