@@ -530,16 +530,19 @@ impl BitVec {
                 let mask = Self::mask_value(size);
                 let extm = BigInt::from(&*self.1 ^ &*mask);
                 self.0 |= extm;
+                self.3 = size;
                 self.mask_assign();
                 self.signed_assign();
             } else {
                 self.1 = Self::mask_value(size);
                 self.2 = true;
+                self.3 = size;
                 self.mask_assign();
             }
         } else {
             self.1 = Self::mask_value(size);
             self.2 = false;
+            self.3 = size;
             self.mask_assign();
         }
     }

@@ -556,6 +556,7 @@ impl BitVec {
                 let mask = Self::mask_value(size as u32);
                 let extm = u128::from(self.mask_bits() ^ mask);
                 self.0 |= extm;
+                self.1 = Self::pack_meta(true, size as _);
                 self.mask_assign();
             } else {
                 *self = Self::from_uint(self.0, size);
