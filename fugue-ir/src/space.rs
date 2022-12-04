@@ -287,27 +287,27 @@ impl AddressSpaceId {
         }
     }
 
-    pub fn constant_id(index: usize) -> Self {
+    pub const fn constant_id(index: usize) -> Self {
         Self((index & 0xffff) as u32 | ID_CONSTANT_SPACE)
     }
 
-    pub fn default_id(index: usize) -> Self {
+    pub const fn default_id(index: usize) -> Self {
         Self((index & 0xffff) as u32 | ID_DEFAULT_SPACE)
     }
 
-    pub fn register_id(index: usize) -> Self {
+    pub const fn register_id(index: usize) -> Self {
         Self((index & 0xffff) as u32 | ID_REGISTER_SPACE)
     }
 
-    pub fn unique_id(index: usize) -> Self {
+    pub const fn unique_id(index: usize) -> Self {
         Self((index & 0xffff) as u32 | ID_UNIQUE_SPACE)
     }
 
-    pub fn other_id(index: usize) -> Self {
+    pub const fn other_id(index: usize) -> Self {
         Self((index & 0xffff) as u32)
     }
 
-    pub fn unmapped_id(index: usize) -> Self {
+    pub const fn unmapped_id(index: usize) -> Self {
         Self((index & 0xffff) as u32 | ID_UNMAPPED_HINT)
     }
 
