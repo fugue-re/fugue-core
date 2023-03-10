@@ -55,16 +55,16 @@ impl<'insn> fmt::Display for InstructionFormatter<'insn> {
 }
 
 #[derive(Debug, Clone)]
-pub struct InstructionFull<'a, 'az, 'z> {
+pub struct InstructionFull<'a, 'z> {
     pub address: AddressValue,
     pub mnemonic: BString<'z>,
     pub operands: BString<'z>,
-    pub operand_data: Operands<'a, 'az>,
+    pub operand_data: Operands<'a, 'z>,
     pub delay_slots: usize,
     pub length: usize,
 }
 
-impl<'a, 'az, 'z> InstructionFull<'a, 'az, 'z> {
+impl<'a, 'z> InstructionFull<'a, 'z> {
     pub fn address(&self) -> AddressValue {
         self.address.clone()
     }
