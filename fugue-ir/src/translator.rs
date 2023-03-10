@@ -18,8 +18,7 @@ use crate::address::AddressValue;
 use crate::deserialise::parse::XmlExt;
 use crate::deserialise::Error as DeserialiseError;
 
-use crate::disassembly::lift::FloatFormats;
-use crate::disassembly::lift::UserOpStr;
+use crate::disassembly::lift::{FloatFormats, UserOpStr};
 use crate::disassembly::symbol::{FixedHandle, Symbol, SymbolScope, SymbolTable};
 use crate::disassembly::walker::InstructionFormatter;
 use crate::disassembly::ContextDatabase;
@@ -31,8 +30,8 @@ use crate::disassembly::{
 };
 
 use crate::il::ecode::ECode;
+use crate::il::instruction::{Instruction, InstructionFull};
 use crate::il::pcode::PCode;
-use crate::il::Instruction;
 
 use crate::error::Error;
 
@@ -494,6 +493,53 @@ impl Translator {
             address,
             mnemonic,
             operands,
+            delay_slots,
+            length,
+        })
+    }
+
+    pub fn disassemble_full<'a, 'az, 'z>(
+        &'a self,
+        db: &mut ContextDatabase,
+        context: &mut ParserContext<'a, 'az>,
+        arena: &'az IRBuilderArena,
+        builder: &'z IRBuilderArena,
+        address: AddressValue,
+        bytes: &[u8],
+    ) -> Result<InstructionFull<'a, 'z>, Error> {
+        if self.alignment() != 1 {
+            if address.offset() % self.alignment() as u64 != 0 {
+                return Err(DisassemblyError::IncorrectAlignment {
+                    address: address.offset(),
+                    alignment: self.alignment(),
+                })?;
+            }
+        }
+
+        context.reinitialise(arena, db, address.clone(), bytes);
+        let mut walker = ParserWalker::new(context);
+
+        Translator::resolve(&mut walker, self.root.id(), &self.symbol_table)?;
+        Translator::resolve_handles(&mut walker, &self.manager, &self.symbol_table)?;
+
+        walker.base_state();
+        walker.apply_commits(db, &self.manager, &self.symbol_table)?;
+
+        let delay_slots = walker.delay_slot();
+        let length = walker.length();
+
+        let ctor = walker.unchecked_constructor();
+
+        let fmt = InstructionFormatter::new(walker, &self.symbol_table, ctor);
+        let mnemonic = bumpalo::format!(in builder.inner(), "{}", fmt.mnemonic());
+        let operands = bumpalo::format!(in builder.inner(), "{}", fmt.operands());
+        let operand_data = fmt.operand_data();
+
+        Ok(InstructionFull {
+            address,
+            mnemonic,
+            operands,
+            operand_data,
             delay_slots,
             length,
         })

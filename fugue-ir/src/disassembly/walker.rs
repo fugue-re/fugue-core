@@ -3,7 +3,7 @@ use crate::disassembly::Error;
 use crate::disassembly::IRBuilderArena;
 use crate::disassembly::context::ContextDatabase;
 use crate::disassembly::pattern::PatternExpression;
-use crate::disassembly::symbol::{Constructor, FixedHandle, Symbol, SymbolTable};
+use crate::disassembly::symbol::{Constructor, FixedHandle, Operands, Symbol, SymbolTable};
 use crate::space_manager::SpaceManager;
 
 use std::cell::RefCell;
@@ -48,6 +48,10 @@ impl<'b, 'c, 'z> InstructionFormatter<'b, 'c, 'z> {
         OperandFormatter {
             inner: self,
         }
+    }
+
+    pub fn operand_data<'a>(&'a self) -> Operands<'b> {
+        self.ctor.operands(&mut self.walker.borrow_mut(), self.symbols)
     }
 }
 

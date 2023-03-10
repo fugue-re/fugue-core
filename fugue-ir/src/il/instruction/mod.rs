@@ -3,6 +3,8 @@ use bumpalo::collections::String as BString;
 
 use crate::AddressValue;
 
+pub use crate::disassembly::symbol::{Operand, Operands};
+
 #[derive(Debug, Clone)]
 pub struct Instruction<'z> {
     pub address: AddressValue,
@@ -49,5 +51,41 @@ impl<'insn> fmt::Display for InstructionFormatter<'insn> {
             write!(f, " {}", self.insn.operands.trim())?;
         }
         Ok(())
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct InstructionFull<'a, 'z> {
+    pub address: AddressValue,
+    pub mnemonic: BString<'z>,
+    pub operands: BString<'z>,
+    pub operand_data: Operands<'a>,
+    pub delay_slots: usize,
+    pub length: usize,
+}
+
+impl<'a, 'z> InstructionFull<'a, 'z> {
+    pub fn address(&self) -> AddressValue {
+        self.address.clone()
+    }
+
+    pub fn mnemonic(&self) -> &str {
+        &self.mnemonic
+    }
+
+    pub fn operands(&self) -> &str {
+        &self.operands
+    }
+
+    pub fn operand_data(&self) -> &Operands<'a> {
+        &self.operand_data
+    }
+
+    pub fn delay_slots(&self) -> usize {
+        self.delay_slots
+    }
+
+    pub fn length(&self) -> usize {
+        self.length
     }
 }

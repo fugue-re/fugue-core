@@ -1,7 +1,7 @@
 use crate::deserialise::parse::XmlExt;
 use crate::deserialise::Error as DeserialiseError;
 use crate::disassembly::pattern::PatternExpression;
-use crate::disassembly::symbol::{Constructor, DecisionNode, SymbolTable};
+use crate::disassembly::symbol::{Constructor, DecisionNode, Operand, Operands, SymbolTable};
 use crate::disassembly::walker::ParserWalker;
 use crate::disassembly::Error;
 use crate::space::{AddressSpace, AddressSpaceId};
@@ -37,8 +37,7 @@ impl<'space> FixedHandle<'space> {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[derive(serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 pub enum SymbolKind {
     UserOp,
     Epsilon,
@@ -56,8 +55,7 @@ pub enum SymbolKind {
     FlowRef,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[derive(serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 pub enum Symbol {
     UserOp {
         id: usize,
@@ -343,8 +341,7 @@ impl Symbol {
                 temporary_space: None,
                 temporary_offset: 0,
             },
-            Self::Name { pattern_value, .. } |
-            Self::Value { pattern_value, .. } => FixedHandle {
+            Self::Name { pattern_value, .. } | Self::Value { pattern_value, .. } => FixedHandle {
                 space: manager.constant_space_ref(),
                 size: 0,
                 offset_space: None,
@@ -421,7 +418,7 @@ impl Symbol {
                 temporary_offset: 0,
             },
             //_ => panic!("unexpected symbol: {:?}", self),
-            _ => return Err(Error::InvalidHandle)
+            _ => return Err(Error::InvalidHandle),
         })
     }
 
@@ -436,6 +433,97 @@ impl Symbol {
             | Self::End { pattern_value, .. } => pattern_value,
             Self::Operand { local_expr, .. } => local_expr,
             _ => unreachable!(), //return Err(Error::InvalidPattern),
+        }
+    }
+
+    pub fn collect_operands<'b, 'c, 'z>(
+        &'b self,
+        operands: &mut Operands<'b>,
+        walker: &mut ParserWalker<'b, 'c, 'z>,
+        symbols: &'b SymbolTable,
+    ) {
+        match self {
+            Self::Operand {
+                subsym_id,
+                handle_index,
+                def_expr,
+                ..
+            } => {
+                walker.unchecked_push_operand(*handle_index);
+                if let Some(id) = subsym_id {
+                    let sym = symbols.unchecked_symbol(*id);
+                    if sym.is_subtable() {
+                        let mut inner = Operands::new();
+                        walker
+                            .unchecked_constructor()
+                            .collect_operands(&mut inner, walker, symbols);
+                        operands.append(inner);
+                    } else {
+                        sym.collect_operands(operands, walker, symbols);
+                    }
+                } else {
+                    let value = if let Some(ref def_expr) = def_expr {
+                        def_expr.value(walker, symbols).unwrap()
+                    } else {
+                        unreachable!()
+                    };
+                    operands.push(value);
+                }
+                walker.unchecked_pop_operand();
+            }
+            Self::Varnode {
+                name,
+                offset,
+                space,
+                ..
+            } => {
+                operands.push(Operand::varnode(name, *space, *offset));
+            }
+            Self::VarnodeList {
+                pattern_value,
+                varnode_table,
+                ..
+            } => {
+                let index = pattern_value.value(walker, symbols).unwrap();
+                if index >= 0 && (index as usize) < varnode_table.len() {
+                    let named = symbols
+                        .unchecked_symbol(unsafe {
+                            varnode_table.get_unchecked(index as usize).unsafe_unwrap()
+                        });
+                    operands.push(named.name());
+                }
+            }
+            Self::Name {
+                pattern_value,
+                name_table,
+                ..
+            } => {
+                let index = pattern_value.value(walker, symbols).unwrap() as usize;
+                operands.push(name_table[index].as_str());
+            }
+            Self::Epsilon { .. } => {
+                operands.push(0i64);
+            }
+            Self::Value { pattern_value, .. } => {
+                let value = pattern_value.value(walker, symbols).unwrap();
+                operands.push(value);
+            }
+            Self::ValueMap {
+                pattern_value,
+                value_table,
+                ..
+            } => {
+                let index = pattern_value.value(walker, symbols).unwrap() as usize;
+                let value = *unsafe { value_table.get_unchecked(index) };
+                operands.push(value);
+            }
+            Self::Start { .. } => {
+                operands.push(walker.address());
+            }
+            Self::End { .. } => {
+                operands.push(walker.unchecked_next_address());
+            }
+            _ => unreachable!(),
         }
     }
 

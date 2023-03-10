@@ -1,10 +1,10 @@
-use crate::deserialise::Error as DeserialiseError;
 use crate::deserialise::parse::XmlExt;
+use crate::deserialise::Error as DeserialiseError;
 
-use crate::disassembly::{Error, ParserWalker};
 use crate::disassembly::construct::ConstructTpl;
 use crate::disassembly::pattern::PatternExpression;
-use crate::disassembly::symbol::{Symbol, SymbolTable};
+use crate::disassembly::symbol::{Operands, Symbol, SymbolTable};
+use crate::disassembly::{Error, ParserWalker};
 
 use crate::space_manager::SpaceManager;
 
@@ -12,8 +12,7 @@ use std::convert::TryFrom;
 use std::fmt;
 use std::mem::size_of;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[derive(serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 pub enum Context {
     Operator {
         num: usize,
@@ -30,17 +29,31 @@ pub enum Context {
 }
 
 impl Context {
-    pub fn apply<'b, 'c, 'z>(&'b self, walker: &mut ParserWalker<'b, 'c, 'z>, symbols: &'b SymbolTable) -> Result<(), Error> {
+    pub fn apply<'b, 'c, 'z>(
+        &'b self,
+        walker: &mut ParserWalker<'b, 'c, 'z>,
+        symbols: &'b SymbolTable,
+    ) -> Result<(), Error> {
         Ok(match self {
-            Self::Operator { num, shift, mask, pattern_value } => {
+            Self::Operator {
+                num,
+                shift,
+                mask,
+                pattern_value,
+            } => {
                 let value = pattern_value.value(walker, symbols)? as u32;
                 let v = value.checked_shl(*shift).unwrap_or(0);
                 walker.set_context_word(*num, v, *mask);
-            },
-            Self::Commit { symbol_id, num, mask, flow } => {
+            }
+            Self::Commit {
+                symbol_id,
+                num,
+                mask,
+                flow,
+            } => {
                 let sym = symbols.unchecked_symbol(*symbol_id); //.ok_or_else(|| Error::InvalidSymbol)?;
                 walker.add_commit(sym, *num, *mask, *flow);
-            },
+            }
         })
     }
 
@@ -50,11 +63,14 @@ impl Context {
                 num: input.attribute_int("i")?,
                 shift: input.attribute_int("shift")?,
                 mask: input.attribute_int("mask")?,
-                pattern_value: input.children()
+                pattern_value: input
+                    .children()
                     .filter(xml::Node::is_element)
                     .next()
                     .map(PatternExpression::from_xml)
-                    .ok_or_else(|| DeserialiseError::Invariant("missing pattern for context_op"))??,
+                    .ok_or_else(|| {
+                        DeserialiseError::Invariant("missing pattern for context_op")
+                    })??,
             },
             "commit" => Self::Commit {
                 symbol_id: input.attribute_int("id")?,
@@ -62,13 +78,12 @@ impl Context {
                 mask: input.attribute_int("mask")?,
                 flow: input.attribute_bool("flow")?,
             },
-            name => return Err(DeserialiseError::TagUnexpected(name.to_owned()))
+            name => return Err(DeserialiseError::TagUnexpected(name.to_owned())),
         })
     }
 }
 
-#[derive(Debug, Clone)]
-#[derive(serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct Constructor {
     id: (usize, usize),
     parent_id: usize,
@@ -89,10 +104,14 @@ impl PartialEq for Constructor {
         self.id == other.id
     }
 }
-impl Eq for Constructor { }
+impl Eq for Constructor {}
 
 impl Constructor {
-    pub fn apply_context<'b, 'c, 'z>(&'b self, walker: &mut ParserWalker<'b, 'c, 'z>, symbols: &'b SymbolTable) -> Result<(), Error> {
+    pub fn apply_context<'b, 'c, 'z>(
+        &'b self,
+        walker: &mut ParserWalker<'b, 'c, 'z>,
+        symbols: &'b SymbolTable,
+    ) -> Result<(), Error> {
         for context in &self.context {
             context.apply(walker, symbols)?;
         }
@@ -103,11 +122,80 @@ impl Constructor {
         self.min_length
     }
 
-    pub fn format<'b, 'c, 'z>(&'b self, fmt: &mut fmt::Formatter, walker: &mut ParserWalker<'b, 'c, 'z>, symbols: &'b SymbolTable) -> Result<(), fmt::Error> {
+    pub(crate) fn operands<'b, 'c, 'z>(
+        &'b self,
+        walker: &mut ParserWalker<'b, 'c, 'z>,
+        symbols: &'b SymbolTable,
+    ) -> Operands<'b> {
+        let mut operands = Operands::new();
+        self.operands_into(&mut operands, walker, symbols);
+        operands
+    }
+
+    pub(crate) fn operands_into<'b, 'c, 'z>(
+        &'b self,
+        operands: &mut Operands<'b>,
+        walker: &mut ParserWalker<'b, 'c, 'z>,
+        symbols: &'b SymbolTable,
+    ) {
+        if let Some(index) = self.flow_through_index {
+            match symbols
+                .unchecked_symbol(self.operands[index])
+                .defining_symbol(symbols)
+            {
+                Some(Symbol::Subtable { .. }) => {
+                    walker.unchecked_push_operand(index);
+                    walker
+                        .unchecked_constructor()
+                        .operands_into(operands, walker, symbols);
+                    walker.unchecked_pop_operand();
+                    return;
+                }
+                _ => (),
+            }
+        }
+        if let Some(first_whitespace) = self.first_whitespace {
+            for i in (first_whitespace + 1)..self.print_pieces.len() {
+                if self.print_pieces[i].as_bytes()[0] == b'\n' {
+                    let index = (self.print_pieces[i].as_bytes()[1] - b'A') as usize;
+                    symbols
+                        .unchecked_symbol(self.operands[index])
+                        .collect_operands(operands, walker, symbols);
+                }
+            }
+        }
+    }
+
+    pub(crate) fn collect_operands<'b, 'c, 'z>(
+        &'b self,
+        operands: &mut Operands<'b>,
+        walker: &mut ParserWalker<'b, 'c, 'z>,
+        symbols: &'b SymbolTable,
+    ) {
         for p in &self.print_pieces {
             if p.as_bytes()[0] == b'\n' {
                 let index = (p.as_bytes()[1] - b'A') as usize;
-                symbols.symbol(self.operands[index]).expect("symbol").format(fmt, walker, symbols)?;
+                symbols
+                    .symbol(self.operands[index])
+                    .expect("symbol")
+                    .collect_operands(operands, walker, symbols);
+            }
+        }
+    }
+
+    pub fn format<'b, 'c, 'z>(
+        &'b self,
+        fmt: &mut fmt::Formatter,
+        walker: &mut ParserWalker<'b, 'c, 'z>,
+        symbols: &'b SymbolTable,
+    ) -> Result<(), fmt::Error> {
+        for p in &self.print_pieces {
+            if p.as_bytes()[0] == b'\n' {
+                let index = (p.as_bytes()[1] - b'A') as usize;
+                symbols
+                    .symbol(self.operands[index])
+                    .expect("symbol")
+                    .format(fmt, walker, symbols)?;
             } else {
                 write!(fmt, "{}", p)?;
             }
@@ -115,23 +203,35 @@ impl Constructor {
         Ok(())
     }
 
-    pub fn format_mnemonic<'b, 'c, 'z>(&'b self, fmt: &mut fmt::Formatter, walker: &mut ParserWalker<'b, 'c, 'z>, symbols: &'b SymbolTable) -> Result<(), fmt::Error> {
+    pub fn format_mnemonic<'b, 'c, 'z>(
+        &'b self,
+        fmt: &mut fmt::Formatter,
+        walker: &mut ParserWalker<'b, 'c, 'z>,
+        symbols: &'b SymbolTable,
+    ) -> Result<(), fmt::Error> {
         if let Some(index) = self.flow_through_index {
-            match symbols.unchecked_symbol(self.operands[index]).defining_symbol(symbols) {
-                None | Some(Symbol::Subtable { .. }) => (),
-                Some(_) => {
+            match symbols
+                .unchecked_symbol(self.operands[index])
+                .defining_symbol(symbols)
+            {
+                Some(Symbol::Subtable { .. }) => {
                     walker.unchecked_push_operand(index);
-                    walker.unchecked_constructor().format_mnemonic(fmt, walker, symbols)?;
+                    walker
+                        .unchecked_constructor()
+                        .format_mnemonic(fmt, walker, symbols)?;
                     walker.unchecked_pop_operand();
                     return Ok(());
                 }
+                _ => (),
             }
         }
         let end = self.first_whitespace.unwrap_or(self.print_pieces.len());
         for i in 0..end {
             if self.print_pieces[i].as_bytes()[0] == b'\n' {
                 let index = (self.print_pieces[i].as_bytes()[1] - b'A') as usize;
-                symbols.unchecked_symbol(self.operands[index]).format(fmt, walker, symbols)?;
+                symbols
+                    .unchecked_symbol(self.operands[index])
+                    .format(fmt, walker, symbols)?;
             } else {
                 write!(fmt, "{}", self.print_pieces[i])?;
             }
@@ -139,23 +239,35 @@ impl Constructor {
         Ok(())
     }
 
-    pub fn format_body<'b, 'c, 'z>(&'b self, fmt: &mut fmt::Formatter, walker: &mut ParserWalker<'b, 'c, 'z>, symbols: &'b SymbolTable) -> Result<(), fmt::Error> {
+    pub fn format_body<'b, 'c, 'z>(
+        &'b self,
+        fmt: &mut fmt::Formatter,
+        walker: &mut ParserWalker<'b, 'c, 'z>,
+        symbols: &'b SymbolTable,
+    ) -> Result<(), fmt::Error> {
         if let Some(index) = self.flow_through_index {
-            match symbols.unchecked_symbol(self.operands[index]).defining_symbol(symbols) {
-                None | Some(Symbol::Subtable { .. }) => (),
-                Some(_) => {
+            match symbols
+                .unchecked_symbol(self.operands[index])
+                .defining_symbol(symbols)
+            {
+                Some(Symbol::Subtable { .. }) => {
                     walker.unchecked_push_operand(index);
-                    walker.unchecked_constructor().format_body(fmt, walker, symbols)?;
+                    walker
+                        .unchecked_constructor()
+                        .format_body(fmt, walker, symbols)?;
                     walker.unchecked_pop_operand();
                     return Ok(());
                 }
+                _ => (),
             }
         }
         if let Some(first_whitespace) = self.first_whitespace {
-            for i in (first_whitespace+1)..self.print_pieces.len() {
+            for i in (first_whitespace + 1)..self.print_pieces.len() {
                 if self.print_pieces[i].as_bytes()[0] == b'\n' {
                     let index = (self.print_pieces[i].as_bytes()[1] - b'A') as usize;
-                    symbols.unchecked_symbol(self.operands[index]).format(fmt, walker, symbols)?;
+                    symbols
+                        .unchecked_symbol(self.operands[index])
+                        .format(fmt, walker, symbols)?;
                 } else {
                     write!(fmt, "{}", self.print_pieces[i])?;
                 }
@@ -196,7 +308,11 @@ impl Constructor {
         }
     }
 
-    pub fn from_xml(input: xml::Node, id: (usize, usize), manager: &SpaceManager) -> Result<Self, DeserialiseError> {
+    pub fn from_xml(
+        input: xml::Node,
+        id: (usize, usize),
+        manager: &SpaceManager,
+    ) -> Result<Self, DeserialiseError> {
         let mut operands = Vec::new();
         let mut print_pieces = Vec::new();
         let mut context = Vec::new();
@@ -207,17 +323,17 @@ impl Constructor {
             match input.tag_name().name() {
                 "oper" => {
                     operands.push(input.attribute_int("id")?);
-                },
+                }
                 "print" => {
                     print_pieces.push(input.attribute_string("piece")?);
-                },
+                }
                 "opprint" => {
                     let index = input.attribute_int::<u8>("id")?;
                     print_pieces.push(format!("\n{}", char::from(index + b'A')));
-                },
+                }
                 "context_op" | "commit" => {
                     context.push(Context::from_xml(input)?);
-                },
+                }
                 _ => {
                     let cur = ConstructTpl::from_xml(input, manager)?;
                     if let Some(section_id) = cur.section_id() {
@@ -226,34 +342,38 @@ impl Constructor {
                         }
 
                         if named_template[section_id].is_some() {
-                            return Err(DeserialiseError::Invariant("duplicate named section"))
+                            return Err(DeserialiseError::Invariant("duplicate named section"));
                         }
 
                         named_template[section_id] = Some(cur);
                     } else if template.is_none() {
                         template = Some(cur);
                     } else {
-                        return Err(DeserialiseError::Invariant("duplicate main section"))
+                        return Err(DeserialiseError::Invariant("duplicate main section"));
                     }
                 }
             }
         }
 
-        let flow_through_index = if print_pieces.len() == 1
-            && print_pieces[0].chars().nth(0).unwrap() == '\n'
-        {
-            Some((print_pieces[0].chars().nth(1).unwrap() as u8 - b'A') as usize)
-        } else {
-            None
-        };
+        let flow_through_index =
+            if print_pieces.len() == 1 && print_pieces[0].chars().nth(0).unwrap() == '\n' {
+                Some((print_pieces[0].chars().nth(1).unwrap() as u8 - b'A') as usize)
+            } else {
+                None
+            };
 
         let (source_file_index, line_number) = input.attribute_line_number("line")?;
 
         Ok(Self {
             id,
             parent_id: input.attribute_int("parent")?,
-            first_whitespace: input.attribute_int::<i64>("first")
-                .map(|i| if i < 0 { None } else { Some(i as usize) })?,
+            first_whitespace: input.attribute_int::<i64>("first").map(|i| {
+                if i < 0 {
+                    None
+                } else {
+                    Some(i as usize)
+                }
+            })?,
             min_length: input.attribute_int("length")?,
             source_file_index,
             line_number,
@@ -267,8 +387,7 @@ impl Constructor {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[derive(serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 pub struct DecisionNode {
     number: usize,
     context_decision: bool,
@@ -288,16 +407,19 @@ impl DecisionNode {
                 "pair" => {
                     let id = input.attribute_int("id")?;
                     let pattern = DisjointPattern::from_xml(
-                        input.children()
+                        input
+                            .children()
                             .filter(xml::Node::is_element)
                             .next()
-                            .ok_or_else(|| DeserialiseError::Invariant("no pattern for disjoint pattern"))?
+                            .ok_or_else(|| {
+                                DeserialiseError::Invariant("no pattern for disjoint pattern")
+                            })?,
                     )?;
                     patterns.push(DecisionPair { id, pattern });
-                },
+                }
                 "decision" => {
                     children.push(Self::from_xml(input)?);
-                },
+                }
                 _ => (),
             }
         }
@@ -311,11 +433,17 @@ impl DecisionNode {
         })
     }
 
-    pub fn resolve<'b, 'c, 'z>(&'b self, walker: &mut ParserWalker<'b, 'c, 'z>, ctors: &'b [Constructor]) -> Result<&'b Constructor, Error> {
+    pub fn resolve<'b, 'c, 'z>(
+        &'b self,
+        walker: &mut ParserWalker<'b, 'c, 'z>,
+        ctors: &'b [Constructor],
+    ) -> Result<&'b Constructor, Error> {
         if self.size == 0 {
             for pattern in self.patterns.iter() {
                 if pattern.is_match(walker) {
-                    return ctors.get(pattern.id).ok_or_else(|| Error::InvalidConstructor)
+                    return ctors
+                        .get(pattern.id)
+                        .ok_or_else(|| Error::InvalidConstructor);
                 }
             }
             Err(Error::InstructionResolution)
@@ -331,8 +459,7 @@ impl DecisionNode {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[derive(serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 pub struct DecisionPair {
     id: usize,
     pattern: DisjointPattern,
@@ -352,15 +479,14 @@ impl DecisionPair {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[derive(serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 pub enum DisjointPattern {
     Instruction(InstructionPattern),
     Context(ContextPattern),
     Combine {
         context: ContextPattern,
         instruction: InstructionPattern,
-    }
+    },
 }
 
 impl DisjointPattern {
@@ -398,23 +524,20 @@ impl DisjointPattern {
                 let mut children = input.children().filter(xml::Node::is_element);
                 Self::Combine {
                     context: ContextPattern::from_xml(
-                        children
-                            .next()
-                            .ok_or_else(|| DeserialiseError::Invariant("missing context pattern"))?
+                        children.next().ok_or_else(|| {
+                            DeserialiseError::Invariant("missing context pattern")
+                        })?,
                     )?,
-                    instruction: InstructionPattern::from_xml(
-                        children
-                            .next()
-                            .ok_or_else(|| DeserialiseError::Invariant("missing instruction pattern"))?
-                    )?,
+                    instruction: InstructionPattern::from_xml(children.next().ok_or_else(
+                        || DeserialiseError::Invariant("missing instruction pattern"),
+                    )?)?,
                 }
             }
         })
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[derive(serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 pub struct InstructionPattern {
     mask_value: PatternBlock,
 }
@@ -423,10 +546,11 @@ impl InstructionPattern {
     pub fn from_xml(input: xml::Node) -> Result<Self, DeserialiseError> {
         Ok(Self {
             mask_value: PatternBlock::from_xml(
-                input.children()
+                input
+                    .children()
                     .filter(xml::Node::is_element)
                     .next()
-                    .ok_or_else(|| DeserialiseError::Invariant("missing pattern block"))?
+                    .ok_or_else(|| DeserialiseError::Invariant("missing pattern block"))?,
             )?,
         })
     }
@@ -444,8 +568,7 @@ impl InstructionPattern {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[derive(serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 pub struct ContextPattern {
     mask_value: PatternBlock,
 }
@@ -454,10 +577,11 @@ impl ContextPattern {
     pub fn from_xml(input: xml::Node) -> Result<Self, DeserialiseError> {
         Ok(Self {
             mask_value: PatternBlock::from_xml(
-                input.children()
+                input
+                    .children()
                     .filter(xml::Node::is_element)
                     .next()
-                    .ok_or_else(|| DeserialiseError::Invariant("missing pattern block"))?
+                    .ok_or_else(|| DeserialiseError::Invariant("missing pattern block"))?,
             )?,
         })
     }
@@ -468,8 +592,7 @@ impl ContextPattern {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[derive(serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 pub struct PatternBlock {
     offset: usize,
     non_zero_size: Option<usize>,
@@ -484,7 +607,11 @@ impl PatternBlock {
     pub fn new(always: bool) -> Self {
         Self {
             offset: 0,
-            non_zero_size: if always { Self::ALWAYS_TRUE } else { Self::ALWAYS_FALSE },
+            non_zero_size: if always {
+                Self::ALWAYS_TRUE
+            } else {
+                Self::ALWAYS_FALSE
+            },
             masks: Vec::new(),
             values: Vec::new(),
         }
@@ -507,7 +634,7 @@ impl PatternBlock {
                 for i in 0..self.values.len() {
                     let data = walker.context_bytes(offset, size_of::<u32>());
                     if self.masks[i] & data != self.values[i] {
-                        return false
+                        return false;
                     }
                     offset += size_of::<u32>();
                 }
@@ -545,7 +672,7 @@ impl PatternBlock {
                 for i in 0..self.values.len() {
                     let data = walker.unchecked_instruction_bytes(offset, size_of::<u32>());
                     if self.masks[i] & data != self.values[i] {
-                        return false
+                        return false;
                     }
                     offset += size_of::<u32>();
                 }
@@ -556,7 +683,11 @@ impl PatternBlock {
 
     pub fn shift(&mut self, shift: isize) {
         let noffset = isize::try_from(self.offset).expect("PatternBlock shift offset") + shift;
-        self.offset = if noffset < 0 { 0usize } else { noffset as usize };
+        self.offset = if noffset < 0 {
+            0usize
+        } else {
+            noffset as usize
+        };
         self.normalise()
     }
 
@@ -565,7 +696,7 @@ impl PatternBlock {
             self.offset = 0;
             self.masks.clear();
             self.values.clear();
-            return
+            return;
         }
 
         let mut masks = &mut self.masks[..];
@@ -589,20 +720,22 @@ impl PatternBlock {
             if suboff != 0 {
                 self.offset += suboff;
 
-                for i in 0..masks.len()-1 {
+                for i in 0..masks.len() - 1 {
                     tmp = masks[i] << (suboff * 8);
-                    tmp = tmp | (masks[i+1] >> ((size_of::<u32>() - suboff) * 8));
+                    tmp = tmp | (masks[i + 1] >> ((size_of::<u32>() - suboff) * 8));
                     masks[i] = tmp;
 
                     tmp = values[i] << (suboff * 8);
-                    tmp = tmp | (values[i+1] >> ((size_of::<u32>() - suboff) * 8));
+                    tmp = tmp | (values[i + 1] >> ((size_of::<u32>() - suboff) * 8));
                     values[i] = tmp;
                 }
 
                 *masks.last_mut().unwrap() <<= suboff * 8;
                 *values.last_mut().unwrap() <<= suboff * 8;
 
-                let rindex = masks.iter().rposition(|v| *v != 0)
+                let rindex = masks
+                    .iter()
+                    .rposition(|v| *v != 0)
                     .map(|v| v + 1)
                     .unwrap_or(0);
 
@@ -616,7 +749,7 @@ impl PatternBlock {
             self.non_zero_size = Self::ALWAYS_TRUE;
             self.masks.clear();
             self.values.clear();
-            return
+            return;
         }
 
         // this can probably be done in-place without
