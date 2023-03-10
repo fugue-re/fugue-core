@@ -4,7 +4,7 @@ use crate::deserialise::Error as DeserialiseError;
 use crate::disassembly::construct::ConstructTpl;
 use crate::disassembly::pattern::PatternExpression;
 use crate::disassembly::symbol::{Operands, Symbol, SymbolTable};
-use crate::disassembly::{Error, ParserWalker, IRBuilderArena};
+use crate::disassembly::{Error, IRBuilderArena, ParserWalker};
 
 use crate::space_manager::SpaceManager;
 
@@ -122,21 +122,21 @@ impl Constructor {
         self.min_length
     }
 
-    pub(crate) fn operands<'b, 'c, 'z>(
+    pub(crate) fn operands<'b, 'c, 'z, 'az>(
         &'b self,
-        arena: &'z IRBuilderArena,
+        arena: &'az IRBuilderArena,
         walker: &mut ParserWalker<'b, 'c, 'z>,
         symbols: &'b SymbolTable,
-    ) -> Operands<'b, 'z> {
+    ) -> Operands<'b, 'az> {
         let mut operands = Operands::new(arena);
         self.operands_into(arena, &mut operands, walker, symbols);
         operands
     }
 
-    pub(crate) fn operands_into<'b, 'c, 'z>(
+    pub(crate) fn operands_into<'b, 'c, 'z, 'az>(
         &'b self,
-        arena: &'z IRBuilderArena,
-        operands: &mut Operands<'b, 'z>,
+        arena: &'az IRBuilderArena,
+        operands: &mut Operands<'b, 'az>,
         walker: &mut ParserWalker<'b, 'c, 'z>,
         symbols: &'b SymbolTable,
     ) {
@@ -168,10 +168,10 @@ impl Constructor {
         }
     }
 
-    pub(crate) fn collect_operands<'b, 'c, 'z>(
+    pub(crate) fn collect_operands<'b, 'c, 'z, 'az>(
         &'b self,
-        arena: &'z IRBuilderArena,
-        operands: &mut Operands<'b, 'z>,
+        arena: &'az IRBuilderArena,
+        operands: &mut Operands<'b, 'az>,
         walker: &mut ParserWalker<'b, 'c, 'z>,
         symbols: &'b SymbolTable,
     ) {

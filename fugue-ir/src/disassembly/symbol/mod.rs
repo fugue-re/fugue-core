@@ -14,7 +14,7 @@ use crate::disassembly::lift::{ArenaVec, IRBuilderArena};
 #[derive(Debug, Clone, Hash)]
 pub enum Operand<'a, 'z> {
     Address(Address),
-    Group(ArenaVec<'z, Operand<'z, 'a>>),
+    Group(ArenaVec<'z, Operand<'a, 'z>>),
     Register(&'a str),
     Value(i64),
 }

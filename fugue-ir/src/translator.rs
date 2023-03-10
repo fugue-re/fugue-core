@@ -503,9 +503,10 @@ impl Translator {
         db: &mut ContextDatabase,
         context: &mut ParserContext<'a, 'az>,
         arena: &'az IRBuilderArena,
+        builder: &'z IRBuilderArena,
         address: AddressValue,
         bytes: &[u8],
-    ) -> Result<InstructionFull<'a, 'az>, Error> {
+    ) -> Result<InstructionFull<'a, 'z>, Error> {
         if self.alignment() != 1 {
             if address.offset() % self.alignment() as u64 != 0 {
                 return Err(DisassemblyError::IncorrectAlignment {
@@ -530,9 +531,9 @@ impl Translator {
         let ctor = walker.unchecked_constructor();
 
         let fmt = InstructionFormatter::new(walker, &self.symbol_table, ctor);
-        let mnemonic = bumpalo::format!(in arena.inner(), "{}", fmt.mnemonic());
-        let operands = bumpalo::format!(in arena.inner(), "{}", fmt.operands());
-        let operand_data = fmt.operand_data(arena);
+        let mnemonic = bumpalo::format!(in builder.inner(), "{}", fmt.mnemonic());
+        let operands = bumpalo::format!(in builder.inner(), "{}", fmt.operands());
+        let operand_data = fmt.operand_data(builder);
 
         Ok(InstructionFull {
             address,

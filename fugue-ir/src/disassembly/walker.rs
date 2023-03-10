@@ -1,9 +1,8 @@
 use crate::address::AddressValue;
-use crate::disassembly::Error;
-use crate::disassembly::IRBuilderArena;
 use crate::disassembly::context::ContextDatabase;
 use crate::disassembly::pattern::PatternExpression;
 use crate::disassembly::symbol::{Constructor, FixedHandle, Operands, Symbol, SymbolTable};
+use crate::disassembly::{Error, IRBuilderArena};
 use crate::space_manager::SpaceManager;
 
 use std::cell::RefCell;
@@ -30,7 +29,11 @@ pub struct OperandFormatter<'a, 'b, 'c, 'z> {
 }
 
 impl<'b, 'c, 'z> InstructionFormatter<'b, 'c, 'z> {
-    pub fn new(walker: ParserWalker<'b, 'c, 'z>, symbols: &'b SymbolTable, ctor: &'b Constructor) -> Self {
+    pub fn new(
+        walker: ParserWalker<'b, 'c, 'z>,
+        symbols: &'b SymbolTable,
+        ctor: &'b Constructor,
+    ) -> Self {
         Self {
             walker: RefCell::new(walker),
             symbols,
@@ -39,41 +42,46 @@ impl<'b, 'c, 'z> InstructionFormatter<'b, 'c, 'z> {
     }
 
     pub fn mnemonic<'a>(&'a self) -> MnemonicFormatter<'a, 'b, 'c, 'z> {
-        MnemonicFormatter {
-            inner: self,
-        }
+        MnemonicFormatter { inner: self }
     }
 
     pub fn operands<'a>(&'a self) -> OperandFormatter<'a, 'b, 'c, 'z> {
-        OperandFormatter {
-            inner: self,
-        }
+        OperandFormatter { inner: self }
     }
 
-    pub fn operand_data<'a>(&'a self, irb: &'z IRBuilderArena) -> Operands<'b, 'z> {
-        self.ctor.operands(irb, &mut self.walker.borrow_mut(), self.symbols)
+    pub fn operand_data<'a, 'az>(&'a self, irb: &'az IRBuilderArena) -> Operands<'b, 'az> {
+        self.ctor
+            .operands(irb, &mut self.walker.borrow_mut(), self.symbols)
     }
 }
 
 impl<'b, 'c, 'z> fmt::Display for InstructionFormatter<'b, 'c, 'z> {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        self.ctor.format_mnemonic(f, &mut self.walker.borrow_mut(), self.symbols)?;
+        self.ctor
+            .format_mnemonic(f, &mut self.walker.borrow_mut(), self.symbols)?;
         write!(f, " ")?;
-        self.ctor.format_body(f, &mut self.walker.borrow_mut(), self.symbols)?;
+        self.ctor
+            .format_body(f, &mut self.walker.borrow_mut(), self.symbols)?;
         Ok(())
     }
 }
 
 impl<'a, 'b, 'c, 'z> fmt::Display for MnemonicFormatter<'a, 'b, 'c, 'z> {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        self.inner.ctor.format_mnemonic(f, &mut self.inner.walker.borrow_mut(), self.inner.symbols)?;
+        self.inner.ctor.format_mnemonic(
+            f,
+            &mut self.inner.walker.borrow_mut(),
+            self.inner.symbols,
+        )?;
         Ok(())
     }
 }
 
 impl<'a, 'b, 'c, 'z> fmt::Display for OperandFormatter<'a, 'b, 'c, 'z> {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        self.inner.ctor.format_body(f, &mut self.inner.walker.borrow_mut(), self.inner.symbols)?;
+        self.inner
+            .ctor
+            .format_body(f, &mut self.inner.walker.borrow_mut(), self.inner.symbols)?;
         Ok(())
     }
 }
@@ -156,7 +164,12 @@ impl<'b, 'z> ParserContext<'b, 'z> {
         }
     }
 
-    pub fn new(arena: &'z IRBuilderArena, context_db: &ContextDatabase, address: AddressValue, buffer: &[u8]) -> Self {
+    pub fn new(
+        arena: &'z IRBuilderArena,
+        context_db: &ContextDatabase,
+        address: AddressValue,
+        buffer: &[u8],
+    ) -> Self {
         let mut backing = [0u8; 16];
         let length = buffer.len().min(backing.len());
 
@@ -177,7 +190,13 @@ impl<'b, 'z> ParserContext<'b, 'z> {
         }
     }
 
-    pub fn reinitialise(&mut self, _arena: &'z IRBuilderArena, context_db: &ContextDatabase, address: AddressValue, buffer: &[u8]) {
+    pub fn reinitialise(
+        &mut self,
+        _arena: &'z IRBuilderArena,
+        context_db: &ContextDatabase,
+        address: AddressValue,
+        buffer: &[u8],
+    ) {
         let mut backing = [0u8; 16];
         let length = buffer.len().min(backing.len());
 
@@ -186,7 +205,8 @@ impl<'b, 'z> ParserContext<'b, 'z> {
         self.parse_state = ParserState::Uninitialised;
         self.backing = backing;
         self.context.clear();
-        self.context.extend_from_slice(&context_db.get_context(&address));
+        self.context
+            .extend_from_slice(&context_db.get_context(&address));
         self.context_commit.clear();
         self.address = address;
         self.next_address = None;
@@ -201,7 +221,8 @@ impl<'b, 'z> ParserContext<'b, 'z> {
         let id = self.alloc;
 
         if self.state.len() <= id {
-            self.state.resize((1 + self.state.len()) * 2, Default::default());
+            self.state
+                .resize((1 + self.state.len()) * 2, Default::default());
         }
 
         let op = unsafe { self.state.get_unchecked_mut(id) };
@@ -264,11 +285,16 @@ impl<'b, 'z> ParserContext<'b, 'z> {
         &mut self.state[0]
     }
 
-    pub fn instruction_bytes(&self, start: usize, size: usize, offset: usize) -> Result<u32, Error> {
+    pub fn instruction_bytes(
+        &self,
+        start: usize,
+        size: usize,
+        offset: usize,
+    ) -> Result<u32, Error> {
         let offset = offset + start;
 
         if offset >= self.backing.len() {
-            return Err(Error::InstructionResolution)
+            return Err(Error::InstructionResolution);
         }
 
         //debug_assert!(offset < self.backing.len());
@@ -290,13 +316,13 @@ impl<'b, 'z> ParserContext<'b, 'z> {
     pub fn instruction_bits(&self, start: usize, size: usize, offset: usize) -> Result<u32, Error> {
         let offset = offset + (start / 8);
         let start = start % 8;
-        let bytes_size = (start + size - 1)/8 + 1;
+        let bytes_size = (start + size - 1) / 8 + 1;
 
         //debug_assert!(offset < self.backing.len());
         //debug_assert!(offset + bytes_size <= self.backing.len());
 
         if offset >= self.backing.len() {
-            return Err(Error::InstructionResolution)
+            return Err(Error::InstructionResolution);
         }
 
         let bytes_size = (self.backing.len() - offset).min(bytes_size);
@@ -309,8 +335,12 @@ impl<'b, 'z> ParserContext<'b, 'z> {
             result |= *b as u32;
         }
 
-        result = result.checked_shl(8 * (size_of::<u32>() - bytes_size) as u32 + start as u32).unwrap_or(0);
-        result = result.checked_shr(8 * size_of::<u32>() as u32 - size as u32).unwrap_or(0);
+        result = result
+            .checked_shl(8 * (size_of::<u32>() - bytes_size) as u32 + start as u32)
+            .unwrap_or(0);
+        result = result
+            .checked_shr(8 * size_of::<u32>() as u32 - size as u32)
+            .unwrap_or(0);
 
         Ok(result)
     }
@@ -363,7 +393,14 @@ impl<'b, 'z> ParserContext<'b, 'z> {
         self.context[num] = (self.context[num] & !mask) | (mask & value);
     }
 
-    pub fn add_commit(&mut self, symbol: &'b Symbol, num: usize, mask: u32, point: usize, flow: bool) {
+    pub fn add_commit(
+        &mut self,
+        symbol: &'b Symbol,
+        num: usize,
+        mask: u32,
+        point: usize,
+        flow: bool,
+    ) {
         let set = ContextSet {
             triple: symbol,
             number: num,
@@ -375,9 +412,14 @@ impl<'b, 'z> ParserContext<'b, 'z> {
         self.context_commit.push(set);
     }
 
-    pub fn apply_commits<'a, 'c>(&'c mut self, db: &mut ContextDatabase, manager: &'b SpaceManager, symbols: &'b SymbolTable) -> Result<(), Error> {
+    pub fn apply_commits<'a, 'c>(
+        &'c mut self,
+        db: &mut ContextDatabase,
+        manager: &'b SpaceManager,
+        symbols: &'b SymbolTable,
+    ) -> Result<(), Error> {
         if self.context_commit.is_empty() {
-            return Ok(())
+            return Ok(());
         }
 
         let curr_address = self.address.clone();
@@ -388,7 +430,7 @@ impl<'b, 'z> ParserContext<'b, 'z> {
             let symbol = commit.triple;
             let mut address = if let Symbol::Operand { handle_index, .. } = symbol {
                 let handle = nwalker.unchecked_handle_ref_via(commit.point, *handle_index); //?
-                    //.ok_or_else(|| Error::InvalidHandle)?;
+                                                                                            //.ok_or_else(|| Error::InvalidHandle)?;
                 AddressValue::new(handle.space, handle.offset_offset)
             } else {
                 let handle = symbol.fixed_handle(&mut nwalker, manager, symbols)?;
@@ -402,13 +444,31 @@ impl<'b, 'z> ParserContext<'b, 'z> {
             }
 
             if commit.flow {
-                db.set_context_change_point(curr_address, address, commit.number, commit.mask, commit.value);
+                db.set_context_change_point(
+                    curr_address,
+                    address,
+                    commit.number,
+                    commit.mask,
+                    commit.value,
+                );
             } else {
                 let naddress = address.clone() + 1usize;
                 if naddress.offset() < address.offset() {
-                    db.set_context_change_point(curr_address, address, commit.number, commit.mask, commit.value);
+                    db.set_context_change_point(
+                        curr_address,
+                        address,
+                        commit.number,
+                        commit.mask,
+                        commit.value,
+                    );
                 } else {
-                    db.set_context_region(address, Some(naddress), commit.number, commit.mask, commit.value);
+                    db.set_context_region(
+                        address,
+                        Some(naddress),
+                        commit.number,
+                        commit.mask,
+                        commit.value,
+                    );
                 }
             }
         }
@@ -486,7 +546,8 @@ impl<'b, 'c, 'z> ParserWalker<'b, 'c, 'z> {
     }
 
     pub fn set_parent_handle(&mut self, handle: FixedHandle<'b>) {
-        self.ctx.set_handle(unsafe { self.point.unsafe_unwrap() }, handle);
+        self.ctx
+            .set_handle(unsafe { self.point.unsafe_unwrap() }, handle);
     }
 
     pub fn parent_handle_mut(&mut self) -> Option<&mut FixedHandle<'b>> {
@@ -494,7 +555,8 @@ impl<'b, 'c, 'z> ParserWalker<'b, 'c, 'z> {
     }
 
     pub fn handle(&self, index: usize) -> Result<Option<FixedHandle<'b>>, Error> {
-        let ph = self.point()
+        let ph = self
+            .point()
             .ok_or_else(|| Error::InconsistentState)?
             .resolve[index]
             .ok_or_else(|| Error::InconsistentState)?;
@@ -509,8 +571,10 @@ impl<'b, 'c, 'z> ParserWalker<'b, 'c, 'z> {
     }
 
     pub fn handle_ref_via(&self, point: usize, index: usize) -> Option<&FixedHandle<'b>> {
-        self.ctx.point(point)
-            .resolve.get(index)
+        self.ctx
+            .point(point)
+            .resolve
+            .get(index)
             .and_then(|v| *v)
             .and_then(|hidx| self.ctx.handle(hidx))
     }
@@ -522,7 +586,8 @@ impl<'b, 'c, 'z> ParserWalker<'b, 'c, 'z> {
     pub fn unchecked_handle_ref(&self, index: usize) -> &FixedHandle<'b> {
         let ph = unsafe {
             self.unchecked_point()
-                .resolve.get_unchecked(index)
+                .resolve
+                .get_unchecked(index)
                 .unsafe_unwrap()
         };
         self.ctx.unchecked_handle(ph)
@@ -530,8 +595,10 @@ impl<'b, 'c, 'z> ParserWalker<'b, 'c, 'z> {
 
     pub fn unchecked_handle_ref_via(&self, point: usize, index: usize) -> &FixedHandle<'b> {
         let ph = unsafe {
-            self.ctx.point(point)
-                .resolve.get_unchecked(index)
+            self.ctx
+                .point(point)
+                .resolve
+                .get_unchecked(index)
                 .unsafe_unwrap()
         };
         self.ctx.unchecked_handle(ph)
@@ -546,7 +613,9 @@ impl<'b, 'c, 'z> ParserWalker<'b, 'c, 'z> {
     }
 
     pub fn set_current_length(&mut self, length: usize) {
-        self.ctx.point_mut(unsafe { self.point.unsafe_unwrap() }).length = length;
+        self.ctx
+            .point_mut(unsafe { self.point.unsafe_unwrap() })
+            .length = length;
     }
 
     pub fn set_delay_slot(&mut self, delay: usize) {
@@ -583,7 +652,12 @@ impl<'b, 'c, 'z> ParserWalker<'b, 'c, 'z> {
         let length = length + poff;
         let length = (0..nops).fold(length, |length, id| {
             let subpt = self.ctx.point(unsafe {
-                self.ctx.state.get_unchecked(index).resolve.get_unchecked(id).unsafe_unwrap()
+                self.ctx
+                    .state
+                    .get_unchecked(index)
+                    .resolve
+                    .get_unchecked(id)
+                    .unsafe_unwrap()
             });
             let sub_length = subpt.length + subpt.offset;
             length.max(sub_length)
@@ -599,7 +673,8 @@ impl<'b, 'c, 'z> ParserWalker<'b, 'c, 'z> {
     pub fn allocate_operand(&mut self, id: usize) -> Result<(), Error> {
         let op = self.ctx.allocate_operand(self.point);
 
-        self.ctx.point_mut(self.point.ok_or_else(|| Error::InconsistentState)?)
+        self.ctx
+            .point_mut(self.point.ok_or_else(|| Error::InconsistentState)?)
             .resolve[id] = Some(op);
 
         self.breadcrumb[self.depth as usize] += 1;
@@ -615,10 +690,13 @@ impl<'b, 'c, 'z> ParserWalker<'b, 'c, 'z> {
         let op = self.ctx.allocate_operand(self.point);
 
         *unsafe {
-            self.ctx.point_mut(self.point.unsafe_unwrap()).resolve.get_unchecked_mut(id)
+            self.ctx
+                .point_mut(self.point.unsafe_unwrap())
+                .resolve
+                .get_unchecked_mut(id)
         } = Some(op);
 
-        *unsafe { self.breadcrumb.get_unchecked_mut(self.depth as usize) } += 1 ;
+        *unsafe { self.breadcrumb.get_unchecked_mut(self.depth as usize) } += 1;
         self.depth += 1;
 
         self.point = Some(op);
@@ -628,7 +706,10 @@ impl<'b, 'c, 'z> ParserWalker<'b, 'c, 'z> {
     pub fn push_operand(&mut self, id: usize) -> Result<(), Error> {
         self.breadcrumb[self.depth as usize] = id + 1;
         self.depth += 1;
-        self.point = self.ctx.point(self.point.ok_or_else(|| Error::InconsistentState)?).resolve[id];
+        self.point = self
+            .ctx
+            .point(self.point.ok_or_else(|| Error::InconsistentState)?)
+            .resolve[id];
         self.breadcrumb[self.depth as usize] = 0;
         Ok(())
     }
@@ -636,12 +717,21 @@ impl<'b, 'c, 'z> ParserWalker<'b, 'c, 'z> {
     pub(crate) fn unchecked_push_operand(&mut self, id: usize) {
         *unsafe { self.breadcrumb.get_unchecked_mut(self.depth as usize) } = id + 1;
         self.depth += 1;
-        self.point = unsafe { *self.ctx.point(self.point.unsafe_unwrap()).resolve.get_unchecked(id) };
+        self.point = unsafe {
+            *self
+                .ctx
+                .point(self.point.unsafe_unwrap())
+                .resolve
+                .get_unchecked(id)
+        };
         *unsafe { self.breadcrumb.get_unchecked_mut(self.depth as usize) } = 0;
     }
 
     pub fn pop_operand(&mut self) -> Result<(), Error> {
-        self.point = self.ctx.point(self.point.ok_or_else(|| Error::InconsistentState)?).parent;
+        self.point = self
+            .ctx
+            .point(self.point.ok_or_else(|| Error::InconsistentState)?)
+            .parent;
         self.depth -= 1;
         Ok(())
     }
@@ -655,15 +745,26 @@ impl<'b, 'c, 'z> ParserWalker<'b, 'c, 'z> {
         match offset {
             None => self.unchecked_point().offset, //.ok_or_else(|| Error::InconsistentState)?.offset,
             Some(index) => {
-                let op_index = unsafe { self.unchecked_point().resolve.get_unchecked(index).unsafe_unwrap() };
-                    //.ok_or_else(|| Error::InconsistentState)?;
+                let op_index = unsafe {
+                    self.unchecked_point()
+                        .resolve
+                        .get_unchecked(index)
+                        .unsafe_unwrap()
+                };
+                //.ok_or_else(|| Error::InconsistentState)?;
                 let op = self.ctx.point(op_index);
                 op.offset + op.length
-            },
+            }
         }
     }
 
-    pub fn resolve_with<'d>(&'d mut self, pat: &'b PatternExpression, ctor: &'b Constructor, index: usize, symbols: &'b SymbolTable) -> Result<i64, Error> {
+    pub fn resolve_with<'d>(
+        &'d mut self,
+        pat: &'b PatternExpression,
+        ctor: &'b Constructor,
+        index: usize,
+        symbols: &'b SymbolTable,
+    ) -> Result<i64, Error> {
         //resolve_with_aux(self, pat, ctor, index, symbols)
         let mut cur_depth = self.depth;
         let mut point = self.unchecked_point();
@@ -681,17 +782,20 @@ impl<'b, 'c, 'z> ParserWalker<'b, 'c, 'z> {
 
                 nwalker.ctx.state.pop(); // remove temp. state
 
-                return Ok(value)
+                return Ok(value);
             }
             cur_depth -= 1;
             point = self.ctx.point(unsafe { point.parent.unsafe_unwrap() });
         }
 
         let sym = symbols.unchecked_symbol(ctor.operand(index)); //.ok_or_else(|| Error::InvalidSymbol)?;
-        let offset = if sym.offset_base().is_none() { // relative
+        let offset = if sym.offset_base().is_none() {
+            // relative
             point.offset + sym.relative_offset()
         } else {
-            self.ctx.point(unsafe { point.resolve.get_unchecked(index).unsafe_unwrap() }).offset //[index].ok_or_else(|| Error::InconsistentState)?).offset
+            self.ctx
+                .point(unsafe { point.resolve.get_unchecked(index).unsafe_unwrap() })
+                .offset //[index].ok_or_else(|| Error::InconsistentState)?).offset
         };
 
         let mut state = ConstructState::default();
@@ -716,7 +820,12 @@ impl<'b, 'c, 'z> ParserWalker<'b, 'c, 'z> {
         self.ctx.add_commit(symbol, num, mask, point, flow)
     }
 
-    pub fn apply_commits(&mut self, db: &mut ContextDatabase, manager: &'b SpaceManager, symbols: &'b SymbolTable) -> Result<(), Error> {
+    pub fn apply_commits(
+        &mut self,
+        db: &mut ContextDatabase,
+        manager: &'b SpaceManager,
+        symbols: &'b SymbolTable,
+    ) -> Result<(), Error> {
         self.ctx.apply_commits(db, manager, symbols)
     }
 
@@ -725,19 +834,23 @@ impl<'b, 'c, 'z> ParserWalker<'b, 'c, 'z> {
     }
 
     pub fn set_constructor(&mut self, constructor: &'b Constructor) {
-        self.ctx.set_constructor(unsafe { self.point.unsafe_unwrap() }, constructor)
+        self.ctx
+            .set_constructor(unsafe { self.point.unsafe_unwrap() }, constructor)
     }
 
     pub fn constructor(&self) -> Result<Option<&'b Constructor>, Error> {
         if self.point.is_none() {
             Ok(None)
         } else {
-            Ok(self.ctx.constructor(self.point.ok_or_else(|| Error::InconsistentState)?))
+            Ok(self
+                .ctx
+                .constructor(self.point.ok_or_else(|| Error::InconsistentState)?))
         }
     }
 
     pub fn unchecked_constructor(&self) -> &'b Constructor {
-        self.ctx.unchecked_constructor(unsafe { self.point.unsafe_unwrap() })
+        self.ctx
+            .unchecked_constructor(unsafe { self.point.unsafe_unwrap() })
     }
 
     pub fn point(&self) -> Option<&ConstructState<'b>> {
@@ -749,7 +862,8 @@ impl<'b, 'c, 'z> ParserWalker<'b, 'c, 'z> {
     }
 
     pub fn set_offset(&mut self, offset: usize) -> Result<(), Error> {
-        self.ctx.set_offset(self.point.ok_or_else(|| Error::InconsistentState)?, offset);
+        self.ctx
+            .set_offset(self.point.ok_or_else(|| Error::InconsistentState)?, offset);
         Ok(())
     }
 
@@ -762,22 +876,30 @@ impl<'b, 'c, 'z> ParserWalker<'b, 'c, 'z> {
     }
 
     pub fn instruction_bytes(&self, offset: usize, size: usize) -> Result<u32, Error> {
-        let point = self.ctx.point(self.point.ok_or_else(|| Error::InconsistentState)?);
+        let point = self
+            .ctx
+            .point(self.point.ok_or_else(|| Error::InconsistentState)?);
         Ok(self.ctx.instruction_bytes(offset, size, point.offset)?)
     }
 
     pub fn unchecked_instruction_bytes(&self, offset: usize, size: usize) -> u32 {
         let point = self.ctx.point(unsafe { self.point.unsafe_unwrap() });
-        self.ctx.instruction_bytes(offset, size, point.offset).unwrap()
+        self.ctx
+            .instruction_bytes(offset, size, point.offset)
+            .unwrap()
     }
 
     pub fn instruction_bits(&self, offset: usize, size: usize) -> Result<u32, Error> {
-        let point = self.ctx.point(self.point.ok_or_else(|| Error::InconsistentState)?);
+        let point = self
+            .ctx
+            .point(self.point.ok_or_else(|| Error::InconsistentState)?);
         Ok(self.ctx.instruction_bits(offset, size, point.offset)?)
     }
 
     pub fn unchecked_instruction_bits(&self, offset: usize, size: usize) -> u32 {
         let point = self.ctx.point(unsafe { self.point.unsafe_unwrap() });
-        self.ctx.instruction_bits(offset, size, point.offset).unwrap()
+        self.ctx
+            .instruction_bits(offset, size, point.offset)
+            .unwrap()
     }
 }

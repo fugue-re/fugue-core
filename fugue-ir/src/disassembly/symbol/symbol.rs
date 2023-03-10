@@ -436,10 +436,10 @@ impl Symbol {
         }
     }
 
-    pub fn collect_operands<'b, 'c, 'z>(
+    pub fn collect_operands<'b, 'c, 'z, 'az>(
         &'b self,
-        arena: &'z IRBuilderArena,
-        operands: &mut Operands<'b, 'z>,
+        arena: &'az IRBuilderArena,
+        operands: &mut Operands<'b, 'az>,
         walker: &mut ParserWalker<'b, 'c, 'z>,
         symbols: &'b SymbolTable,
     ) {
