@@ -506,7 +506,7 @@ impl Translator {
         builder: &'z IRBuilderArena,
         address: AddressValue,
         bytes: &[u8],
-    ) -> Result<InstructionFull<'a, 'z>, Error> {
+    ) -> Result<InstructionFull<'a, 'az, 'z>, Error> {
         if self.alignment() != 1 {
             if address.offset() % self.alignment() as u64 != 0 {
                 return Err(DisassemblyError::IncorrectAlignment {
@@ -533,7 +533,7 @@ impl Translator {
         let fmt = InstructionFormatter::new(walker, &self.symbol_table, ctor);
         let mnemonic = bumpalo::format!(in builder.inner(), "{}", fmt.mnemonic());
         let operands = bumpalo::format!(in builder.inner(), "{}", fmt.operands());
-        let operand_data = fmt.operand_data();
+        let operand_data = fmt.operand_data(arena);
 
         Ok(InstructionFull {
             address,

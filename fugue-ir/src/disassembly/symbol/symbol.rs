@@ -3,7 +3,7 @@ use crate::deserialise::Error as DeserialiseError;
 use crate::disassembly::pattern::PatternExpression;
 use crate::disassembly::symbol::{Constructor, DecisionNode, Operand, Operands, SymbolTable};
 use crate::disassembly::walker::ParserWalker;
-use crate::disassembly::Error;
+use crate::disassembly::{Error, IRBuilderArena};
 use crate::space::{AddressSpace, AddressSpaceId};
 use crate::space_manager::SpaceManager;
 
@@ -438,7 +438,8 @@ impl Symbol {
 
     pub fn collect_operands<'b, 'c, 'z>(
         &'b self,
-        operands: &mut Operands<'b>,
+        arena: &'z IRBuilderArena,
+        operands: &mut Operands<'b, 'z>,
         walker: &mut ParserWalker<'b, 'c, 'z>,
         symbols: &'b SymbolTable,
     ) {
@@ -453,13 +454,13 @@ impl Symbol {
                 if let Some(id) = subsym_id {
                     let sym = symbols.unchecked_symbol(*id);
                     if sym.is_subtable() {
-                        let mut inner = Operands::new();
+                        let mut inner = Operands::new(arena);
                         walker
                             .unchecked_constructor()
-                            .collect_operands(&mut inner, walker, symbols);
+                            .collect_operands(arena, &mut inner, walker, symbols);
                         operands.append(inner);
                     } else {
-                        sym.collect_operands(operands, walker, symbols);
+                        sym.collect_operands(arena, operands, walker, symbols);
                     }
                 } else {
                     let value = if let Some(ref def_expr) = def_expr {

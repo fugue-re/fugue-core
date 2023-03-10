@@ -4,7 +4,7 @@ use crate::deserialise::Error as DeserialiseError;
 use crate::disassembly::construct::ConstructTpl;
 use crate::disassembly::pattern::PatternExpression;
 use crate::disassembly::symbol::{Operands, Symbol, SymbolTable};
-use crate::disassembly::{Error, ParserWalker};
+use crate::disassembly::{Error, ParserWalker, IRBuilderArena};
 
 use crate::space_manager::SpaceManager;
 
@@ -124,17 +124,19 @@ impl Constructor {
 
     pub(crate) fn operands<'b, 'c, 'z>(
         &'b self,
+        arena: &'z IRBuilderArena,
         walker: &mut ParserWalker<'b, 'c, 'z>,
         symbols: &'b SymbolTable,
-    ) -> Operands<'b> {
-        let mut operands = Operands::new();
-        self.operands_into(&mut operands, walker, symbols);
+    ) -> Operands<'b, 'z> {
+        let mut operands = Operands::new(arena);
+        self.operands_into(arena, &mut operands, walker, symbols);
         operands
     }
 
     pub(crate) fn operands_into<'b, 'c, 'z>(
         &'b self,
-        operands: &mut Operands<'b>,
+        arena: &'z IRBuilderArena,
+        operands: &mut Operands<'b, 'z>,
         walker: &mut ParserWalker<'b, 'c, 'z>,
         symbols: &'b SymbolTable,
     ) {
@@ -147,7 +149,7 @@ impl Constructor {
                     walker.unchecked_push_operand(index);
                     walker
                         .unchecked_constructor()
-                        .operands_into(operands, walker, symbols);
+                        .operands_into(arena, operands, walker, symbols);
                     walker.unchecked_pop_operand();
                     return;
                 }
@@ -160,7 +162,7 @@ impl Constructor {
                     let index = (self.print_pieces[i].as_bytes()[1] - b'A') as usize;
                     symbols
                         .unchecked_symbol(self.operands[index])
-                        .collect_operands(operands, walker, symbols);
+                        .collect_operands(arena, operands, walker, symbols);
                 }
             }
         }
@@ -168,7 +170,8 @@ impl Constructor {
 
     pub(crate) fn collect_operands<'b, 'c, 'z>(
         &'b self,
-        operands: &mut Operands<'b>,
+        arena: &'z IRBuilderArena,
+        operands: &mut Operands<'b, 'z>,
         walker: &mut ParserWalker<'b, 'c, 'z>,
         symbols: &'b SymbolTable,
     ) {
@@ -178,7 +181,7 @@ impl Constructor {
                 symbols
                     .symbol(self.operands[index])
                     .expect("symbol")
-                    .collect_operands(operands, walker, symbols);
+                    .collect_operands(arena, operands, walker, symbols);
             }
         }
     }

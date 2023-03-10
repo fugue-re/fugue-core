@@ -50,8 +50,8 @@ impl<'b, 'c, 'z> InstructionFormatter<'b, 'c, 'z> {
         }
     }
 
-    pub fn operand_data<'a>(&'a self) -> Operands<'b> {
-        self.ctor.operands(&mut self.walker.borrow_mut(), self.symbols)
+    pub fn operand_data<'a>(&'a self, irb: &'z IRBuilderArena) -> Operands<'b, 'z> {
+        self.ctor.operands(irb, &mut self.walker.borrow_mut(), self.symbols)
     }
 }
 
