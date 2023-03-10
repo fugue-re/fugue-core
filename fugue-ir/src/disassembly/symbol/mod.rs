@@ -25,6 +25,10 @@ impl<'a> Operands<'a> {
         self.0.get(index)
     }
 
+    pub fn into_iter(self) -> impl ExactSizeIterator<Item=Operand<'a>> {
+        self.0.into_iter()
+    }
+
     pub fn len(&self) -> usize {
         self.0.len()
     }
