@@ -1,7 +1,7 @@
 use crate::address::AddressValue;
 use crate::disassembly::context::ContextDatabase;
 use crate::disassembly::pattern::PatternExpression;
-use crate::disassembly::symbol::{Constructor, FixedHandle, Operands, Symbol, SymbolTable};
+use crate::disassembly::symbol::{Constructor, FixedHandle, Operands, Symbol, SymbolTable, Tokens};
 use crate::disassembly::{Error, IRBuilderArena};
 use crate::space_manager::SpaceManager;
 
@@ -9,7 +9,9 @@ use std::cell::RefCell;
 use std::fmt;
 use std::mem::size_of;
 
-use bumpalo::collections::Vec as BVec;
+pub use bumpalo::collections::String as BString;
+pub use bumpalo::collections::Vec as BVec;
+
 use bumpalo::vec as bvec;
 
 use unsafe_unwrap::UnsafeUnwrap;
@@ -45,13 +47,39 @@ impl<'b, 'c, 'z> InstructionFormatter<'b, 'c, 'z> {
         MnemonicFormatter { inner: self }
     }
 
+    pub fn mnemonic_str<'az>(&self, irb: &'az IRBuilderArena) -> BString<'az> {
+        bumpalo::format!(in irb.inner(), "{}", self.mnemonic())
+    }
+
     pub fn operands<'a>(&'a self) -> OperandFormatter<'a, 'b, 'c, 'z> {
         OperandFormatter { inner: self }
     }
 
-    pub fn operand_data<'a, 'az>(&'a self, irb: &'az IRBuilderArena) -> Operands<'b, 'az> {
+    pub fn operands_str<'az>(&self, irb: &'az IRBuilderArena) -> BString<'az> {
+        bumpalo::format!(in irb.inner(), "{}", self.operands())
+    }
+
+    pub fn operand_data<'az>(&self, irb: &'az IRBuilderArena) -> Operands<'b, 'az> {
         self.ctor
             .operands(irb, &mut self.walker.borrow_mut(), self.symbols)
+    }
+
+    pub fn tokens<'az>(&self, irb: &'az IRBuilderArena) -> (Tokens<'b, 'az>, Tokens<'b, 'az>) {
+        let mut mnemonic_tokens = Tokens::new(irb);
+        self.ctor.mnemonic_tokens(
+            &mut mnemonic_tokens,
+            &mut self.walker.borrow_mut(),
+            self.symbols,
+        );
+
+        let mut body_tokens = Tokens::new(irb);
+        self.ctor.body_tokens(
+            &mut body_tokens,
+            &mut self.walker.borrow_mut(),
+            self.symbols,
+        );
+
+        (mnemonic_tokens, body_tokens)
     }
 }
 

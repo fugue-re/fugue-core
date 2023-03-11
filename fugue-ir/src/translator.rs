@@ -452,21 +452,26 @@ impl Translator {
         }
     }
 
-    pub fn disassemble_with<'a, 'az, 'z>(
+    pub fn disassemble_aux<'a, 'az, 'c, T, E, F>(
         &'a self,
         db: &mut ContextDatabase,
-        context: &mut ParserContext<'a, 'az>,
+        context: &'c mut ParserContext<'a, 'az>,
         arena: &'az IRBuilderArena,
-        builder: &'z IRBuilderArena,
         address: AddressValue,
         bytes: &[u8],
-    ) -> Result<Instruction<'z>, Error> {
+        mut f: F,
+    ) -> Result<T, E>
+    where
+        F: FnMut(InstructionFormatter<'a, 'c, 'az>, usize, usize) -> Result<T, E>,
+        E: From<Error>,
+    {
         if self.alignment() != 1 {
             if address.offset() % self.alignment() as u64 != 0 {
                 return Err(DisassemblyError::IncorrectAlignment {
                     address: address.offset(),
                     alignment: self.alignment(),
-                })?;
+                })
+                .map_err(Error::from)?;
             }
         }
 
@@ -477,24 +482,42 @@ impl Translator {
         Translator::resolve_handles(&mut walker, &self.manager, &self.symbol_table)?;
 
         walker.base_state();
-        walker.apply_commits(db, &self.manager, &self.symbol_table)?;
+        walker
+            .apply_commits(db, &self.manager, &self.symbol_table)
+            .map_err(Error::from)?;
 
         let delay_slots = walker.delay_slot();
         let length = walker.length();
 
         let ctor = walker.unchecked_constructor();
 
-        let fmt = InstructionFormatter::new(walker, &self.symbol_table, ctor);
-
-        let mnemonic = bumpalo::format!(in builder.inner(), "{}", fmt.mnemonic());
-        let operands = bumpalo::format!(in builder.inner(), "{}", fmt.operands());
-
-        Ok(Instruction {
-            address,
-            mnemonic,
-            operands,
+        f(
+            InstructionFormatter::new(walker, &self.symbol_table, ctor),
             delay_slots,
             length,
+        )
+    }
+
+    pub fn disassemble_with<'a, 'az, 'z>(
+        &'a self,
+        db: &mut ContextDatabase,
+        context: &mut ParserContext<'a, 'az>,
+        arena: &'az IRBuilderArena,
+        builder: &'z IRBuilderArena,
+        address: AddressValue,
+        bytes: &[u8],
+    ) -> Result<Instruction<'z>, Error> {
+        self.disassemble_aux(db, context, arena, address, bytes, |fmt, delay_slots, length| {
+            let mnemonic = fmt.mnemonic_str(builder);
+            let operands = fmt.operands_str(builder);
+
+            Ok(Instruction {
+                address,
+                mnemonic,
+                operands,
+                delay_slots,
+                length,
+            })
         })
     }
 
@@ -507,41 +530,19 @@ impl Translator {
         address: AddressValue,
         bytes: &[u8],
     ) -> Result<InstructionFull<'a, 'z>, Error> {
-        if self.alignment() != 1 {
-            if address.offset() % self.alignment() as u64 != 0 {
-                return Err(DisassemblyError::IncorrectAlignment {
-                    address: address.offset(),
-                    alignment: self.alignment(),
-                })?;
-            }
-        }
+        self.disassemble_aux(db, context, arena, address, bytes, |fmt, delay_slots, length| {
+            let mnemonic = fmt.mnemonic_str(builder);
+            let operands = fmt.operands_str(builder);
+            let operand_data = fmt.operand_data(builder);
 
-        context.reinitialise(arena, db, address.clone(), bytes);
-        let mut walker = ParserWalker::new(context);
-
-        Translator::resolve(&mut walker, self.root.id(), &self.symbol_table)?;
-        Translator::resolve_handles(&mut walker, &self.manager, &self.symbol_table)?;
-
-        walker.base_state();
-        walker.apply_commits(db, &self.manager, &self.symbol_table)?;
-
-        let delay_slots = walker.delay_slot();
-        let length = walker.length();
-
-        let ctor = walker.unchecked_constructor();
-
-        let fmt = InstructionFormatter::new(walker, &self.symbol_table, ctor);
-        let mnemonic = bumpalo::format!(in builder.inner(), "{}", fmt.mnemonic());
-        let operands = bumpalo::format!(in builder.inner(), "{}", fmt.operands());
-        let operand_data = fmt.operand_data(builder);
-
-        Ok(InstructionFull {
-            address,
-            mnemonic,
-            operands,
-            operand_data,
-            delay_slots,
-            length,
+            Ok(InstructionFull {
+                address,
+                mnemonic,
+                operands,
+                operand_data,
+                delay_slots,
+                length,
+            })
         })
     }
 

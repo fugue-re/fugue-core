@@ -108,3 +108,87 @@ impl<'a, 'z> From<&'_ AddressValue> for Operand<'a, 'z> {
         Self::Address(Address::from(addr))
     }
 }
+
+#[derive(Debug, Clone, Hash)]
+pub enum Token<'a> {
+    Address(Address),
+    Symbol(&'a str),
+    Register(&'a str),
+    Value(i64),
+}
+
+#[derive(Debug, Clone, Hash)]
+#[repr(transparent)]
+pub struct Tokens<'a, 'z>(ArenaVec<'z, Token<'a>>);
+
+impl<'a, 'z> Tokens<'a, 'z> {
+    pub fn new(arena: &'z IRBuilderArena) -> Self {
+        Self(ArenaVec::new_in(arena.inner()))
+    }
+
+    pub fn push(&mut self, token: impl Into<Token<'a>>) {
+        self.0.push(token.into());
+    }
+
+    pub fn get(&self, index: usize) -> Option<&Token<'a>> {
+        self.0.get(index)
+    }
+
+    pub fn iter<'t>(&'t self) -> impl ExactSizeIterator<Item=&'t Token<'a>> {
+        self.0.iter()
+    }
+
+    pub fn into_iter(self) -> impl ExactSizeIterator<Item=Token<'a>> + 'z {
+        self.0.into_iter()
+    }
+
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    pub fn append(&mut self, mut tokens: Self) {
+        self.0.append(&mut tokens.0)
+    }
+}
+
+impl<'a> Token<'a> {
+    pub fn varnode(name: &'a str, space: AddressSpaceId, offset: u64) -> Self {
+        if space.is_constant() {
+            Self::Value(offset as i64)
+        } else if space.is_default() {
+            Self::Address(Address::from_value(offset))
+        } else {
+            Self::Register(name)
+        }
+    }
+
+    pub fn register(name: &'a str) -> Self {
+        Self::Register(name)
+    }
+
+    pub fn symbol(name: &'a str) -> Self {
+        Self::Symbol(name)
+    }
+}
+
+impl<'a> From<i64> for Token<'a> {
+    fn from(v: i64) -> Self {
+        Self::Value(v)
+    }
+}
+
+impl<'a> From<AddressValue> for Token<'a> {
+    fn from(addr: AddressValue) -> Self {
+        Self::Address(Address::from(addr))
+    }
+}
+
+impl<'a> From<&'_ AddressValue> for Token<'a> {
+    fn from(addr: &AddressValue) -> Self {
+        Self::Address(Address::from(addr))
+    }
+}

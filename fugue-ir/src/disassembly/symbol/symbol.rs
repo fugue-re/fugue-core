@@ -1,7 +1,9 @@
 use crate::deserialise::parse::XmlExt;
 use crate::deserialise::Error as DeserialiseError;
 use crate::disassembly::pattern::PatternExpression;
-use crate::disassembly::symbol::{Constructor, DecisionNode, Operand, Operands, SymbolTable};
+use crate::disassembly::symbol::{
+    Constructor, DecisionNode, Operand, Operands, SymbolTable, Token, Tokens,
+};
 use crate::disassembly::walker::ParserWalker;
 use crate::disassembly::{Error, IRBuilderArena};
 use crate::space::{AddressSpace, AddressSpaceId};
@@ -487,10 +489,9 @@ impl Symbol {
             } => {
                 let index = pattern_value.value(walker, symbols).unwrap();
                 if index >= 0 && (index as usize) < varnode_table.len() {
-                    let named = symbols
-                        .unchecked_symbol(unsafe {
-                            varnode_table.get_unchecked(index as usize).unsafe_unwrap()
-                        });
+                    let named = symbols.unchecked_symbol(unsafe {
+                        varnode_table.get_unchecked(index as usize).unsafe_unwrap()
+                    });
                     operands.push(named.name());
                 }
             }
@@ -625,6 +626,96 @@ impl Symbol {
             }
             Self::End { .. } => {
                 write!(fmt, "{:#x}", walker.unchecked_next_address().offset())
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn tokens<'b, 'c, 'az, 'z>(
+        &'b self,
+        tokens: &mut Tokens<'b, 'az>,
+        walker: &mut ParserWalker<'b, 'c, 'z>,
+        symbols: &'b SymbolTable,
+    ) {
+        match self {
+            Self::Operand {
+                subsym_id,
+                handle_index,
+                def_expr,
+                ..
+            } => {
+                walker.unchecked_push_operand(*handle_index);
+                if let Some(id) = subsym_id {
+                    let sym = symbols.unchecked_symbol(*id);
+                    if sym.is_subtable() {
+                        walker
+                            .unchecked_constructor()
+                            .tokens_aux(tokens, walker, symbols);
+                    } else {
+                        sym.tokens(tokens, walker, symbols);
+                    }
+                } else {
+                    let value = if let Some(ref def_expr) = def_expr {
+                        def_expr.value(walker, symbols).unwrap()
+                    } else {
+                        unreachable!()
+                    };
+                    tokens.push(value);
+                }
+                walker.unchecked_pop_operand();
+            }
+            Self::Varnode {
+                name,
+                offset,
+                space,
+                ..
+            } => {
+                tokens.push(Token::varnode(name, *space, *offset));
+            }
+            Self::VarnodeList {
+                pattern_value,
+                varnode_table,
+                ..
+            } => {
+                let index = pattern_value.value(walker, symbols).unwrap();
+                if index >= 0 && (index as usize) < varnode_table.len() {
+                    let register = symbols
+                        .unchecked_symbol(unsafe {
+                            varnode_table.get_unchecked(index as usize).unsafe_unwrap()
+                        })
+                        .name();
+                    tokens.push(Token::register(register));
+                }
+            }
+            Self::Name {
+                pattern_value,
+                name_table,
+                ..
+            } => {
+                let index = pattern_value.value(walker, symbols).unwrap() as usize;
+                tokens.push(Token::register(&name_table[index]));
+            }
+            Self::Epsilon { .. } => {
+                tokens.push(0i64);
+            }
+            Self::Value { pattern_value, .. } => {
+                let value = pattern_value.value(walker, symbols).unwrap();
+                tokens.push(value);
+            }
+            Self::ValueMap {
+                pattern_value,
+                value_table,
+                ..
+            } => {
+                let index = pattern_value.value(walker, symbols).unwrap() as usize;
+                let value = *unsafe { value_table.get_unchecked(index) };
+                tokens.push(value);
+            }
+            Self::Start { .. } => {
+                tokens.push(walker.address());
+            }
+            Self::End { .. } => {
+                tokens.push(walker.unchecked_next_address());
             }
             _ => unreachable!(),
         }

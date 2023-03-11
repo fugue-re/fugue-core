@@ -3,7 +3,7 @@ use crate::deserialise::Error as DeserialiseError;
 
 use crate::disassembly::construct::ConstructTpl;
 use crate::disassembly::pattern::PatternExpression;
-use crate::disassembly::symbol::{Operands, Symbol, SymbolTable};
+use crate::disassembly::symbol::{Operands, Symbol, SymbolTable, Token, Tokens};
 use crate::disassembly::{Error, IRBuilderArena, ParserWalker};
 
 use crate::space_manager::SpaceManager;
@@ -182,6 +182,96 @@ impl Constructor {
                     .symbol(self.operands[index])
                     .expect("symbol")
                     .collect_operands(arena, operands, walker, symbols);
+            }
+        }
+    }
+
+    pub(crate) fn mnemonic_tokens<'b, 'c, 'z, 'az>(
+        &'b self,
+        tokens: &mut Tokens<'b, 'az>,
+        walker: &mut ParserWalker<'b, 'c, 'z>,
+        symbols: &'b SymbolTable,
+    ) {
+        if let Some(index) = self.flow_through_index {
+            match symbols
+                .unchecked_symbol(self.operands[index])
+                .defining_symbol(symbols)
+            {
+                Some(Symbol::Subtable { .. }) => {
+                    walker.unchecked_push_operand(index);
+                    walker
+                        .unchecked_constructor()
+                        .mnemonic_tokens(tokens, walker, symbols);
+                    walker.unchecked_pop_operand();
+                    return;
+                }
+                _ => (),
+            }
+        }
+        let end = self.first_whitespace.unwrap_or(self.print_pieces.len());
+        for i in 0..end {
+            if self.print_pieces[i].as_bytes()[0] == b'\n' {
+                let index = (self.print_pieces[i].as_bytes()[1] - b'A') as usize;
+                symbols
+                    .unchecked_symbol(self.operands[index])
+                    .tokens(tokens, walker, symbols);
+            } else {
+                tokens.push(Token::symbol(&self.print_pieces[i]));
+            }
+        }
+    }
+
+    pub(crate) fn body_tokens<'b, 'c, 'z, 'az>(
+        &'b self,
+        tokens: &mut Tokens<'b, 'az>,
+        walker: &mut ParserWalker<'b, 'c, 'z>,
+        symbols: &'b SymbolTable,
+    ) {
+        if let Some(index) = self.flow_through_index {
+            match symbols
+                .unchecked_symbol(self.operands[index])
+                .defining_symbol(symbols)
+            {
+                Some(Symbol::Subtable { .. }) => {
+                    walker.unchecked_push_operand(index);
+                    walker
+                        .unchecked_constructor()
+                        .body_tokens(tokens, walker, symbols);
+                    walker.unchecked_pop_operand();
+                    return;
+                }
+                _ => (),
+            }
+        }
+        if let Some(first_whitespace) = self.first_whitespace {
+            for i in (first_whitespace + 1)..self.print_pieces.len() {
+                if self.print_pieces[i].as_bytes()[0] == b'\n' {
+                    let index = (self.print_pieces[i].as_bytes()[1] - b'A') as usize;
+                    symbols
+                        .unchecked_symbol(self.operands[index])
+                        .tokens(tokens, walker, symbols);
+                } else {
+                    tokens.push(Token::symbol(&self.print_pieces[i]));
+                }
+            }
+        }
+    }
+
+    pub(crate) fn tokens_aux<'b, 'c, 'z, 'az>(
+        &'b self,
+        tokens: &mut Tokens<'b, 'az>,
+        walker: &mut ParserWalker<'b, 'c, 'z>,
+        symbols: &'b SymbolTable,
+    ) {
+        for p in &self.print_pieces {
+            if p.as_bytes()[0] == b'\n' {
+                let index = (p.as_bytes()[1] - b'A') as usize;
+                symbols
+                    .symbol(self.operands[index])
+                    .expect("symbol")
+                    .tokens(tokens, walker, symbols);
+            } else {
+                tokens.push(Token::symbol(p));
             }
         }
     }
