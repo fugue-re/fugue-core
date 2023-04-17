@@ -285,6 +285,10 @@ impl Convention {
         })
     }
 
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
     pub fn stack_pointer(&self) -> &StackPointer {
         &self.stack_pointer
     }
