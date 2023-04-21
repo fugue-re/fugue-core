@@ -379,6 +379,9 @@ impl PCodeOp {
         output: Option<VarnodeData>,
     ) -> Self {
         let mut inputs = inputs.into_iter();
+        // lift the single pcode op
+        log::trace!("Lifting Opcode: {:?} to PCodeOp", opcode);
+        
         unsafe { match opcode {
             Opcode::Copy => PCodeOp::Copy {
                 destination: Operand::from_varnodedata(manager, registers, output.unsafe_unwrap()),
