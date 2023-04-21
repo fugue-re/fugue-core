@@ -47,7 +47,6 @@ impl<'z> Operand {
         registers: &RegisterNames,
         vnd: VarnodeData,
     ) -> Operand {
-        log::trace!("Building Operand from PCode VarnodeData: {:?}", vnd);
         let offset = vnd.offset;
         let size = vnd.size;
         let space_id = vnd.space;
