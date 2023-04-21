@@ -1,5 +1,5 @@
 use paste::paste;
-use ux::u24;
+use crate::u24;
 
 use crate::order::Order;
 

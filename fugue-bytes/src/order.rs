@@ -1,9 +1,9 @@
 use byteorder::ByteOrder;
 use std::cmp::Ordering;
-use ux::u24;
 
 use crate::{BE, LE};
 use crate::endian::Endian;
+use crate::u24;
 
 pub trait Order: ByteOrder + Send + Sync + 'static {
     const ENDIAN: Endian;
