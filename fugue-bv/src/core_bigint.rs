@@ -437,7 +437,7 @@ impl BitVec {
             );
         }
 
-        let (g, a, b) = self.0.gcd_cofactors_ref(&rhs.0).into();
+        let (g, a, b) = self.0.extended_gcd_ref(&rhs.0).into();
         (
             Self::from_bigint_with(g, self.1.clone()),
             Self::from_bigint_with(a, self.1.clone()),
