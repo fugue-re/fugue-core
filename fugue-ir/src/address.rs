@@ -36,6 +36,54 @@ impl Address {
     }
 }
 
+impl PartialEq<u8> for Address {
+     fn eq(&self, other: &u8) -> bool {
+         self.0 == *other as u64
+     }
+}
+
+impl PartialEq<u16> for Address {
+     fn eq(&self, other: &u16) -> bool {
+         self.0 == *other as u64
+     }
+}
+
+impl PartialEq<u32> for Address {
+     fn eq(&self, other: &u32) -> bool {
+         self.0 == *other as u64
+     }
+}
+
+impl PartialEq<u64> for Address {
+    fn eq(&self, other: &u64) -> bool {
+        self.0 == *other
+    }
+}
+
+impl PartialEq<Address> for u8 {
+    fn eq(&self, other: &Address) -> bool {
+        *self as u64 == other.0
+    }
+}
+
+impl PartialEq<Address> for u16 {
+    fn eq(&self, other: &Address) -> bool {
+        *self as u64 == other.0
+    }
+}
+
+impl PartialEq<Address> for u32 {
+    fn eq(&self, other: &Address) -> bool {
+        *self as u64 == other.0
+    }
+}
+
+impl PartialEq<Address> for u64 {
+    fn eq(&self, other: &Address) -> bool {
+        *self == other.0
+    }
+}
+
 impl From<u64> for Address {
     fn from(v: u64) -> Self {
         Self(v)
