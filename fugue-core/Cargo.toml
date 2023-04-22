@@ -1,15 +1,19 @@
 [package]
 name = "fugue"
-version = "0.2.5"
-authors = ["Sam Thomas <st@xv.ax>"]
+version = "0.2.6"
+authors = ["Sam Thomas <st@xv.ax>", "Zitai Chen <zitaichen@outlook.com>"]
 edition = "2021"
 license = "MIT"
 
 [features]
 default = ["bigint", "db", "fp"]
+
 bigint = ["fugue-bv/bigint", "fugue-db?/bigint", "fugue-ir/bigint"]
 fixed-u64 = ["fugue-bv/fixed-u64", "fugue-db?/fixed-u64", "fugue-ir/fixed-u64"]
 fixed-u128 = ["fugue-bv/fixed-u128", "fugue-db?/fixed-u128", "fugue-ir/fixed-u128"]
+
+extra-logging = ["fugue-ir/extra-logging"]
+
 db = ["fugue-db"]
 fp = ["bigint", "fugue-fp"]
 

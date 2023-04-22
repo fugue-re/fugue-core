@@ -379,6 +379,11 @@ impl PCodeOp {
         output: Option<VarnodeData>,
     ) -> Self {
         let mut inputs = inputs.into_iter();
+
+        if cfg!(feature = "extra-logging") {
+            log::trace!("lifting opcode {opcode:?}");
+        }
+
         unsafe { match opcode {
             Opcode::Copy => PCodeOp::Copy {
                 destination: Operand::from_varnodedata(manager, registers, output.unsafe_unwrap()),

@@ -51,6 +51,10 @@ impl<'z> Operand {
         let size = vnd.size;
         let space_id = vnd.space;
 
+        if cfg!(feature = "extra-logging") {
+            log::trace!("building operand from {vnd:?}");
+        }
+
         if space_id.is_default() {
             // address
             Operand::Address {

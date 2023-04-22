@@ -1,15 +1,18 @@
 [package]
 name = "fugue-ir"
-version = "0.2.86"
+version = "0.2.87"
 authors = ["Sam Thomas <st@xv.ax>"]
 edition = "2021"
 license = "MIT"
 
 [features]
 default = ["bigint"]
+
 bigint = ["fugue-bv/bigint"]
 fixed-u64 = ["fugue-bv/fixed-u64"]
 fixed-u128 = ["fugue-bv/fixed-u128"]
+
+extra-logging = []
 
 [dependencies]
 ahash = { version = "0.8", features = ["serde"] }
