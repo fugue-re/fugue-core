@@ -120,6 +120,13 @@ impl From<&'_ AddressValue> for Address {
     }
 }
 
+impl From<&Address> for Address {
+    fn from(v: &Address) -> Self {
+        Self(v.0)
+    }
+}
+
+
 impl<'z> FromSpace<'z, Address> for AddressValue {
     fn from_space(t: Address, manager: &SpaceManager) -> Self {
         AddressValue::new(manager.default_space_ref(), t.offset())
