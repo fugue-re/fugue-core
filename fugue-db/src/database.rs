@@ -1,15 +1,13 @@
 use std::fs::File;
 use std::io::{BufReader, Read, Write};
-use std::iter::FromIterator;
 use std::path::{Path, PathBuf};
 
-use fs_extra::file::{CopyOptions, copy as copy_file};
+use fs_extra::file::{copy as copy_file, CopyOptions};
 
 use fugue_ir::LanguageDB;
 
 use fugue_ir::Translator;
-use intervals::Interval;
-use intervals::collections::IntervalTree;
+use iset::IntervalMap;
 use unicase::UniCase;
 use url::Url;
 
@@ -30,7 +28,8 @@ use crate::schema;
 pub struct DatabaseImpl {
     #[educe(Debug(ignore), PartialEq(ignore), Eq(ignore), Hash(ignore))]
     translators: Box<Vec<Translator>>,
-    segments: Box<IntervalTree<u64, Segment>>,
+    #[educe(Debug(ignore), PartialEq(ignore), Eq(ignore), Hash(ignore))]
+    segments: Box<IntervalMap<u64, Segment>>,
     #[borrows(segments, translators)]
     #[covariant]
     functions: Vec<Function<'this>>,
@@ -45,9 +44,7 @@ impl Default for DatabaseImpl {
     fn default() -> Self {
         DatabaseImpl::new(
             Box::new(Vec::new()),
-            Box::new(IntervalTree::from_iter(
-                Vec::<(Interval<u64>, Segment)>::new(),
-            )),
+            Box::new(IntervalMap::new()),
             |_, _| Vec::new(),
             Metadata::default(),
         )
@@ -55,28 +52,34 @@ impl Default for DatabaseImpl {
 }
 
 impl Database {
-    pub fn architectures(&self) -> impl Iterator<Item=&ArchitectureDef> {
-        self.0.borrow_translators().iter().map(Translator::architecture)
+    pub fn architectures(&self) -> impl Iterator<Item = &ArchitectureDef> {
+        self.0
+            .borrow_translators()
+            .iter()
+            .map(Translator::architecture)
     }
 
     pub fn default_translator(&self) -> Translator {
-        self.0.borrow_translators()
+        self.0
+            .borrow_translators()
             .first()
             .map(|t| t.clone())
             .expect("default translator")
     }
 
-    pub fn translators(&self) -> impl Iterator<Item=&Translator> {
+    pub fn translators(&self) -> impl Iterator<Item = &Translator> {
         self.0.borrow_translators().iter()
     }
 
-    pub fn segments(&self) -> &IntervalTree<u64, Segment> {
+    pub fn segments(&self) -> &IntervalMap<u64, Segment> {
         self.0.borrow_segments()
     }
 
     pub fn segment<S: AsRef<str>>(&self, name: S) -> Option<&Segment> {
         let name = name.as_ref();
-        self.segments().values().find(|s| s.name() == name)
+        self.segments()
+            .iter(..)
+            .find_map(|(_, s)| if s.name() == name { Some(s) } else { None })
     }
 
     pub fn functions(&self) -> &[Function] {
@@ -87,17 +90,12 @@ impl Database {
         &self,
         segment: S,
     ) -> Option<impl Iterator<Item = &Function>> {
-        let name = segment.as_ref();
-        if let Some(id) = self.segments().values().position(|s| s.name() == name) {
-            let id = Id::from(id);
-            Some(
-                self.functions()
-                    .iter()
-                    .filter(move |f| f.segment_id() == id),
-            )
-        } else {
-            None
-        }
+        let segment = self.segment(segment)?.id();
+        Some(
+            self.functions()
+                .iter()
+                .filter(move |f| f.segment_id() == segment),
+        )
     }
 
     pub fn function_with<F>(&self, f: F) -> Option<&Function>
@@ -144,18 +142,14 @@ impl Database {
         &self,
         name: S,
     ) -> Option<impl Iterator<Item = (&BasicBlock, &[u8])>> {
-        let name = name.as_ref();
-        if let Some(segment) = self.segments().values().find(|s| s.name() == name) {
-            Some(self.blocks().filter_map(move |b| {
-                if b.segment() == segment {
-                    Some((b, b.bytes()))
-                } else {
-                    None
-                }
-            }))
-        } else {
-            None
-        }
+        let segment = self.segment(name)?.id();
+        Some(self.blocks().filter_map(move |b| {
+            if b.segment().id() == segment {
+                Some((b, b.bytes()))
+            } else {
+                None
+            }
+        }))
     }
 
     pub fn metadata(&self) -> &Metadata {
@@ -163,8 +157,7 @@ impl Database {
     }
 
     pub fn from_bytes(bytes: &[u8], language_db: &LanguageDB) -> Result<Self, Error> {
-        let reader = schema::root_as_project(&bytes)
-            .map_err(Error::Deserialisation)?;
+        let reader = schema::root_as_project(&bytes).map_err(Error::Deserialisation)?;
 
         Self::from_reader(reader, language_db)
     }
@@ -174,18 +167,24 @@ impl Database {
         let mut file = BufReader::new(File::open(path).map_err(Error::CannotReadFile)?);
 
         let mut bytes = Vec::new();
-        file.read_to_end(&mut bytes).map_err(Error::CannotReadFile)?;
+        file.read_to_end(&mut bytes)
+            .map_err(Error::CannotReadFile)?;
 
         Self::from_bytes(&bytes, language_db)
     }
 
-    fn from_reader<'a>(database: schema::Project<'a>, language_db: &LanguageDB) -> Result<Self, Error> {
+    fn from_reader<'a>(
+        database: schema::Project<'a>,
+        language_db: &LanguageDB,
+    ) -> Result<Self, Error> {
         let metadata = Metadata::from_reader(
-            database.metadata()
-                .ok_or(Error::DeserialiseField("metadata"))?
+            database
+                .metadata()
+                .ok_or(Error::DeserialiseField("metadata"))?,
         )?;
 
-        let architectures = database.architectures()
+        let architectures = database
+            .architectures()
             .ok_or(Error::DeserialiseField("architectures"))?
             .into_iter()
             .map(|r| architecture::from_reader(&r))
@@ -202,23 +201,30 @@ impl Database {
             })
             .collect::<Result<Vec<_>, _>>()?;
 
-        let segments = database.segments()
+        let mut segment_id = 0usize;
+        let segments = database
+            .segments()
             .ok_or(Error::DeserialiseField("segments"))?
             .into_iter()
-            .filter_map(|r| match Segment::from_reader(&r) {
+            .filter_map(|r| match Segment::from_reader(Id::from(segment_id), &r) {
                 Ok(seg) if seg.len() != 0 => {
-                    Some(Ok((seg.address()..=seg.address() + (seg.len() as u64 - 1), seg)))
-                },
+                    segment_id += 1;
+                    Some(Ok((
+                        seg.address()..(seg.address() + seg.len() as u64),
+                        seg,
+                    )))
+                }
                 Ok(_) => None,
                 Err(e) => Some(Err(e)),
             })
-            .collect::<Result<IntervalTree<_, _>, Error>>()?;
+            .collect::<Result<IntervalMap<_, _>, Error>>()?;
 
         Ok(Self(DatabaseImpl::try_new(
             Box::new(translators),
             Box::new(segments),
             |segments, translators| {
-                database.functions()
+                database
+                    .functions()
                     .ok_or(Error::DeserialiseField("functions"))?
                     .into_iter()
                     .map(|r| Function::from_reader(r, segments, translators))
@@ -237,27 +243,31 @@ impl Database {
         let project = self.to_builder(&mut builder)?;
         schema::finish_project_buffer(&mut builder, project);
 
-        file.write_all(builder.finished_data()).map_err(Error::CannotWriteFile)?;
+        file.write_all(builder.finished_data())
+            .map_err(Error::CannotWriteFile)?;
 
         Ok(())
     }
 
     pub(crate) fn to_builder<'a: 'b, 'b>(
         &self,
-        builder: &'b mut flatbuffers::FlatBufferBuilder<'a>
+        builder: &'b mut flatbuffers::FlatBufferBuilder<'a>,
     ) -> Result<flatbuffers::WIPOffset<schema::Project<'a>>, Error> {
-        let architectures = self.architectures()
+        let architectures = self
+            .architectures()
             .map(|r| architecture::to_builder(r, builder))
             .collect::<Result<Vec<_>, _>>()?;
         let avec = builder.create_vector_from_iter(architectures.into_iter());
 
-        let segments = self.segments()
-            .values()
+        let segments = self
+            .segments()
+            .values(..)
             .map(|r| r.to_builder(builder))
             .collect::<Result<Vec<_>, _>>()?;
         let svec = builder.create_vector_from_iter(segments.into_iter());
 
-        let functions = self.functions()
+        let functions = self
+            .functions()
             .iter()
             .map(|r| r.to_builder(builder))
             .collect::<Result<Vec<_>, _>>()?;
@@ -313,14 +323,12 @@ impl DatabaseImporter {
         if path.is_absolute() {
             Url::from_file_path(path).unwrap()
         } else {
-            let apath = std::env::current_dir()
-                .unwrap()
-                .join(path);
+            let apath = std::env::current_dir().unwrap().join(path);
             Url::from_file_path(apath).unwrap()
         }
     }
 
-    pub fn available_backends(&self) -> impl Iterator<Item=&DatabaseImporterBackend> {
+    pub fn available_backends(&self) -> impl Iterator<Item = &DatabaseImporterBackend> {
         self.backends.iter()
     }
 
@@ -330,8 +338,10 @@ impl DatabaseImporter {
     }
 
     pub fn register_backend<B, E>(&mut self, backend: B) -> &mut Self
-    where B: Backend<Error = E> + 'static,
-          E: Into<Error> + 'static {
+    where
+        B: Backend<Error = E> + 'static,
+        E: Into<Error> + 'static,
+    {
         self.backends.push(DatabaseImporterBackend::new(backend));
         self
     }
@@ -360,38 +370,38 @@ impl DatabaseImporter {
         let program = if let Some(ref program) = self.program {
             program.clone()
         } else {
-            return Err(Error::NoImportUrl)
+            return Err(Error::NoImportUrl);
         };
 
         if let Some(ref fdb_path) = self.fdb_path {
             if fdb_path.exists() && !self.overwrite_fdb {
-                return Err(Error::ExportPathExists(fdb_path.to_owned()))
+                return Err(Error::ExportPathExists(fdb_path.to_owned()));
             }
         }
 
         if program.scheme() == "file" {
-            let program = program.to_file_path()
+            let program = program
+                .to_file_path()
                 .map_err(|_| Error::InvalidLocalImportUrl(program.clone()))?;
 
             // importing from an existing database
-            if program
-                .extension()
-                .map(|e| e == "fdb")
-                .unwrap_or(false)
-            {
+            if program.extension().map(|e| e == "fdb").unwrap_or(false) {
                 if let Ok(db) = Database::from_file(&program, language_db) {
                     return Ok(db);
                 }
             };
         }
 
-        let mut backends = self.available_backends()
-            .filter_map(|b| if !b.is_available() {
-                None
-            } else if let Some(pref) = b.is_preferred_for(&program) {
-                Some((if pref { 5 } else { 1 }, b))
-            } else {
-                None
+        let mut backends = self
+            .available_backends()
+            .filter_map(|b| {
+                if !b.is_available() {
+                    None
+                } else if let Some(pref) = b.is_preferred_for(&program) {
+                    Some((if pref { 5 } else { 1 }, b))
+                } else {
+                    None
+                }
             })
             .collect::<Vec<_>>();
 
@@ -401,7 +411,12 @@ impl DatabaseImporter {
 
         backends.sort_by_key(|(base_score, b)| {
             -if let Some(ref pref) = self.backend_pref {
-                *base_score + if UniCase::new(pref) == UniCase::new(b.name()) { 1 } else { 0 }
+                *base_score
+                    + if UniCase::new(pref) == UniCase::new(b.name()) {
+                        1
+                    } else {
+                        0
+                    }
             } else {
                 *base_score
             }
@@ -413,7 +428,7 @@ impl DatabaseImporter {
             // log::debug!("Trying backend {}", backend.name());
             res = backend.import(&program);
             if res.is_ok() {
-                break
+                break;
             }
         }
 
@@ -421,24 +436,29 @@ impl DatabaseImporter {
             Ok(Imported::File(ref path)) => {
                 let db = Database::from_file(path, language_db)?;
                 if let Some(ref fdb_path) = self.fdb_path {
-                    if path != fdb_path { // copy it
-                        copy_file(path, fdb_path, &CopyOptions {
-                            overwrite: true,
-                            skip_exist: false,
-                            ..Default::default()
-                        })
+                    if path != fdb_path {
+                        // copy it
+                        copy_file(
+                            path,
+                            fdb_path,
+                            &CopyOptions {
+                                overwrite: true,
+                                skip_exist: false,
+                                ..Default::default()
+                            },
+                        )
                         .map_err(Error::ExportViaCopy)?;
                     }
                 }
                 Ok(db)
-            },
+            }
             Ok(Imported::Bytes(ref bytes)) => {
                 let db = Database::from_bytes(bytes, language_db)?;
                 if let Some(ref fdb_path) = self.fdb_path {
                     db.to_file(fdb_path)?;
                 }
                 Ok(db)
-            },
+            }
             Err(e) => Err(e),
         }
     }

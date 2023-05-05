@@ -1,5 +1,5 @@
 use fugue_ir::Translator;
-use intervals::collections::IntervalTree;
+use iset::IntervalMap;
 
 use crate::Id;
 use crate::BasicBlock;
@@ -44,13 +44,22 @@ impl<'db> Function<'db> {
         &self.references
     }
 
-    pub(crate) fn from_reader(reader: schema::Function, segments: &'db IntervalTree<u64, Segment>, translators: &'db [Translator]) -> Result<Self, Error> {
+    pub(crate) fn from_reader(reader: schema::Function, segments: &'db IntervalMap<u64, Segment>, translators: &'db [Translator]) -> Result<Self, Error> {
+        let address = reader.address();
         Ok(Self {
             symbol: reader.symbol().ok_or(Error::DeserialiseField("symbol"))?.to_string(),
             entry: Id::from(reader.entry()),
-            address: reader.address(),
-            segment: segments.find(&reader.address())
-                .ok_or_else(|| Error::NoFunctionSegment(reader.address()))?.index().into(),
+            address,
+            segment: segments
+                .iter(address..address + 1)
+                .find_map(|(_, s)| {
+                    if s.is_code() || s.is_external() {
+                        Some(s.id())
+                    } else {
+                        None
+                    }
+                })
+                .ok_or_else(|| Error::NoFunctionSegment(reader.address()))?,
             blocks: reader.blocks().ok_or(Error::DeserialiseField("blocks"))?
                 .into_iter()
                 .map(|b| BasicBlock::from_reader(b, segments, translators))

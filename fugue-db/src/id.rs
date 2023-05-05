@@ -1,6 +1,7 @@
 use std::marker::PhantomData;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(serde::Serialize, serde::Deserialize)]
 #[repr(transparent)]
 /// Upper 32 bit: parent
 /// Lower 32 bit: index

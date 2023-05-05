@@ -1,6 +1,6 @@
 [package]
 name = "fugue-ir"
-version = "0.2.87"
+version = "0.2.88"
 authors = ["Sam Thomas <st@xv.ax>"]
 edition = "2021"
 license = "MIT"
@@ -20,7 +20,7 @@ bumpalo = { version = "3.10", features = ["boxed", "collections"] }
 fugue-arch = { path = "../fugue-arch", version = "0.2", registry = "fugue" }
 fugue-bv = { path = "../fugue-bv", version = "0.2", registry = "fugue", default-features = false }
 fugue-bytes = { path = "../fugue-bytes", version = "0.2", registry = "fugue" }
-intervals = { version = "0.1", features = ["serde_derive"], registry = "fugue" }
+iset = { version = "0.2", features = ["serde"] }
 itertools = "0.10"
 log = "0.4"
 roxmltree = "0.15"

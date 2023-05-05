@@ -1,6 +1,6 @@
 [package]
 name = "fugue-db"
-version = "0.2.11"
+version = "0.2.13"
 authors = ["Sam Thomas <st@xv.ax>"]
 edition = "2021"
 build = "build.rs"
@@ -20,7 +20,7 @@ fugue-ir = { path = "../fugue-ir", version = "0.2", registry = "fugue", default-
 educe = "0.4"
 flatbuffers = "2.0"
 fs_extra = "1.2"
-intervals = { version = "0.1", registry = "fugue" }
+iset = "0.2"
 ouroboros = "0.9"
 
 serde = { version = "1", features = ["derive"] }

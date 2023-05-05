@@ -1,11 +1,13 @@
 use crate::error::Error;
 use crate::schema;
+use crate::Id;
 
 use fugue_bytes::Endian;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[derive(serde::Deserialize, serde::Serialize)]
 pub struct Segment {
+    id: Id<Self>,
     name: String,
     address: u64,
     length: usize,
@@ -23,6 +25,10 @@ pub struct Segment {
 }
 
 impl Segment {
+    pub fn id(&self) -> Id<Self> {
+        self.id.clone()
+    }
+
     pub fn name(&self) -> &str {
         &self.name
     }
@@ -79,8 +85,9 @@ impl Segment {
         &self.bytes
     }
 
-    pub(crate) fn from_reader(reader: &schema::Segment) -> Result<Self, Error> {
+    pub(crate) fn from_reader(id: Id<Self>, reader: &schema::Segment) -> Result<Self, Error> {
         Ok(Self {
+            id,
             name: reader.name().ok_or(Error::DeserialiseField("name"))?.to_string(),
             address: reader.address(),
             length: reader.size_() as usize,

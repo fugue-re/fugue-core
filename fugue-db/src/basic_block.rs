@@ -2,7 +2,7 @@ use fugue_ir::disassembly::{ContextDatabase, IRBuilderArena};
 use fugue_ir::PCode;
 use fugue_ir::Translator;
 use fugue_ir::il::Instruction;
-use intervals::collections::IntervalTree;
+use iset::IntervalMap;
 
 use crate::ArchitectureDef;
 use crate::Id;
@@ -114,19 +114,26 @@ impl<'db> BasicBlock<'db> {
 
     pub(crate) fn from_reader(
         reader: schema::BasicBlock,
-        segments: &'db IntervalTree<u64, Segment>,
+        segments: &'db IntervalMap<u64, Segment>,
         translators: &'db [Translator],
     ) -> Result<Self, Error> {
         let architecture_id = Id::<ArchitectureDef>::from(reader.architecture());
         let arch_index = architecture_id.index();
+        let address = reader.address();
         Ok(Self {
-            address: reader.address(),
+            address,
             length: reader.size_() as usize,
             architecture_id,
             segment: segments
-                .find(&reader.address())
-                .ok_or_else(|| Error::NoBlockSegment(reader.address()))?
-                .value(),
+                .iter(address..address + reader.size_() as u64)
+                .find_map(|(_, s)| {
+                    if s.is_code() || s.is_external() {
+                        Some(s)
+                    } else {
+                        None
+                    }
+                })
+                .ok_or_else(|| Error::NoBlockSegment(reader.address()))?,
             predecessors: reader
                 .predecessors()
                 .ok_or(Error::DeserialiseField("predecessors"))?
