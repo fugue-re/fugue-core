@@ -4,6 +4,8 @@ version = "0.2.8"
 authors = ["Sam Thomas <st@xv.ax>", "Zitai Chen <zitaichen@outlook.com>"]
 edition = "2021"
 license = "MIT"
+description = "A binary analysis framework written in Rust"
+homepage = "https://fugue.re"
 
 [features]
 default = ["bigint"]

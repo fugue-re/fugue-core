@@ -4,6 +4,8 @@ version = "0.2.4"
 authors = ["Sam Thomas <st@xv.ax>"]
 edition = "2021"
 license = "MIT"
+description = "A binary analysis framework written in Rust"
+homepage = "https://fugue.re"
 
 [dependencies]
 fugue-bytes = { path = "../fugue-bytes", version = "0.2" }
