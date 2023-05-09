@@ -12,7 +12,7 @@ fixed-u128 = []
 bigint = ["rug"]
 
 [dependencies]
-fugue-bytes = { path = "../fugue-bytes", version = "0.2", registry = "fugue" }
+fugue-bytes = { path = "../fugue-bytes", version = "0.2" }
 num-integer = "0.1"
 num-traits = "0.2"
 paste = "1"

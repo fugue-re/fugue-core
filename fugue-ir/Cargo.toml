@@ -17,9 +17,9 @@ extra-logging = []
 [dependencies]
 ahash = { version = "0.8", features = ["serde"] }
 bumpalo = { version = "3.12", features = ["boxed", "collections"] }
-fugue-arch = { path = "../fugue-arch", version = "0.2", registry = "fugue" }
-fugue-bv = { path = "../fugue-bv", version = "0.2", registry = "fugue", default-features = false }
-fugue-bytes = { path = "../fugue-bytes", version = "0.2", registry = "fugue" }
+fugue-arch = { path = "../fugue-arch", version = "0.2" }
+fugue-bv = { path = "../fugue-bv", version = "0.2", default-features = false }
+fugue-bytes = { path = "../fugue-bytes", version = "0.2" }
 iset = { version = "0.2", features = ["serde"] }
 itertools = "0.10"
 log = "0.4"

@@ -6,7 +6,7 @@ edition = "2021"
 license = "MIT"
 
 [dependencies]
-fugue-bytes = { path = "../fugue-bytes", version = "0.2", registry = "fugue" }
+fugue-bytes = { path = "../fugue-bytes", version = "0.2" }
 serde = { version = "1", features = ["derive"] }
 thiserror = "1"
 unicase = "2.6"

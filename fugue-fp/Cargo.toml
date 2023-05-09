@@ -6,7 +6,7 @@ edition = "2021"
 license = "MIT"
 
 [dependencies]
-fugue-bv = { path = "../fugue-bv", version = "0.2", features = ["bigint"], default-features = false, registry = "fugue" }
-fugue-ir = { path = "../fugue-ir", version = "0.2", registry = "fugue" }
+fugue-bv = { path = "../fugue-bv", version = "0.2", features = ["bigint"], default-features = false }
+fugue-ir = { path = "../fugue-ir", version = "0.2" }
 rug = { version = "1", features = ["float"] }
 thiserror = "1"
