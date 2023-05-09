@@ -57,8 +57,8 @@ impl Metadata {
     pub(crate) fn from_reader(reader: schema::Metadata) -> Result<Self, Error> {
         let mut input_md5 = [0u8; 16];
         let mut input_sha256 = [0u8; 32];
-        input_md5.copy_from_slice(reader.input_md5().ok_or(Error::DeserialiseField("input_md5"))?);
-        input_sha256.copy_from_slice(reader.input_sha256().ok_or(Error::DeserialiseField("input_sha256"))?);
+        input_md5.copy_from_slice(reader.input_md5().ok_or(Error::DeserialiseField("input_md5"))?.bytes());
+        input_sha256.copy_from_slice(reader.input_sha256().ok_or(Error::DeserialiseField("input_sha256"))?.bytes());
 
         Ok(Self {
             input_path: reader.input_path().ok_or(Error::DeserialiseField("input_path"))?.to_string(),
@@ -75,8 +75,8 @@ impl Metadata {
         builder: &'b mut flatbuffers::FlatBufferBuilder<'a>
     ) -> Result<flatbuffers::WIPOffset<schema::Metadata<'a>>, Error> {
         let input_path = builder.create_string(&self.input_path);
-        let input_md5 = builder.create_vector_direct(&self.input_md5[..]);
-        let input_sha256 = builder.create_vector_direct(&self.input_sha256[..]);
+        let input_md5 = builder.create_vector(&self.input_md5[..]);
+        let input_sha256 = builder.create_vector(&self.input_sha256[..]);
         let input_format = builder.create_string(self.input_format.into());
         let exporter = builder.create_string(self.exporter());
 

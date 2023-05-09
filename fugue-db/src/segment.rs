@@ -4,8 +4,9 @@ use crate::Id;
 
 use fugue_bytes::Endian;
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[derive(serde::Deserialize, serde::Serialize)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Deserialize, serde::Serialize,
+)]
 pub struct Segment {
     id: Id<Self>,
     name: String,
@@ -88,11 +89,18 @@ impl Segment {
     pub(crate) fn from_reader(id: Id<Self>, reader: &schema::Segment) -> Result<Self, Error> {
         Ok(Self {
             id,
-            name: reader.name().ok_or(Error::DeserialiseField("name"))?.to_string(),
+            name: reader
+                .name()
+                .ok_or(Error::DeserialiseField("name"))?
+                .to_string(),
             address: reader.address(),
             length: reader.size_() as usize,
             alignment: reader.alignment_() as usize,
-            endian: if reader.endian() { Endian::Big } else { Endian::Little },
+            endian: if reader.endian() {
+                Endian::Big
+            } else {
+                Endian::Little
+            },
             bits: reader.bits() as usize,
             address_size: reader.address_size() as usize,
             code: reader.code(),
@@ -101,16 +109,20 @@ impl Segment {
             executable: reader.executable(),
             readable: reader.readable(),
             writable: reader.writable(),
-            bytes: reader.bytes().ok_or(Error::DeserialiseField("bytes"))?.to_vec(),
+            bytes: reader
+                .bytes()
+                .ok_or(Error::DeserialiseField("bytes"))?
+                .bytes()
+                .to_vec(),
         })
     }
 
     pub(crate) fn to_builder<'a: 'b, 'b>(
         &self,
-        builder: &'b mut flatbuffers::FlatBufferBuilder<'a>
+        builder: &'b mut flatbuffers::FlatBufferBuilder<'a>,
     ) -> Result<flatbuffers::WIPOffset<schema::Segment<'a>>, Error> {
         let name = builder.create_string(self.name());
-        let bytes = builder.create_vector_direct(&self.bytes);
+        let bytes = builder.create_vector(&self.bytes);
 
         let mut sbuilder = schema::SegmentBuilder::new(builder);
 

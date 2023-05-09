@@ -1,6 +1,6 @@
 [package]
 name = "fugue-db"
-version = "0.2.13"
+version = "0.2.14"
 authors = ["Sam Thomas <st@xv.ax>"]
 edition = "2021"
 build = "build.rs"
@@ -18,7 +18,7 @@ fugue-bytes = { path = "../fugue-bytes", version = "0.2", registry = "fugue" }
 fugue-ir = { path = "../fugue-ir", version = "0.2", registry = "fugue", default-features = false }
 
 educe = "0.4"
-flatbuffers = "2.0"
+flatbuffers = "22.10.26"
 fs_extra = "1.2"
 iset = "0.2"
 ouroboros = "0.9"
@@ -31,5 +31,4 @@ which = "4"
 url = "2.2"
 
 [build-dependencies]
-flatc-rust = "0.2"
-flatc = { version = "0.2.1", registry = "fugue" }
+flatcc = "22.10.26"
