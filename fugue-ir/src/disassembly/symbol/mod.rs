@@ -3,20 +3,22 @@ pub mod symbol;
 pub mod symbol_scope;
 pub mod symbol_table;
 
+use std::ops::Range;
+
 pub use sub_table::{Constructor, DecisionNode};
 pub use symbol::{FixedHandle, Symbol, SymbolBuilder, SymbolKind};
 pub use symbol_scope::SymbolScope;
 pub use symbol_table::SymbolTable;
 
-use crate::{Address, AddressSpaceId, AddressValue};
 use crate::disassembly::lift::{ArenaVec, IRBuilderArena};
+use crate::{Address, AddressSpaceId, AddressValue};
 
 #[derive(Debug, Clone, Hash)]
 pub enum Operand<'a, 'z> {
-    Address(Address),
+    Address(Address, Option<Range<u32>>),
     Group(ArenaVec<'z, Operand<'a, 'z>>),
-    Register(&'a str),
-    Value(i64),
+    Register(&'a str, Option<Range<u32>>),
+    Value(i64, Option<Range<u32>>),
 }
 
 #[derive(Debug, Clone, Hash)]
@@ -28,15 +30,23 @@ impl<'a, 'z> Operands<'a, 'z> {
         Self(ArenaVec::new_in(arena.inner()))
     }
 
-    pub fn push(&mut self, operand: impl Into<Operand<'a, 'z>>) {
-        self.0.push(operand.into());
+    pub fn push(&mut self, operand: impl IntoOperand<'a, 'z>) {
+        self.push_with(operand, None)
+    }
+
+    pub fn push_with(
+        &mut self,
+        operand: impl IntoOperand<'a, 'z>,
+        bits: impl Into<Option<Range<u32>>>,
+    ) {
+        self.0.push(operand.into_operand_with(bits.into()));
     }
 
     pub fn get(&self, index: usize) -> Option<&Operand<'a, 'z>> {
         self.0.get(index)
     }
 
-    pub fn into_iter(self) -> impl ExactSizeIterator<Item=Operand<'a, 'z>> {
+    pub fn into_iter(self) -> impl ExactSizeIterator<Item = Operand<'a, 'z>> {
         self.0.into_iter()
     }
 
@@ -50,7 +60,7 @@ impl<'a, 'z> Operands<'a, 'z> {
 
     pub fn append(&mut self, operands: Self) {
         if let Some(operand) = Operand::from_operands(operands) {
-            self.push(operand);
+            self.0.push(operand);
         }
     }
 }
@@ -58,11 +68,11 @@ impl<'a, 'z> Operands<'a, 'z> {
 impl<'a, 'z> Operand<'a, 'z> {
     pub fn varnode(name: &'a str, space: AddressSpaceId, offset: u64) -> Self {
         if space.is_constant() {
-            Self::Value(offset as i64)
+            Self::Value(offset as i64, None)
         } else if space.is_default() {
-            Self::Address(Address::from_value(offset))
+            Self::Address(Address::from_value(offset), None)
         } else {
-            Self::Register(name)
+            Self::Register(name, None)
         }
     }
 
@@ -85,27 +95,37 @@ impl<'a, 'z> Operand<'a, 'z> {
     }
 }
 
-impl<'a, 'z> From<i64> for Operand<'a, 'z> {
-    fn from(v: i64) -> Self {
-        Self::Value(v)
+pub trait IntoOperand<'a, 'z> {
+    fn into_operand_with(self, bits: Option<Range<u32>>) -> Operand<'a, 'z>;
+}
+
+impl<'a, 'z> IntoOperand<'a, 'z> for Operand<'a, 'z> {
+    fn into_operand_with(self, _bits: Option<Range<u32>>) -> Operand<'a, 'z> {
+        self
     }
 }
 
-impl<'a, 'z> From<&'a str> for Operand<'a, 'z> {
-    fn from(s: &'a str) -> Self {
-        Self::Register(s)
+impl<'a, 'z> IntoOperand<'a, 'z> for i64 {
+    fn into_operand_with(self, bits: Option<Range<u32>>) -> Operand<'a, 'z> {
+        Operand::Value(self, bits)
     }
 }
 
-impl<'a, 'z> From<AddressValue> for Operand<'a, 'z> {
-    fn from(addr: AddressValue) -> Self {
-        Self::Address(Address::from(addr))
+impl<'a, 'z> IntoOperand<'a, 'z> for &'a str {
+    fn into_operand_with(self, bits: Option<Range<u32>>) -> Operand<'a, 'z> {
+        Operand::Register(self, bits)
     }
 }
 
-impl<'a, 'z> From<&'_ AddressValue> for Operand<'a, 'z> {
-    fn from(addr: &AddressValue) -> Self {
-        Self::Address(Address::from(addr))
+impl<'a, 'z> IntoOperand<'a, 'z> for AddressValue {
+    fn into_operand_with(self, bits: Option<Range<u32>>) -> Operand<'a, 'z> {
+        Operand::Address(Address::from(self), bits)
+    }
+}
+
+impl<'a, 'z> IntoOperand<'a, 'z> for &'_ AddressValue {
+    fn into_operand_with(self, bits: Option<Range<u32>>) -> Operand<'a, 'z> {
+        Operand::Address(Address::from(self), bits)
     }
 }
 
@@ -134,11 +154,11 @@ impl<'a, 'z> Tokens<'a, 'z> {
         self.0.get(index)
     }
 
-    pub fn iter<'t>(&'t self) -> impl ExactSizeIterator<Item=&'t Token<'a>> {
+    pub fn iter<'t>(&'t self) -> impl ExactSizeIterator<Item = &'t Token<'a>> {
         self.0.iter()
     }
 
-    pub fn into_iter(self) -> impl ExactSizeIterator<Item=Token<'a>> + 'z {
+    pub fn into_iter(self) -> impl ExactSizeIterator<Item = Token<'a>> + 'z {
         self.0.into_iter()
     }
 

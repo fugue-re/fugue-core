@@ -465,12 +465,12 @@ impl Symbol {
                         sym.collect_operands(arena, operands, walker, symbols);
                     }
                 } else {
-                    let value = if let Some(ref def_expr) = def_expr {
-                        def_expr.value(walker, symbols).unwrap()
+                    let (value, bits) = if let Some(ref def_expr) = def_expr {
+                        def_expr.value_with(walker, symbols).unwrap()
                     } else {
                         unreachable!()
                     };
-                    operands.push(value);
+                    operands.push_with(value, bits);
                 }
                 walker.unchecked_pop_operand();
             }
@@ -487,12 +487,12 @@ impl Symbol {
                 varnode_table,
                 ..
             } => {
-                let index = pattern_value.value(walker, symbols).unwrap();
+                let (index, bits) = pattern_value.value_with(walker, symbols).unwrap();
                 if index >= 0 && (index as usize) < varnode_table.len() {
                     let named = symbols.unchecked_symbol(unsafe {
                         varnode_table.get_unchecked(index as usize).unsafe_unwrap()
                     });
-                    operands.push(named.name());
+                    operands.push_with(named.name(), bits);
                 }
             }
             Self::Name {
@@ -500,24 +500,24 @@ impl Symbol {
                 name_table,
                 ..
             } => {
-                let index = pattern_value.value(walker, symbols).unwrap() as usize;
-                operands.push(name_table[index].as_str());
+                let (index, bits) = pattern_value.value_with(walker, symbols).unwrap();
+                operands.push_with(name_table[index as usize].as_str(), bits);
             }
             Self::Epsilon { .. } => {
                 operands.push(0i64);
             }
             Self::Value { pattern_value, .. } => {
-                let value = pattern_value.value(walker, symbols).unwrap();
-                operands.push(value);
+                let (value, bits) = pattern_value.value_with(walker, symbols).unwrap();
+                operands.push_with(value, bits);
             }
             Self::ValueMap {
                 pattern_value,
                 value_table,
                 ..
             } => {
-                let index = pattern_value.value(walker, symbols).unwrap() as usize;
-                let value = *unsafe { value_table.get_unchecked(index) };
-                operands.push(value);
+                let (index, bits) = pattern_value.value_with(walker, symbols).unwrap();
+                let value = *unsafe { value_table.get_unchecked(index as usize) };
+                operands.push_with(value, bits);
             }
             Self::Start { .. } => {
                 operands.push(walker.address());
