@@ -127,7 +127,7 @@ impl<'db> BasicBlock<'db> {
             segment: segments
                 .iter(address..address + reader.size_() as u64)
                 .find_map(|(_, s)| {
-                    if s.is_code() || s.is_external() {
+                    if s.is_code() || s.is_external() || s.is_executable() || s.is_readable() {
                         Some(s)
                     } else {
                         None
