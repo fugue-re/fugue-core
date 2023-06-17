@@ -4,6 +4,8 @@ version = "0.2.34"
 authors = ["Sam Thomas <st@xv.ax>"]
 edition = "2021"
 license = "MIT"
+description = "A binary analysis framework written in Rust"
+homepage = "https://fugue.re"
 
 [features]
 default = ["bigint"]
@@ -12,7 +14,7 @@ fixed-u128 = []
 bigint = ["rug"]
 
 [dependencies]
-fugue-bytes = { path = "../fugue-bytes", version = "0.2", registry = "fugue" }
+fugue-bytes = { path = "../fugue-bytes", version = "0.2" }
 num-integer = "0.1"
 num-traits = "0.2"
 paste = "1"

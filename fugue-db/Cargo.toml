@@ -1,10 +1,12 @@
 [package]
 name = "fugue-db"
-version = "0.2.14"
+version = "0.2.15"
 authors = ["Sam Thomas <st@xv.ax>"]
 edition = "2021"
 build = "build.rs"
 license = "MIT"
+description = "A binary analysis framework written in Rust"
+homepage = "https://fugue.re"
 
 [features]
 default = ["bigint"]
@@ -13,12 +15,12 @@ fixed-u64 = ["fugue-ir/fixed-u64"]
 fixed-u128 = ["fugue-ir/fixed-u128"]
 
 [dependencies]
-fugue-arch = { path = "../fugue-arch", version = "0.2", registry = "fugue" }
-fugue-bytes = { path = "../fugue-bytes", version = "0.2", registry = "fugue" }
-fugue-ir = { path = "../fugue-ir", version = "0.2", registry = "fugue", default-features = false }
+fugue-arch = { path = "../fugue-arch", version = "0.2" }
+fugue-bytes = { path = "../fugue-bytes", version = "0.2" }
+fugue-ir = { path = "../fugue-ir", version = "0.2", default-features = false }
 
 educe = "0.4"
-flatbuffers = "22.10.26"
+flatbuffers = "23.1.21"
 fs_extra = "1.2"
 iset = "0.2"
 ouroboros = "0.9"
@@ -31,4 +33,4 @@ which = "4"
 url = "2.2"
 
 [build-dependencies]
-flatcc = "22.10.26"
+flatcc = "23.1.21"

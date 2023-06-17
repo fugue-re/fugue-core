@@ -8,6 +8,7 @@ use crate::space_manager::SpaceManager;
 use std::cell::RefCell;
 use std::fmt;
 use std::mem::size_of;
+use std::ops::Range;
 
 pub use bumpalo::collections::String as BString;
 pub use bumpalo::collections::Vec as BVec;
@@ -786,14 +787,22 @@ impl<'b, 'c, 'z> ParserWalker<'b, 'c, 'z> {
         }
     }
 
-    pub fn resolve_with<'d>(
+    #[inline]
+    pub fn resolve_with_aux<'d, T, F>(
         &'d mut self,
         pat: &'b PatternExpression,
         ctor: &'b Constructor,
         index: usize,
         symbols: &'b SymbolTable,
-    ) -> Result<i64, Error> {
-        //resolve_with_aux(self, pat, ctor, index, symbols)
+        mut f: F,
+    ) -> Result<T, Error>
+    where
+        F: FnMut(
+            &'b PatternExpression,
+            &mut ParserWalker<'b, 'd, 'z>,
+            &'b SymbolTable,
+        ) -> Result<T, Error>,
+    {
         let mut cur_depth = self.depth;
         let mut point = self.unchecked_point();
 
@@ -806,7 +815,7 @@ impl<'b, 'c, 'z> ParserWalker<'b, 'c, 'z> {
                 nwalker.point = Some(nwalker.ctx.state.len());
                 nwalker.ctx.state.push(state);
 
-                let value = pat.value(&mut nwalker, symbols)?;
+                let value = f(pat, &mut nwalker, symbols)?;
 
                 nwalker.ctx.state.pop(); // remove temp. state
 
@@ -836,11 +845,31 @@ impl<'b, 'c, 'z> ParserWalker<'b, 'c, 'z> {
         nwalker.point = Some(nwalker.ctx.state.len());
         nwalker.ctx.state.push(state);
 
-        let value = pat.value(&mut nwalker, symbols)?;
+        let value = f(pat, &mut nwalker, symbols)?;
 
         nwalker.ctx.state.pop(); // remove temp. state
 
         Ok(value)
+    }
+
+    pub fn resolve_with<'d>(
+        &'d mut self,
+        pat: &'b PatternExpression,
+        ctor: &'b Constructor,
+        index: usize,
+        symbols: &'b SymbolTable,
+    ) -> Result<i64, Error> {
+        self.resolve_with_aux(pat, ctor, index, symbols, |p, w, s| p.value(w, s))
+    }
+
+    pub fn resolve_with_bits<'d>(
+        &'d mut self,
+        pat: &'b PatternExpression,
+        ctor: &'b Constructor,
+        index: usize,
+        symbols: &'b SymbolTable,
+    ) -> Result<(i64, Option<Range<u32>>), Error> {
+        self.resolve_with_aux(pat, ctor, index, symbols, |p, w, s| p.value_with(w, s))
     }
 
     pub fn add_commit(&mut self, symbol: &'b Symbol, num: usize, mask: u32, flow: bool) {
