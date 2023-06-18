@@ -2,9 +2,9 @@ name: build-and-test
 
 on:
   push:
-    branches: [ master ]
+    branches: [ master, dev ]
   pull_request:
-    branches: [ master ]
+    branches: [ master, dev ]
 
 env:
   CARGO_TERM_COLOR: always
@@ -35,3 +35,5 @@ jobs:
       run: cargo build --verbose
     - name: test
       run: cargo test --verbose
+    - name: fmt-check
+      run: cargo fmt -- --check
