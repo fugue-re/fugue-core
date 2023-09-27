@@ -263,6 +263,10 @@ impl AddressSpaceId {
         (self.0 & 0xffff) as usize
     }
 
+    pub fn bits(&self) -> u32 {
+        self.0
+    }
+
     pub fn mark_heap(&mut self) {
         *self = (*self).heap();
     }
