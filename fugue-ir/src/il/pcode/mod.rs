@@ -268,7 +268,10 @@ pub enum PCodeOp {
         result: Operand,
         operand: Operand,
     },
-
+    LZCount {
+        result: Operand,
+        operand: Operand,
+    },
     Skip,
 }
 
@@ -363,6 +366,7 @@ impl fmt::Display for PCodeOp {
 
             Self::Subpiece { result, operand, amount } => write!(f, "{} ← subpiece({}, {})", result, operand, amount)?,
             Self::PopCount { result, operand } => write!(f, "{} ← popcount({})", result, operand)?,
+            Self::LZCount { result, operand } => write!(f, "{} ← lzcount({})", result, operand)?,
             Self::Skip => write!(f, "skip")?,
         }
         Ok(())
@@ -449,6 +453,10 @@ impl PCodeOp {
                 result: Operand::from_varnodedata(manager, registers, output.unsafe_unwrap()),
             },
             Opcode::PopCount => PCodeOp::PopCount {
+                operand: Operand::from_varnodedata(manager, registers, inputs.next().unsafe_unwrap()),
+                result: Operand::from_varnodedata(manager, registers, output.unsafe_unwrap()),
+            },
+            Opcode::LZCount => PCodeOp::LZCount {
                 operand: Operand::from_varnodedata(manager, registers, inputs.next().unsafe_unwrap()),
                 result: Operand::from_varnodedata(manager, registers, output.unsafe_unwrap()),
             },
