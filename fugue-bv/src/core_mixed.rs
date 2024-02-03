@@ -154,25 +154,25 @@ impl From<core_bigint::BitVec> for BitVec {
 
 impl fmt::Display for BitVec {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fold_map!(self, |slf| write!(f, "{}:{}", slf.0, slf.bits()))
+        fold_map!(self, |slf| fmt::Display::fmt(slf, f))
     }
 }
 
 impl fmt::LowerHex for BitVec {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fold_map!(self, |slf| write!(f, "{:#x}:{}", slf.0, slf.bits()))
+        fold_map!(self, |slf| fmt::LowerHex::fmt(slf, f))
     }
 }
 
 impl fmt::UpperHex for BitVec {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fold_map!(self, |slf| write!(f, "{:#X}:{}", slf.0, slf.bits()))
+        fold_map!(self, |slf| fmt::UpperHex::fmt(slf, f))
     }
 }
 
 impl fmt::Binary for BitVec {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fold_map!(self, |slf| write!(f, "{:#b}:{}", slf.0, slf.bits()))
+        fold_map!(self, |slf| fmt::Binary::fmt(slf, f))
     }
 }
 
