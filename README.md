@@ -23,16 +23,7 @@ crates provide a number of fundamental capabilities:
     (`fugue-bytes`).
 
 - Program representations and abstractions:
-  - A knowledge database to represent program binaries that can be populated
-    using third-party tools (`fugue-db`).
   - Disassembly and lifting to intermediate representations (`fugue-ir`).
-
-## Prerequisites
-
-```
-git submodule init
-git submodule update --recursive
-```
 
 ## Build
 
