@@ -7,7 +7,5 @@ pub use endian::Endian;
 pub mod order;
 pub use order::Order;
 
-pub mod primitives;
-
 pub mod traits;
 pub use traits::ByteCast;

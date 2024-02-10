@@ -1,3 +1,10 @@
+use std::cell::RefCell;
+use std::fmt;
+use std::mem::size_of;
+use std::ops::Range;
+
+use bumpalo::vec as bvec;
+
 use crate::address::AddressValue;
 use crate::disassembly::context::ContextDatabase;
 use crate::disassembly::pattern::PatternExpression;
@@ -5,17 +12,8 @@ use crate::disassembly::symbol::{Constructor, FixedHandle, Operands, Symbol, Sym
 use crate::disassembly::{Error, IRBuilderArena};
 use crate::space_manager::SpaceManager;
 
-use std::cell::RefCell;
-use std::fmt;
-use std::mem::size_of;
-use std::ops::Range;
-
 pub use bumpalo::collections::String as BString;
 pub use bumpalo::collections::Vec as BVec;
-
-use bumpalo::vec as bvec;
-
-use unsafe_unwrap::UnsafeUnwrap;
 
 pub struct InstructionFormatter<'b, 'c, 'z> {
     walker: RefCell<ParserWalker<'b, 'c, 'z>>,
@@ -510,7 +508,7 @@ impl<'b, 'z> ParserContext<'b, 'z> {
     }
 
     pub fn unchecked_constructor(&self, point: usize) -> &'b Constructor {
-        unsafe { self.state.get_unchecked(point).constructor.unsafe_unwrap() }
+        unsafe { self.state.get_unchecked(point).constructor.unwrap_unchecked() }
     }
 
     pub fn set_next_address(&mut self, address: AddressValue) {
@@ -576,11 +574,11 @@ impl<'b, 'c, 'z> ParserWalker<'b, 'c, 'z> {
 
     pub fn set_parent_handle(&mut self, handle: FixedHandle<'b>) {
         self.ctx
-            .set_handle(unsafe { self.point.unsafe_unwrap() }, handle);
+            .set_handle(unsafe { self.point.unwrap_unchecked() }, handle);
     }
 
     pub fn parent_handle_mut(&mut self) -> Option<&mut FixedHandle<'b>> {
-        self.ctx.handle_mut(unsafe { self.point.unsafe_unwrap() })
+        self.ctx.handle_mut(unsafe { self.point.unwrap_unchecked() })
     }
 
     pub fn handle(&self, index: usize) -> Result<Option<FixedHandle<'b>>, Error> {
@@ -617,7 +615,7 @@ impl<'b, 'c, 'z> ParserWalker<'b, 'c, 'z> {
             self.unchecked_point()
                 .resolve
                 .get_unchecked(index)
-                .unsafe_unwrap()
+                .unwrap_unchecked()
         };
         self.ctx.unchecked_handle(ph)
     }
@@ -628,7 +626,7 @@ impl<'b, 'c, 'z> ParserWalker<'b, 'c, 'z> {
                 .point(point)
                 .resolve
                 .get_unchecked(index)
-                .unsafe_unwrap()
+                .unwrap_unchecked()
         };
         self.ctx.unchecked_handle(ph)
     }
@@ -643,7 +641,7 @@ impl<'b, 'c, 'z> ParserWalker<'b, 'c, 'z> {
 
     pub fn set_current_length(&mut self, length: usize) {
         self.ctx
-            .point_mut(unsafe { self.point.unsafe_unwrap() })
+            .point_mut(unsafe { self.point.unwrap_unchecked() })
             .length = length;
     }
 
@@ -675,7 +673,7 @@ impl<'b, 'c, 'z> ParserWalker<'b, 'c, 'z> {
     */
 
     pub fn calculate_length(&mut self, length: usize, nops: usize) {
-        let index = unsafe { self.point.unsafe_unwrap() };
+        let index = unsafe { self.point.unwrap_unchecked() };
         let poff = self.ctx.point(index).offset;
 
         let length = length + poff;
@@ -686,7 +684,7 @@ impl<'b, 'c, 'z> ParserWalker<'b, 'c, 'z> {
                     .get_unchecked(index)
                     .resolve
                     .get_unchecked(id)
-                    .unsafe_unwrap()
+                    .unwrap_unchecked()
             });
             let sub_length = subpt.length + subpt.offset;
             length.max(sub_length)
@@ -720,7 +718,7 @@ impl<'b, 'c, 'z> ParserWalker<'b, 'c, 'z> {
 
         *unsafe {
             self.ctx
-                .point_mut(self.point.unsafe_unwrap())
+                .point_mut(self.point.unwrap_unchecked())
                 .resolve
                 .get_unchecked_mut(id)
         } = Some(op);
@@ -749,7 +747,7 @@ impl<'b, 'c, 'z> ParserWalker<'b, 'c, 'z> {
         self.point = unsafe {
             *self
                 .ctx
-                .point(self.point.unsafe_unwrap())
+                .point(self.point.unwrap_unchecked())
                 .resolve
                 .get_unchecked(id)
         };
@@ -766,7 +764,7 @@ impl<'b, 'c, 'z> ParserWalker<'b, 'c, 'z> {
     }
 
     pub(crate) fn unchecked_pop_operand(&mut self) {
-        self.point = unsafe { self.ctx.point(self.point.unsafe_unwrap()) }.parent;
+        self.point = unsafe { self.ctx.point(self.point.unwrap_unchecked()) }.parent;
         self.depth -= 1;
     }
 
@@ -778,7 +776,7 @@ impl<'b, 'c, 'z> ParserWalker<'b, 'c, 'z> {
                     self.unchecked_point()
                         .resolve
                         .get_unchecked(index)
-                        .unsafe_unwrap()
+                        .unwrap_unchecked()
                 };
                 //.ok_or_else(|| Error::InconsistentState)?;
                 let op = self.ctx.point(op_index);
@@ -822,7 +820,7 @@ impl<'b, 'c, 'z> ParserWalker<'b, 'c, 'z> {
                 return Ok(value);
             }
             cur_depth -= 1;
-            point = self.ctx.point(unsafe { point.parent.unsafe_unwrap() });
+            point = self.ctx.point(unsafe { point.parent.unwrap_unchecked() });
         }
 
         let sym = symbols.unchecked_symbol(ctor.operand(index)); //.ok_or_else(|| Error::InvalidSymbol)?;
@@ -831,7 +829,7 @@ impl<'b, 'c, 'z> ParserWalker<'b, 'c, 'z> {
             point.offset + sym.relative_offset()
         } else {
             self.ctx
-                .point(unsafe { point.resolve.get_unchecked(index).unsafe_unwrap() })
+                .point(unsafe { point.resolve.get_unchecked(index).unwrap_unchecked() })
                 .offset //[index].ok_or_else(|| Error::InconsistentState)?).offset
         };
 
@@ -873,7 +871,7 @@ impl<'b, 'c, 'z> ParserWalker<'b, 'c, 'z> {
     }
 
     pub fn add_commit(&mut self, symbol: &'b Symbol, num: usize, mask: u32, flow: bool) {
-        let point = unsafe { self.point.unsafe_unwrap() };
+        let point = unsafe { self.point.unwrap_unchecked() };
         self.ctx.add_commit(symbol, num, mask, point, flow)
     }
 
@@ -892,7 +890,7 @@ impl<'b, 'c, 'z> ParserWalker<'b, 'c, 'z> {
 
     pub fn set_constructor(&mut self, constructor: &'b Constructor) {
         self.ctx
-            .set_constructor(unsafe { self.point.unsafe_unwrap() }, constructor)
+            .set_constructor(unsafe { self.point.unwrap_unchecked() }, constructor)
     }
 
     pub fn constructor(&self) -> Result<Option<&'b Constructor>, Error> {
@@ -907,7 +905,7 @@ impl<'b, 'c, 'z> ParserWalker<'b, 'c, 'z> {
 
     pub fn unchecked_constructor(&self) -> &'b Constructor {
         self.ctx
-            .unchecked_constructor(unsafe { self.point.unsafe_unwrap() })
+            .unchecked_constructor(unsafe { self.point.unwrap_unchecked() })
     }
 
     pub fn point(&self) -> Option<&ConstructState<'b>> {
@@ -915,7 +913,7 @@ impl<'b, 'c, 'z> ParserWalker<'b, 'c, 'z> {
     }
 
     pub fn unchecked_point(&self) -> &ConstructState<'b> {
-        unsafe { self.ctx.point(self.point.unsafe_unwrap()) }
+        unsafe { self.ctx.point(self.point.unwrap_unchecked()) }
     }
 
     pub fn set_offset(&mut self, offset: usize) -> Result<(), Error> {
@@ -940,7 +938,7 @@ impl<'b, 'c, 'z> ParserWalker<'b, 'c, 'z> {
     }
 
     pub fn unchecked_instruction_bytes(&self, offset: usize, size: usize) -> u32 {
-        let point = self.ctx.point(unsafe { self.point.unsafe_unwrap() });
+        let point = self.ctx.point(unsafe { self.point.unwrap_unchecked() });
         self.ctx
             .instruction_bytes(offset, size, point.offset)
             .unwrap()
@@ -954,7 +952,7 @@ impl<'b, 'c, 'z> ParserWalker<'b, 'c, 'z> {
     }
 
     pub fn unchecked_instruction_bits(&self, offset: usize, size: usize) -> u32 {
-        let point = self.ctx.point(unsafe { self.point.unsafe_unwrap() });
+        let point = self.ctx.point(unsafe { self.point.unwrap_unchecked() });
         self.ctx
             .instruction_bits(offset, size, point.offset)
             .unwrap()

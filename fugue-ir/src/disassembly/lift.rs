@@ -1,3 +1,12 @@
+use std::fmt;
+use std::mem::swap;
+use std::ops::Deref;
+use std::sync::Arc;
+
+use ahash::AHashMap as Map;
+use smallvec::SmallVec;
+use ustr::Ustr;
+
 use crate::address::AddressValue;
 use crate::bits;
 use crate::disassembly::construct::{ConstructTpl, OpTpl, VarnodeTpl};
@@ -16,16 +25,6 @@ pub use bumpalo::collections::Vec as ArenaVec;
 pub use bumpalo::format as arena_format;
 pub use bumpalo::vec as arena_vec;
 pub use bumpalo::Bump as Arena;
-
-use ahash::AHashMap as Map;
-use std::fmt;
-use std::mem::swap;
-use std::ops::Deref;
-use std::sync::Arc;
-use ustr::Ustr;
-
-use smallvec::SmallVec;
-use unsafe_unwrap::UnsafeUnwrap;
 
 use crate::il::ecode::{self, ECode};
 use crate::il::pcode::{self, PCode};
@@ -549,7 +548,7 @@ impl<'b, 'c, 'cz, 'z> IRBuilder<'b, 'c, 'cz, 'z> {
             if let Some(ctpl) = self
                 .walker
                 .unchecked_constructor()
-                .named_template(unsafe { section_num.unsafe_unwrap() })
+                .named_template(unsafe { section_num.unwrap_unchecked() })
             {
                 self.build(ctpl, section_num, symbols)?;
             } else {
@@ -601,7 +600,7 @@ impl<'b, 'c, 'cz, 'z> IRBuilder<'b, 'c, 'cz, 'z> {
             let address = base_address.clone() + fall_offset;
             self.set_unique_offset(address.offset());
 
-            let context = unsafe { self.delay_contexts.remove(&address).unsafe_unwrap() };
+            let context = unsafe { self.delay_contexts.remove(&address).unwrap_unchecked() };
             let mut nwalker = ParserWalker::new(context);
             let length = nwalker.length();
 

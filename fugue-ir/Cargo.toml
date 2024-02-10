@@ -1,34 +1,24 @@
 [package]
 name = "fugue-ir"
-version = "0.2.89"
+version = "0.3.0"
 authors = ["Sam Thomas <st@xv.ax>"]
 edition = "2021"
 license = "MIT"
 description = "A binary analysis framework written in Rust"
 homepage = "https://fugue.re"
 
-[features]
-default = ["bigint"]
-
-bigint = ["fugue-bv/bigint"]
-fixed-u64 = ["fugue-bv/fixed-u64"]
-fixed-u128 = ["fugue-bv/fixed-u128"]
-
-extra-logging = []
-
 [dependencies]
 ahash = { version = "0.8", features = ["serde"] }
-bumpalo = { version = "3.12", features = ["boxed", "collections"] }
-fugue-arch = { path = "../fugue-arch", version = "0.2" }
-fugue-bv = { path = "../fugue-bv", version = "0.2", default-features = false }
-fugue-bytes = { path = "../fugue-bytes", version = "0.2" }
+bumpalo = { version = "3.14", features = ["boxed", "collections"] }
+fugue-arch = { path = "../fugue-arch", version = "0.3" }
+fugue-bv = { path = "../fugue-bv", version = "0.3" }
+fugue-bytes = { path = "../fugue-bytes", version = "0.3" }
 iset = { version = "0.2", features = ["serde"] }
-itertools = "0.10"
+itertools = "0.12"
 log = "0.4"
-roxmltree = "0.18"
+roxmltree = "0.19"
 serde = { version = "1", features = ["derive", "rc"] }
 smallvec = { version = "1", features = ["serde"] }
 thiserror = "1"
-unsafe_unwrap = "0.1"
 ustr = { version = "0.9", features = ["serialization"] }
 walkdir = "2"

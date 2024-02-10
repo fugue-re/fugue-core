@@ -1,14 +1,14 @@
 [workspace]
 members = [
-  "fugue-bv",
-  "fugue-db",
-  "fugue-fp",
-  "fugue-ir",
-
   "fugue-arch",
   "fugue-bytes",
+  "fugue-bv",
   "fugue-core",
+  "fugue-fp",
+  "fugue-high",
+  "fugue-ir",
 ]
+resolver = "2"
 
 [profile.bench]
 debug = true

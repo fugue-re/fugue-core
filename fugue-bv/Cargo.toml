@@ -1,23 +1,17 @@
 [package]
 name = "fugue-bv"
-version = "0.2.34"
+version = "0.3.0"
 authors = ["Sam Thomas <st@xv.ax>"]
 edition = "2021"
 license = "MIT"
 description = "A binary analysis framework written in Rust"
 homepage = "https://fugue.re"
 
-[features]
-default = ["bigint"]
-fixed-u64 = []
-fixed-u128 = []
-bigint = ["rug"]
-
 [dependencies]
-fugue-bytes = { path = "../fugue-bytes", version = "0.2" }
+fugue-bytes = { path = "../fugue-bytes", version = "0.3" }
 num-integer = "0.1"
 num-traits = "0.2"
 paste = "1"
-rug = { version = "1", features = ["integer", "serde"], optional = true }
-serde = { version = "1", features = ["derive", "rc"] }
+rug = { version = "1", features = ["integer", "serde"] }
+serde = { version = "1", features = ["derive"] }
 thiserror = "1"

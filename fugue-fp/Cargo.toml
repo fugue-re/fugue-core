@@ -1,6 +1,6 @@
 [package]
 name = "fugue-fp"
-version = "0.2.2"
+version = "0.3.0"
 authors = ["Sam Thomas <st@xv.ax>"]
 edition = "2021"
 license = "MIT"
@@ -8,7 +8,7 @@ description = "A binary analysis framework written in Rust"
 homepage = "https://fugue.re"
 
 [dependencies]
-fugue-bv = { path = "../fugue-bv", version = "0.2", features = ["bigint"], default-features = false }
-fugue-ir = { path = "../fugue-ir", version = "0.2" }
+fugue-bv = { path = "../fugue-bv", version = "0.3" }
+fugue-ir = { path = "../fugue-ir", version = "0.3" }
 rug = { version = "1", features = ["float"] }
 thiserror = "1"

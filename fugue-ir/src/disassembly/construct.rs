@@ -8,8 +8,6 @@ use crate::disassembly::{Error, ParserWalker};
 use crate::space::{AddressSpace, AddressSpaceId};
 use crate::space_manager::SpaceManager;
 
-use unsafe_unwrap::UnsafeUnwrap;
-
 #[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 pub enum HandleKind {
     Space,
@@ -85,7 +83,7 @@ impl ConstTpl {
                         if handle.offset_space.is_none() {
                             handle.space.index() as u64
                         } else {
-                            unsafe { handle.temporary_space.unsafe_unwrap() }.index() as u64
+                            unsafe { handle.temporary_space.unwrap_unchecked() }.index() as u64
                             // .ok_or_else(|| Error::InvalidSpace)?.index() as u64
                         }
                     }
@@ -280,13 +278,13 @@ impl HandleTpl {
             let mut handle = FixedHandle::new(unsafe {
                 self.space
                     .unchecked_fix_space(walker, manager)
-                    .unsafe_unwrap()
+                    .unwrap_unchecked()
             });
             handle.size = self.size.fix(walker, manager) as usize;
             handle.offset_offset = self.ptr_offset.fix(walker, manager);
             handle.offset_space = self.ptr_space.unchecked_fix_space(walker, manager);
 
-            if unsafe { handle.offset_space.unsafe_unwrap() }.is_constant() {
+            if unsafe { handle.offset_space.unwrap_unchecked() }.is_constant() {
                 handle.offset_space = None;
                 handle.offset_offset = handle.offset_offset * handle.space.word_size() as u64;
                 handle.offset_offset = handle.space.wrap_offset(handle.offset_offset);

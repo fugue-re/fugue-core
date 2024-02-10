@@ -1,4 +1,7 @@
 use std::fmt;
+
+use smallvec::SmallVec;
+
 use crate::disassembly::lift::UserOpStr;
 use crate::disassembly::{Opcode, VarnodeData};
 use crate::address::AddressValue;
@@ -12,10 +15,6 @@ pub use operand::Operand;
 
 pub mod register;
 pub use register::Register;
-
-use smallvec::SmallVec;
-
-use unsafe_unwrap::UnsafeUnwrap;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[derive(serde::Deserialize, serde::Serialize)]
@@ -386,13 +385,13 @@ impl PCodeOp {
 
         unsafe { match opcode {
             Opcode::Copy => PCodeOp::Copy {
-                destination: Operand::from_varnodedata(manager, registers, output.unsafe_unwrap()),
-                source: Operand::from_varnodedata(manager, registers, inputs.next().unsafe_unwrap()),
+                destination: Operand::from_varnodedata(manager, registers, output.unwrap_unchecked()),
+                source: Operand::from_varnodedata(manager, registers, inputs.next().unwrap_unchecked()),
             },
             Opcode::Load => {
-                let space = manager.spaces()[inputs.next().unsafe_unwrap().offset() as usize].id();
-                let destination = output.unsafe_unwrap();
-                let source = inputs.next().unsafe_unwrap();
+                let space = manager.spaces()[inputs.next().unwrap_unchecked().offset() as usize].id();
+                let destination = output.unwrap_unchecked();
+                let source = inputs.next().unwrap_unchecked();
 
                 PCodeOp::Load {
                     destination: Operand::from_varnodedata(manager, registers, destination),
@@ -401,9 +400,9 @@ impl PCodeOp {
                 }
             },
             Opcode::Store => {
-                let space = manager.spaces()[inputs.next().unsafe_unwrap().offset() as usize].id();
-                let destination = inputs.next().unsafe_unwrap();
-                let source = inputs.next().unsafe_unwrap();
+                let space = manager.spaces()[inputs.next().unwrap_unchecked().offset() as usize].id();
+                let destination = inputs.next().unwrap_unchecked();
+                let source = inputs.next().unwrap_unchecked();
 
                 PCodeOp::Store {
                     destination: Operand::from_varnodedata(manager, registers, destination),
@@ -412,23 +411,23 @@ impl PCodeOp {
                 }
             },
             Opcode::Branch => PCodeOp::Branch {
-                destination: Operand::from_varnodedata(manager, registers, inputs.next().unsafe_unwrap()),
+                destination: Operand::from_varnodedata(manager, registers, inputs.next().unwrap_unchecked()),
             },
             Opcode::CBranch => PCodeOp::CBranch {
-                destination: Operand::from_varnodedata(manager, registers, inputs.next().unsafe_unwrap()),
-                condition: Operand::from_varnodedata(manager, registers, inputs.next().unsafe_unwrap()),
+                destination: Operand::from_varnodedata(manager, registers, inputs.next().unwrap_unchecked()),
+                condition: Operand::from_varnodedata(manager, registers, inputs.next().unwrap_unchecked()),
             },
             Opcode::IBranch => PCodeOp::IBranch {
-                destination: Operand::from_varnodedata(manager, registers, inputs.next().unsafe_unwrap()),
+                destination: Operand::from_varnodedata(manager, registers, inputs.next().unwrap_unchecked()),
             },
             Opcode::Call => PCodeOp::Call {
-                destination: Operand::from_varnodedata(manager, registers, inputs.next().unsafe_unwrap()),
+                destination: Operand::from_varnodedata(manager, registers, inputs.next().unwrap_unchecked()),
             },
             Opcode::ICall => PCodeOp::ICall {
-                destination: Operand::from_varnodedata(manager, registers, inputs.next().unsafe_unwrap()),
+                destination: Operand::from_varnodedata(manager, registers, inputs.next().unwrap_unchecked()),
             },
             Opcode::CallOther => {
-                let name = user_ops[inputs.next().unsafe_unwrap().offset() as usize].clone();
+                let name = user_ops[inputs.next().unwrap_unchecked().offset() as usize].clone();
                 let result = output.map(|output| Operand::from_varnodedata(manager, registers, output));
 
                 let mut operands = SmallVec::with_capacity(inputs.len());
@@ -441,307 +440,307 @@ impl PCodeOp {
                 }
             },
             Opcode::Return => PCodeOp::Return {
-                destination: Operand::from_varnodedata(manager, registers, inputs.next().unsafe_unwrap()),
+                destination: Operand::from_varnodedata(manager, registers, inputs.next().unwrap_unchecked()),
             },
             Opcode::Subpiece => PCodeOp::Subpiece {
-                operand: Operand::from_varnodedata(manager, registers, inputs.next().unsafe_unwrap()),
-                amount: Operand::from_varnodedata(manager, registers, inputs.next().unsafe_unwrap()),
-                result: Operand::from_varnodedata(manager, registers, output.unsafe_unwrap()),
+                operand: Operand::from_varnodedata(manager, registers, inputs.next().unwrap_unchecked()),
+                amount: Operand::from_varnodedata(manager, registers, inputs.next().unwrap_unchecked()),
+                result: Operand::from_varnodedata(manager, registers, output.unwrap_unchecked()),
             },
             Opcode::PopCount => PCodeOp::PopCount {
-                operand: Operand::from_varnodedata(manager, registers, inputs.next().unsafe_unwrap()),
-                result: Operand::from_varnodedata(manager, registers, output.unsafe_unwrap()),
+                operand: Operand::from_varnodedata(manager, registers, inputs.next().unwrap_unchecked()),
+                result: Operand::from_varnodedata(manager, registers, output.unwrap_unchecked()),
             },
             Opcode::BoolNot => PCodeOp::BoolNot {
-                operand: Operand::from_varnodedata(manager, registers, inputs.next().unsafe_unwrap()),
-                result: Operand::from_varnodedata(manager, registers, output.unsafe_unwrap()),
+                operand: Operand::from_varnodedata(manager, registers, inputs.next().unwrap_unchecked()),
+                result: Operand::from_varnodedata(manager, registers, output.unwrap_unchecked()),
             },
             Opcode::BoolAnd => PCodeOp::BoolAnd {
                 operands: [
-                    Operand::from_varnodedata(manager, registers, inputs.next().unsafe_unwrap()),
-                    Operand::from_varnodedata(manager, registers, inputs.next().unsafe_unwrap()),
+                    Operand::from_varnodedata(manager, registers, inputs.next().unwrap_unchecked()),
+                    Operand::from_varnodedata(manager, registers, inputs.next().unwrap_unchecked()),
                 ],
-                result: Operand::from_varnodedata(manager, registers, output.unsafe_unwrap()),
+                result: Operand::from_varnodedata(manager, registers, output.unwrap_unchecked()),
             },
             Opcode::BoolOr => PCodeOp::BoolOr {
                 operands: [
-                    Operand::from_varnodedata(manager, registers, inputs.next().unsafe_unwrap()),
-                    Operand::from_varnodedata(manager, registers, inputs.next().unsafe_unwrap()),
+                    Operand::from_varnodedata(manager, registers, inputs.next().unwrap_unchecked()),
+                    Operand::from_varnodedata(manager, registers, inputs.next().unwrap_unchecked()),
                 ],
-                result: Operand::from_varnodedata(manager, registers, output.unsafe_unwrap()),
+                result: Operand::from_varnodedata(manager, registers, output.unwrap_unchecked()),
             },
             Opcode::BoolXor => PCodeOp::BoolXor {
                 operands: [
-                    Operand::from_varnodedata(manager, registers, inputs.next().unsafe_unwrap()),
-                    Operand::from_varnodedata(manager, registers, inputs.next().unsafe_unwrap()),
+                    Operand::from_varnodedata(manager, registers, inputs.next().unwrap_unchecked()),
+                    Operand::from_varnodedata(manager, registers, inputs.next().unwrap_unchecked()),
                 ],
-                result: Operand::from_varnodedata(manager, registers, output.unsafe_unwrap()),
+                result: Operand::from_varnodedata(manager, registers, output.unwrap_unchecked()),
             },
             Opcode::IntNeg => PCodeOp::IntNeg {
-                operand: Operand::from_varnodedata(manager, registers, inputs.next().unsafe_unwrap()),
-                result: Operand::from_varnodedata(manager, registers, output.unsafe_unwrap()),
+                operand: Operand::from_varnodedata(manager, registers, inputs.next().unwrap_unchecked()),
+                result: Operand::from_varnodedata(manager, registers, output.unwrap_unchecked()),
             },
             Opcode::IntNot => PCodeOp::IntNot {
-                operand: Operand::from_varnodedata(manager, registers, inputs.next().unsafe_unwrap()),
-                result: Operand::from_varnodedata(manager, registers, output.unsafe_unwrap()),
+                operand: Operand::from_varnodedata(manager, registers, inputs.next().unwrap_unchecked()),
+                result: Operand::from_varnodedata(manager, registers, output.unwrap_unchecked()),
             },
             Opcode::IntSExt => PCodeOp::IntSExt {
-                operand: Operand::from_varnodedata(manager, registers, inputs.next().unsafe_unwrap()),
-                result: Operand::from_varnodedata(manager, registers, output.unsafe_unwrap()),
+                operand: Operand::from_varnodedata(manager, registers, inputs.next().unwrap_unchecked()),
+                result: Operand::from_varnodedata(manager, registers, output.unwrap_unchecked()),
             },
             Opcode::IntZExt => PCodeOp::IntZExt {
-                operand: Operand::from_varnodedata(manager, registers, inputs.next().unsafe_unwrap()),
-                result: Operand::from_varnodedata(manager, registers, output.unsafe_unwrap()),
+                operand: Operand::from_varnodedata(manager, registers, inputs.next().unwrap_unchecked()),
+                result: Operand::from_varnodedata(manager, registers, output.unwrap_unchecked()),
             },
             Opcode::IntEq => PCodeOp::IntEq {
                 operands: [
-                    Operand::from_varnodedata(manager, registers, inputs.next().unsafe_unwrap()),
-                    Operand::from_varnodedata(manager, registers, inputs.next().unsafe_unwrap()),
+                    Operand::from_varnodedata(manager, registers, inputs.next().unwrap_unchecked()),
+                    Operand::from_varnodedata(manager, registers, inputs.next().unwrap_unchecked()),
                 ],
-                result: Operand::from_varnodedata(manager, registers, output.unsafe_unwrap()),
+                result: Operand::from_varnodedata(manager, registers, output.unwrap_unchecked()),
             },
             Opcode::IntNotEq => PCodeOp::IntNotEq {
                 operands: [
-                    Operand::from_varnodedata(manager, registers, inputs.next().unsafe_unwrap()),
-                    Operand::from_varnodedata(manager, registers, inputs.next().unsafe_unwrap()),
+                    Operand::from_varnodedata(manager, registers, inputs.next().unwrap_unchecked()),
+                    Operand::from_varnodedata(manager, registers, inputs.next().unwrap_unchecked()),
                 ],
-                result: Operand::from_varnodedata(manager, registers, output.unsafe_unwrap()),
+                result: Operand::from_varnodedata(manager, registers, output.unwrap_unchecked()),
             },
             Opcode::IntLess => PCodeOp::IntLess {
                 operands: [
-                    Operand::from_varnodedata(manager, registers, inputs.next().unsafe_unwrap()),
-                    Operand::from_varnodedata(manager, registers, inputs.next().unsafe_unwrap()),
+                    Operand::from_varnodedata(manager, registers, inputs.next().unwrap_unchecked()),
+                    Operand::from_varnodedata(manager, registers, inputs.next().unwrap_unchecked()),
                 ],
-                result: Operand::from_varnodedata(manager, registers, output.unsafe_unwrap()),
+                result: Operand::from_varnodedata(manager, registers, output.unwrap_unchecked()),
             },
             Opcode::IntLessEq => PCodeOp::IntLessEq {
                 operands: [
-                    Operand::from_varnodedata(manager, registers, inputs.next().unsafe_unwrap()),
-                    Operand::from_varnodedata(manager, registers, inputs.next().unsafe_unwrap()),
+                    Operand::from_varnodedata(manager, registers, inputs.next().unwrap_unchecked()),
+                    Operand::from_varnodedata(manager, registers, inputs.next().unwrap_unchecked()),
                 ],
-                result: Operand::from_varnodedata(manager, registers, output.unsafe_unwrap()),
+                result: Operand::from_varnodedata(manager, registers, output.unwrap_unchecked()),
             },
             Opcode::IntSLess => PCodeOp::IntSLess {
                 operands: [
-                    Operand::from_varnodedata(manager, registers, inputs.next().unsafe_unwrap()),
-                    Operand::from_varnodedata(manager, registers, inputs.next().unsafe_unwrap()),
+                    Operand::from_varnodedata(manager, registers, inputs.next().unwrap_unchecked()),
+                    Operand::from_varnodedata(manager, registers, inputs.next().unwrap_unchecked()),
                 ],
-                result: Operand::from_varnodedata(manager, registers, output.unsafe_unwrap()),
+                result: Operand::from_varnodedata(manager, registers, output.unwrap_unchecked()),
             },
             Opcode::IntSLessEq => PCodeOp::IntSLessEq {
                 operands: [
-                    Operand::from_varnodedata(manager, registers, inputs.next().unsafe_unwrap()),
-                    Operand::from_varnodedata(manager, registers, inputs.next().unsafe_unwrap()),
+                    Operand::from_varnodedata(manager, registers, inputs.next().unwrap_unchecked()),
+                    Operand::from_varnodedata(manager, registers, inputs.next().unwrap_unchecked()),
                 ],
-                result: Operand::from_varnodedata(manager, registers, output.unsafe_unwrap()),
+                result: Operand::from_varnodedata(manager, registers, output.unwrap_unchecked()),
             },
             Opcode::IntCarry => PCodeOp::IntCarry {
                 operands: [
-                    Operand::from_varnodedata(manager, registers, inputs.next().unsafe_unwrap()),
-                    Operand::from_varnodedata(manager, registers, inputs.next().unsafe_unwrap()),
+                    Operand::from_varnodedata(manager, registers, inputs.next().unwrap_unchecked()),
+                    Operand::from_varnodedata(manager, registers, inputs.next().unwrap_unchecked()),
                 ],
-                result: Operand::from_varnodedata(manager, registers, output.unsafe_unwrap()),
+                result: Operand::from_varnodedata(manager, registers, output.unwrap_unchecked()),
             },
             Opcode::IntSCarry => PCodeOp::IntSCarry {
                 operands: [
-                    Operand::from_varnodedata(manager, registers, inputs.next().unsafe_unwrap()),
-                    Operand::from_varnodedata(manager, registers, inputs.next().unsafe_unwrap()),
+                    Operand::from_varnodedata(manager, registers, inputs.next().unwrap_unchecked()),
+                    Operand::from_varnodedata(manager, registers, inputs.next().unwrap_unchecked()),
                 ],
-                result: Operand::from_varnodedata(manager, registers, output.unsafe_unwrap()),
+                result: Operand::from_varnodedata(manager, registers, output.unwrap_unchecked()),
             },
             Opcode::IntSBorrow => PCodeOp::IntSBorrow {
                 operands: [
-                    Operand::from_varnodedata(manager, registers, inputs.next().unsafe_unwrap()),
-                    Operand::from_varnodedata(manager, registers, inputs.next().unsafe_unwrap()),
+                    Operand::from_varnodedata(manager, registers, inputs.next().unwrap_unchecked()),
+                    Operand::from_varnodedata(manager, registers, inputs.next().unwrap_unchecked()),
                 ],
-                result: Operand::from_varnodedata(manager, registers, output.unsafe_unwrap()),
+                result: Operand::from_varnodedata(manager, registers, output.unwrap_unchecked()),
             },
             Opcode::IntAdd => PCodeOp::IntAdd {
                 operands: [
-                    Operand::from_varnodedata(manager, registers, inputs.next().unsafe_unwrap()),
-                    Operand::from_varnodedata(manager, registers, inputs.next().unsafe_unwrap()),
+                    Operand::from_varnodedata(manager, registers, inputs.next().unwrap_unchecked()),
+                    Operand::from_varnodedata(manager, registers, inputs.next().unwrap_unchecked()),
                 ],
-                result: Operand::from_varnodedata(manager, registers, output.unsafe_unwrap()),
+                result: Operand::from_varnodedata(manager, registers, output.unwrap_unchecked()),
             },
             Opcode::IntSub => PCodeOp::IntSub {
                 operands: [
-                    Operand::from_varnodedata(manager, registers, inputs.next().unsafe_unwrap()),
-                    Operand::from_varnodedata(manager, registers, inputs.next().unsafe_unwrap()),
+                    Operand::from_varnodedata(manager, registers, inputs.next().unwrap_unchecked()),
+                    Operand::from_varnodedata(manager, registers, inputs.next().unwrap_unchecked()),
                 ],
-                result: Operand::from_varnodedata(manager, registers, output.unsafe_unwrap()),
+                result: Operand::from_varnodedata(manager, registers, output.unwrap_unchecked()),
             },
             Opcode::IntDiv => PCodeOp::IntDiv {
                 operands: [
-                    Operand::from_varnodedata(manager, registers, inputs.next().unsafe_unwrap()),
-                    Operand::from_varnodedata(manager, registers, inputs.next().unsafe_unwrap()),
+                    Operand::from_varnodedata(manager, registers, inputs.next().unwrap_unchecked()),
+                    Operand::from_varnodedata(manager, registers, inputs.next().unwrap_unchecked()),
                 ],
-                result: Operand::from_varnodedata(manager, registers, output.unsafe_unwrap()),
+                result: Operand::from_varnodedata(manager, registers, output.unwrap_unchecked()),
             },
             Opcode::IntSDiv => PCodeOp::IntSDiv {
                 operands: [
-                    Operand::from_varnodedata(manager, registers, inputs.next().unsafe_unwrap()),
-                    Operand::from_varnodedata(manager, registers, inputs.next().unsafe_unwrap()),
+                    Operand::from_varnodedata(manager, registers, inputs.next().unwrap_unchecked()),
+                    Operand::from_varnodedata(manager, registers, inputs.next().unwrap_unchecked()),
                 ],
-                result: Operand::from_varnodedata(manager, registers, output.unsafe_unwrap()),
+                result: Operand::from_varnodedata(manager, registers, output.unwrap_unchecked()),
             },
             Opcode::IntMul => PCodeOp::IntMul {
                 operands: [
-                    Operand::from_varnodedata(manager, registers, inputs.next().unsafe_unwrap()),
-                    Operand::from_varnodedata(manager, registers, inputs.next().unsafe_unwrap()),
+                    Operand::from_varnodedata(manager, registers, inputs.next().unwrap_unchecked()),
+                    Operand::from_varnodedata(manager, registers, inputs.next().unwrap_unchecked()),
                 ],
-                result: Operand::from_varnodedata(manager, registers, output.unsafe_unwrap()),
+                result: Operand::from_varnodedata(manager, registers, output.unwrap_unchecked()),
             },
             Opcode::IntRem => PCodeOp::IntRem {
                 operands: [
-                    Operand::from_varnodedata(manager, registers, inputs.next().unsafe_unwrap()),
-                    Operand::from_varnodedata(manager, registers, inputs.next().unsafe_unwrap()),
+                    Operand::from_varnodedata(manager, registers, inputs.next().unwrap_unchecked()),
+                    Operand::from_varnodedata(manager, registers, inputs.next().unwrap_unchecked()),
                 ],
-                result: Operand::from_varnodedata(manager, registers, output.unsafe_unwrap()),
+                result: Operand::from_varnodedata(manager, registers, output.unwrap_unchecked()),
             },
             Opcode::IntSRem => PCodeOp::IntSRem {
                 operands: [
-                    Operand::from_varnodedata(manager, registers, inputs.next().unsafe_unwrap()),
-                    Operand::from_varnodedata(manager, registers, inputs.next().unsafe_unwrap()),
+                    Operand::from_varnodedata(manager, registers, inputs.next().unwrap_unchecked()),
+                    Operand::from_varnodedata(manager, registers, inputs.next().unwrap_unchecked()),
                 ],
-                result: Operand::from_varnodedata(manager, registers, output.unsafe_unwrap()),
+                result: Operand::from_varnodedata(manager, registers, output.unwrap_unchecked()),
             },
             Opcode::IntLShift => PCodeOp::IntLeftShift {
                 operands: [
-                    Operand::from_varnodedata(manager, registers, inputs.next().unsafe_unwrap()),
-                    Operand::from_varnodedata(manager, registers, inputs.next().unsafe_unwrap()),
+                    Operand::from_varnodedata(manager, registers, inputs.next().unwrap_unchecked()),
+                    Operand::from_varnodedata(manager, registers, inputs.next().unwrap_unchecked()),
                 ],
-                result: Operand::from_varnodedata(manager, registers, output.unsafe_unwrap()),
+                result: Operand::from_varnodedata(manager, registers, output.unwrap_unchecked()),
             },
             Opcode::IntRShift => PCodeOp::IntRightShift {
                 operands: [
-                    Operand::from_varnodedata(manager, registers, inputs.next().unsafe_unwrap()),
-                    Operand::from_varnodedata(manager, registers, inputs.next().unsafe_unwrap()),
+                    Operand::from_varnodedata(manager, registers, inputs.next().unwrap_unchecked()),
+                    Operand::from_varnodedata(manager, registers, inputs.next().unwrap_unchecked()),
                 ],
-                result: Operand::from_varnodedata(manager, registers, output.unsafe_unwrap()),
+                result: Operand::from_varnodedata(manager, registers, output.unwrap_unchecked()),
             },
             Opcode::IntSRShift => PCodeOp::IntSRightShift {
                 operands: [
-                    Operand::from_varnodedata(manager, registers, inputs.next().unsafe_unwrap()),
-                    Operand::from_varnodedata(manager, registers, inputs.next().unsafe_unwrap()),
+                    Operand::from_varnodedata(manager, registers, inputs.next().unwrap_unchecked()),
+                    Operand::from_varnodedata(manager, registers, inputs.next().unwrap_unchecked()),
                 ],
-                result: Operand::from_varnodedata(manager, registers, output.unsafe_unwrap()),
+                result: Operand::from_varnodedata(manager, registers, output.unwrap_unchecked()),
             },
             Opcode::IntAnd => PCodeOp::IntAnd {
                 operands: [
-                    Operand::from_varnodedata(manager, registers, inputs.next().unsafe_unwrap()),
-                    Operand::from_varnodedata(manager, registers, inputs.next().unsafe_unwrap()),
+                    Operand::from_varnodedata(manager, registers, inputs.next().unwrap_unchecked()),
+                    Operand::from_varnodedata(manager, registers, inputs.next().unwrap_unchecked()),
                 ],
-                result: Operand::from_varnodedata(manager, registers, output.unsafe_unwrap()),
+                result: Operand::from_varnodedata(manager, registers, output.unwrap_unchecked()),
             },
             Opcode::IntOr => PCodeOp::IntOr {
                 operands: [
-                    Operand::from_varnodedata(manager, registers, inputs.next().unsafe_unwrap()),
-                    Operand::from_varnodedata(manager, registers, inputs.next().unsafe_unwrap()),
+                    Operand::from_varnodedata(manager, registers, inputs.next().unwrap_unchecked()),
+                    Operand::from_varnodedata(manager, registers, inputs.next().unwrap_unchecked()),
                 ],
-                result: Operand::from_varnodedata(manager, registers, output.unsafe_unwrap()),
+                result: Operand::from_varnodedata(manager, registers, output.unwrap_unchecked()),
             },
             Opcode::IntXor => PCodeOp::IntXor {
                 operands: [
-                    Operand::from_varnodedata(manager, registers, inputs.next().unsafe_unwrap()),
-                    Operand::from_varnodedata(manager, registers, inputs.next().unsafe_unwrap()),
+                    Operand::from_varnodedata(manager, registers, inputs.next().unwrap_unchecked()),
+                    Operand::from_varnodedata(manager, registers, inputs.next().unwrap_unchecked()),
                 ],
-                result: Operand::from_varnodedata(manager, registers, output.unsafe_unwrap()),
+                result: Operand::from_varnodedata(manager, registers, output.unwrap_unchecked()),
             },
             Opcode::FloatIsNaN => PCodeOp::FloatIsNaN {
-                operand: Operand::from_varnodedata(manager, registers, inputs.next().unsafe_unwrap()),
-                result: Operand::from_varnodedata(manager, registers, output.unsafe_unwrap()),
+                operand: Operand::from_varnodedata(manager, registers, inputs.next().unwrap_unchecked()),
+                result: Operand::from_varnodedata(manager, registers, output.unwrap_unchecked()),
             },
             Opcode::FloatAbs => PCodeOp::FloatAbs {
-                operand: Operand::from_varnodedata(manager, registers, inputs.next().unsafe_unwrap()),
-                result: Operand::from_varnodedata(manager, registers, output.unsafe_unwrap()),
+                operand: Operand::from_varnodedata(manager, registers, inputs.next().unwrap_unchecked()),
+                result: Operand::from_varnodedata(manager, registers, output.unwrap_unchecked()),
             },
             Opcode::FloatNeg => PCodeOp::FloatNeg {
-                operand: Operand::from_varnodedata(manager, registers, inputs.next().unsafe_unwrap()),
-                result: Operand::from_varnodedata(manager, registers, output.unsafe_unwrap()),
+                operand: Operand::from_varnodedata(manager, registers, inputs.next().unwrap_unchecked()),
+                result: Operand::from_varnodedata(manager, registers, output.unwrap_unchecked()),
             },
             Opcode::FloatSqrt => PCodeOp::FloatSqrt {
-                operand: Operand::from_varnodedata(manager, registers, inputs.next().unsafe_unwrap()),
-                result: Operand::from_varnodedata(manager, registers, output.unsafe_unwrap()),
+                operand: Operand::from_varnodedata(manager, registers, inputs.next().unwrap_unchecked()),
+                result: Operand::from_varnodedata(manager, registers, output.unwrap_unchecked()),
             },
             Opcode::FloatFloor => PCodeOp::FloatFloor {
-                operand: Operand::from_varnodedata(manager, registers, inputs.next().unsafe_unwrap()),
-                result: Operand::from_varnodedata(manager, registers, output.unsafe_unwrap()),
+                operand: Operand::from_varnodedata(manager, registers, inputs.next().unwrap_unchecked()),
+                result: Operand::from_varnodedata(manager, registers, output.unwrap_unchecked()),
             },
             Opcode::FloatCeiling => PCodeOp::FloatCeiling {
-                operand: Operand::from_varnodedata(manager, registers, inputs.next().unsafe_unwrap()),
-                result: Operand::from_varnodedata(manager, registers, output.unsafe_unwrap()),
+                operand: Operand::from_varnodedata(manager, registers, inputs.next().unwrap_unchecked()),
+                result: Operand::from_varnodedata(manager, registers, output.unwrap_unchecked()),
             },
             Opcode::FloatRound => PCodeOp::FloatRound {
-                operand: Operand::from_varnodedata(manager, registers, inputs.next().unsafe_unwrap()),
-                result: Operand::from_varnodedata(manager, registers, output.unsafe_unwrap()),
+                operand: Operand::from_varnodedata(manager, registers, inputs.next().unwrap_unchecked()),
+                result: Operand::from_varnodedata(manager, registers, output.unwrap_unchecked()),
             },
             Opcode::FloatEq => PCodeOp::FloatEq {
                 operands: [
-                    Operand::from_varnodedata(manager, registers, inputs.next().unsafe_unwrap()),
-                    Operand::from_varnodedata(manager, registers, inputs.next().unsafe_unwrap()),
+                    Operand::from_varnodedata(manager, registers, inputs.next().unwrap_unchecked()),
+                    Operand::from_varnodedata(manager, registers, inputs.next().unwrap_unchecked()),
                 ],
-                result: Operand::from_varnodedata(manager, registers, output.unsafe_unwrap()),
+                result: Operand::from_varnodedata(manager, registers, output.unwrap_unchecked()),
             },
             Opcode::FloatNotEq => PCodeOp::FloatNotEq {
                 operands: [
-                    Operand::from_varnodedata(manager, registers, inputs.next().unsafe_unwrap()),
-                    Operand::from_varnodedata(manager, registers, inputs.next().unsafe_unwrap()),
+                    Operand::from_varnodedata(manager, registers, inputs.next().unwrap_unchecked()),
+                    Operand::from_varnodedata(manager, registers, inputs.next().unwrap_unchecked()),
                 ],
-                result: Operand::from_varnodedata(manager, registers, output.unsafe_unwrap()),
+                result: Operand::from_varnodedata(manager, registers, output.unwrap_unchecked()),
             },
             Opcode::FloatLess => PCodeOp::FloatLess {
                 operands: [
-                    Operand::from_varnodedata(manager, registers, inputs.next().unsafe_unwrap()),
-                    Operand::from_varnodedata(manager, registers, inputs.next().unsafe_unwrap()),
+                    Operand::from_varnodedata(manager, registers, inputs.next().unwrap_unchecked()),
+                    Operand::from_varnodedata(manager, registers, inputs.next().unwrap_unchecked()),
                 ],
-                result: Operand::from_varnodedata(manager, registers, output.unsafe_unwrap()),
+                result: Operand::from_varnodedata(manager, registers, output.unwrap_unchecked()),
             },
             Opcode::FloatLessEq => PCodeOp::FloatLessEq {
                 operands: [
-                    Operand::from_varnodedata(manager, registers, inputs.next().unsafe_unwrap()),
-                    Operand::from_varnodedata(manager, registers, inputs.next().unsafe_unwrap()),
+                    Operand::from_varnodedata(manager, registers, inputs.next().unwrap_unchecked()),
+                    Operand::from_varnodedata(manager, registers, inputs.next().unwrap_unchecked()),
                 ],
-                result: Operand::from_varnodedata(manager, registers, output.unsafe_unwrap()),
+                result: Operand::from_varnodedata(manager, registers, output.unwrap_unchecked()),
             },
             Opcode::FloatAdd => PCodeOp::FloatAdd {
                 operands: [
-                    Operand::from_varnodedata(manager, registers, inputs.next().unsafe_unwrap()),
-                    Operand::from_varnodedata(manager, registers, inputs.next().unsafe_unwrap()),
+                    Operand::from_varnodedata(manager, registers, inputs.next().unwrap_unchecked()),
+                    Operand::from_varnodedata(manager, registers, inputs.next().unwrap_unchecked()),
                 ],
-                result: Operand::from_varnodedata(manager, registers, output.unsafe_unwrap()),
+                result: Operand::from_varnodedata(manager, registers, output.unwrap_unchecked()),
             },
             Opcode::FloatSub => PCodeOp::FloatSub {
                 operands: [
-                    Operand::from_varnodedata(manager, registers, inputs.next().unsafe_unwrap()),
-                    Operand::from_varnodedata(manager, registers, inputs.next().unsafe_unwrap()),
+                    Operand::from_varnodedata(manager, registers, inputs.next().unwrap_unchecked()),
+                    Operand::from_varnodedata(manager, registers, inputs.next().unwrap_unchecked()),
                 ],
-                result: Operand::from_varnodedata(manager, registers, output.unsafe_unwrap()),
+                result: Operand::from_varnodedata(manager, registers, output.unwrap_unchecked()),
             },
             Opcode::FloatDiv => PCodeOp::FloatDiv {
                 operands: [
-                    Operand::from_varnodedata(manager, registers, inputs.next().unsafe_unwrap()),
-                    Operand::from_varnodedata(manager, registers, inputs.next().unsafe_unwrap()),
+                    Operand::from_varnodedata(manager, registers, inputs.next().unwrap_unchecked()),
+                    Operand::from_varnodedata(manager, registers, inputs.next().unwrap_unchecked()),
                 ],
-                result: Operand::from_varnodedata(manager, registers, output.unsafe_unwrap()),
+                result: Operand::from_varnodedata(manager, registers, output.unwrap_unchecked()),
             },
             Opcode::FloatMul => PCodeOp::FloatMul {
                 operands: [
-                    Operand::from_varnodedata(manager, registers, inputs.next().unsafe_unwrap()),
-                    Operand::from_varnodedata(manager, registers, inputs.next().unsafe_unwrap()),
+                    Operand::from_varnodedata(manager, registers, inputs.next().unwrap_unchecked()),
+                    Operand::from_varnodedata(manager, registers, inputs.next().unwrap_unchecked()),
                 ],
-                result: Operand::from_varnodedata(manager, registers, output.unsafe_unwrap()),
+                result: Operand::from_varnodedata(manager, registers, output.unwrap_unchecked()),
             },
             Opcode::FloatOfFloat => PCodeOp::FloatOfFloat {
-                operand: Operand::from_varnodedata(manager, registers, inputs.next().unsafe_unwrap()),
-                result: Operand::from_varnodedata(manager, registers, output.unsafe_unwrap()),
+                operand: Operand::from_varnodedata(manager, registers, inputs.next().unwrap_unchecked()),
+                result: Operand::from_varnodedata(manager, registers, output.unwrap_unchecked()),
             },
             Opcode::FloatOfInt => PCodeOp::FloatOfInt {
-                operand: Operand::from_varnodedata(manager, registers, inputs.next().unsafe_unwrap()),
-                result: Operand::from_varnodedata(manager, registers, output.unsafe_unwrap()),
+                operand: Operand::from_varnodedata(manager, registers, inputs.next().unwrap_unchecked()),
+                result: Operand::from_varnodedata(manager, registers, output.unwrap_unchecked()),
             },
             Opcode::FloatTruncate => PCodeOp::FloatTruncate {
-                operand: Operand::from_varnodedata(manager, registers, inputs.next().unsafe_unwrap()),
-                result: Operand::from_varnodedata(manager, registers, output.unsafe_unwrap()),
+                operand: Operand::from_varnodedata(manager, registers, inputs.next().unwrap_unchecked()),
+                result: Operand::from_varnodedata(manager, registers, output.unwrap_unchecked()),
             },
             Opcode::Label => PCodeOp::Skip,
             Opcode::Build

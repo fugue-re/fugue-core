@@ -3,6 +3,10 @@ use std::fmt;
 use std::hash::Hash;
 use std::sync::Arc;
 
+use fugue_bv::BitVec;
+use smallvec::{smallvec, SmallVec};
+use ustr::Ustr;
+
 use crate::address::AddressValue;
 use crate::disassembly::lift::{FloatFormats, UserOpStr};
 use crate::disassembly::{IRBuilderArena, Opcode, VarnodeData};
@@ -12,10 +16,6 @@ use crate::il::traits::*;
 use crate::space::{AddressSpace, AddressSpaceId};
 use crate::space_manager::{FromSpace, IntoSpace, SpaceManager};
 use crate::Translator;
-
-use fugue_bv::BitVec;
-use smallvec::{smallvec, SmallVec};
-use ustr::Ustr;
 
 #[derive(
     Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Deserialize, serde::Serialize,

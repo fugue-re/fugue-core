@@ -1,3 +1,7 @@
+use std::fmt;
+
+use ustr::Ustr;
+
 use crate::deserialise::parse::XmlExt;
 use crate::deserialise::Error as DeserialiseError;
 use crate::disassembly::pattern::PatternExpression;
@@ -9,10 +13,6 @@ use crate::disassembly::{Error, IRBuilderArena};
 use crate::space::{AddressSpace, AddressSpaceId};
 use crate::space_manager::SpaceManager;
 
-use std::fmt;
-
-use unsafe_unwrap::UnsafeUnwrap;
-use ustr::Ustr;
 
 #[derive(Debug, Clone)]
 pub struct FixedHandle<'space> {
@@ -402,7 +402,7 @@ impl Symbol {
             } => {
                 let index = pattern_value.value(walker, symbols)?;
                 let varnode = symbols.unchecked_symbol(
-                    unsafe { varnode_table.get_unchecked(index as usize).unsafe_unwrap() }, //.ok_or_else(|| Error::InvalidSymbol)?
+                    unsafe { varnode_table.get_unchecked(index as usize).unwrap_unchecked() }, //.ok_or_else(|| Error::InvalidSymbol)?
                 ); //.ok_or_else(|| Error::InvalidSymbol)?;
                 varnode.fixed_handle(walker, manager, symbols)?
             }
@@ -490,7 +490,7 @@ impl Symbol {
                 let (index, bits) = pattern_value.value_with(walker, symbols).unwrap();
                 if index >= 0 && (index as usize) < varnode_table.len() {
                     let named = symbols.unchecked_symbol(unsafe {
-                        varnode_table.get_unchecked(index as usize).unsafe_unwrap()
+                        varnode_table.get_unchecked(index as usize).unwrap_unchecked()
                     });
                     operands.push_with(named.name(), bits);
                 }
@@ -582,7 +582,7 @@ impl Symbol {
                         "{}",
                         symbols
                             .unchecked_symbol(unsafe {
-                                varnode_table.get_unchecked(index as usize).unsafe_unwrap()
+                                varnode_table.get_unchecked(index as usize).unwrap_unchecked()
                             })
                             .name()
                     )?;
@@ -681,7 +681,7 @@ impl Symbol {
                 if index >= 0 && (index as usize) < varnode_table.len() {
                     let register = symbols
                         .unchecked_symbol(unsafe {
-                            varnode_table.get_unchecked(index as usize).unsafe_unwrap()
+                            varnode_table.get_unchecked(index as usize).unwrap_unchecked()
                         })
                         .name();
                     tokens.push(Token::register(register));

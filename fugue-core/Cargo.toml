@@ -1,6 +1,6 @@
 [package]
 name = "fugue"
-version = "0.2.8"
+version = "0.3.0"
 authors = ["Sam Thomas <st@xv.ax>", "Zitai Chen <zitaichen@outlook.com>"]
 edition = "2021"
 license = "MIT"
@@ -8,22 +8,12 @@ description = "A binary analysis framework written in Rust"
 homepage = "https://fugue.re"
 
 [features]
-default = ["bigint"]
-
-bigint = ["fugue-bv/bigint", "fugue-db?/bigint", "fugue-ir/bigint"]
-fixed-u64 = ["fugue-bv/fixed-u64", "fugue-db?/fixed-u64", "fugue-ir/fixed-u64"]
-fixed-u128 = ["fugue-bv/fixed-u128", "fugue-db?/fixed-u128", "fugue-ir/fixed-u128"]
-
-extra-logging = ["fugue-ir/extra-logging"]
-extra-integer-types = ["fugue-bytes/extra-integer-types"]
-
-db = ["fugue-db"]
-fp = ["bigint", "fugue-fp"]
+fp = ["fugue-fp"]
 
 [dependencies]
-fugue-arch = { path = "../fugue-arch", version = "0.2" }
-fugue-bv = { path = "../fugue-bv", version = "0.2", default-features = false }
-fugue-bytes = { path = "../fugue-bytes", version = "0.2" }
-fugue-db = { path = "../fugue-db", version = "0.2", default-features = false, optional = true }
-fugue-fp = { path = "../fugue-fp", version = "0.2", optional = true }
-fugue-ir = { path = "../fugue-ir", version = "0.2", default-features = false }
+fugue-arch = { path = "../fugue-arch", version = "0.3" }
+fugue-bv = { path = "../fugue-bv", version = "0.3" }
+fugue-bytes = { path = "../fugue-bytes", version = "0.3" }
+fugue-high = { path = "../fugue-high", version = "0.3" }
+fugue-fp = { path = "../fugue-fp", version = "0.3", optional = true }
+fugue-ir = { path = "../fugue-ir", version = "0.3" }

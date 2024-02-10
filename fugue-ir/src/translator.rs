@@ -10,7 +10,6 @@ use ahash::AHashMap as Map;
 use fugue_arch::ArchitectureDef;
 use itertools::Itertools;
 
-use unsafe_unwrap::UnsafeUnwrap;
 use ustr::Ustr;
 
 use crate::address::AddressValue;
@@ -840,7 +839,7 @@ impl Translator {
                         walker.set_parent_handle(h);
                     }
                 } else {
-                    let pexp = unsafe { operand.defining_expression().unsafe_unwrap() };
+                    let pexp = unsafe { operand.defining_expression().unwrap_unchecked() };
                     let res = pexp.value(walker, symbol_table)?;
                     let const_space = manager.constant_space_ref();
                     if let Some(handle) = walker.parent_handle_mut() {

@@ -1,7 +1,7 @@
 use std::sync::Arc;
-use iset::IntervalMap;
+
 use ahash::AHashMap as Map;
-use unsafe_unwrap::UnsafeUnwrap;
+use iset::IntervalMap;
 use ustr::Ustr;
 
 use crate::space::AddressSpace;
@@ -47,7 +47,7 @@ impl RegisterNames {
     }
 
     pub fn unchecked_get(&self, offset: u64, size: usize) -> &Ustr {
-        unsafe { self.get(offset, size).unsafe_unwrap() }
+        unsafe { self.get(offset, size).unwrap_unchecked() }
     }
 
     pub fn get_by_name<N>(&self, name: N) -> Option<(&Ustr, u64, usize)>
