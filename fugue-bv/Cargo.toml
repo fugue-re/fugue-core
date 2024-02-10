@@ -14,4 +14,5 @@ num-traits = "0.2"
 paste = "1"
 rug = { version = "1", features = ["integer", "serde"] }
 serde = { version = "1", features = ["derive"] }
+static_init = "1"
 thiserror = "1"

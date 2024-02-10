@@ -15,6 +15,8 @@ use crate::space_manager::SpaceManager;
 pub use bumpalo::collections::String as BString;
 pub use bumpalo::collections::Vec as BVec;
 
+const MAX_PARSE_DEPTH: usize = 64 + 1;
+
 pub struct InstructionFormatter<'b, 'c, 'z> {
     walker: RefCell<ParserWalker<'b, 'c, 'z>>,
     symbols: &'b SymbolTable,
@@ -525,7 +527,7 @@ pub struct ParserWalker<'b, 'c, 'z> {
 
     point: Option<usize>,
     depth: isize,
-    breadcrumb: [usize; 32],
+    breadcrumb: [usize; MAX_PARSE_DEPTH],
 }
 
 impl<'b, 'c, 'z> ParserWalker<'b, 'c, 'z> {
@@ -534,7 +536,7 @@ impl<'b, 'c, 'z> ParserWalker<'b, 'c, 'z> {
             ctx,
             point: Some(0),
             depth: 0,
-            breadcrumb: [0; 32],
+            breadcrumb: [0; MAX_PARSE_DEPTH],
         }
     }
 

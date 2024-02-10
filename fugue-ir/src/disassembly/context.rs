@@ -512,15 +512,15 @@ fn get_region_to_change_point<'a, F>(
         .range_mut(addr..)
         .with_position()
         .take_while(move |pos| match pos {
-            Position::First(_) | Position::Only(_) => true,
-            Position::Middle((_, fa)) | Position::Last((_, fa)) => fa.masks[num] & mask == 0,
+            (Position::First | Position::Only, _) => true,
+            (Position::Middle | Position::Last, (_, fa)) => fa.masks[num] & mask == 0,
         })
         .map(move |pos| match pos {
-            Position::First((_, fa)) | Position::Only((_, fa)) => {
+            (Position::First | Position::Only, (_, fa)) => {
                 fa.masks[num] |= mask;
                 &mut fa.values
             }
-            Position::Middle((_, fa)) | Position::Last((_, fa)) => &mut fa.values,
+            (Position::Middle | Position::Last, (_, fa)) => &mut fa.values,
         })
     {
         f(change)

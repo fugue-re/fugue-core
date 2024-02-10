@@ -4,3 +4,9 @@ version = "0.3.0"
 edition = "2021"
 
 [dependencies]
+fugue-arch = { version = "0.3", path = "../fugue-arch" }
+fugue-ir = { version = "0.3", path = "../fugue-ir" }
+ouroboros = "0.18"
+rustc-hash = "1.1"
+static_init = "1"
+thiserror = "1"

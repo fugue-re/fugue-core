@@ -559,6 +559,7 @@ impl<'b, 'c, 'cz, 'z> IRBuilder<'b, 'c, 'cz, 'z> {
         Ok(())
     }
 
+    #[inline]
     pub fn append_build(
         &mut self,
         op: &'b OpTpl,

@@ -1,5 +1,3 @@
-use fugue_bytes::Order;
-
 use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::fmt;
@@ -8,19 +6,18 @@ use std::ops::{
     Mul, MulAssign, Neg, Not, Rem, RemAssign, Shl, ShlAssign, Shr, ShrAssign, Sub, SubAssign,
 };
 use std::str::FromStr;
-use std::sync::Arc;
 
+use fugue_bytes::Order;
 use rug::Integer as BigInt;
 
 use crate::error::{ParseError, TryFromBitVecError};
-use crate::{core_bigint, core_u128, core_u64};
+use crate::{core_bigint, core_u64};
 
-pub const MAX_BITS: Option<u32> = None;
+pub const MAX_BITS: Option<u32> = core_bigint::MAX_BITS;
 
 #[derive(Debug, Clone, Hash, serde::Deserialize, serde::Serialize)]
 pub enum BitVec {
     N(core_u64::BitVec),
-    B(core_u128::BitVec),
     U(core_bigint::BitVec),
 }
 
@@ -50,21 +47,18 @@ macro_rules! bind {
     ($self:ident, $f:expr) => {{
         match $self {
             BitVec::N(m) => BitVec::N(apply1($f, m)),
-            BitVec::B(m) => BitVec::B(apply1($f, m)),
             BitVec::U(m) => BitVec::U(apply1($f, m)),
         }
     }};
     (ref $self:ident, $f:expr) => {{
         match $self {
             BitVec::N(ref m) => Self::N(apply1($f, m)),
-            BitVec::B(ref m) => Self::B(apply1($f, m)),
             BitVec::U(ref m) => Self::U(apply1($f, m)),
         }
     }};
     (ref mut $self:ident, $f:expr) => {{
         match $self {
             BitVec::N(ref mut m) => Self::N(apply1($f, m)),
-            BitVec::B(ref mut m) => Self::B(apply1($f, m)),
             BitVec::U(ref mut m) => Self::U(apply1($f, m)),
         }
     }};
@@ -74,21 +68,18 @@ macro_rules! fold_map {
     ($self:ident, $f:expr) => {{
         match $self {
             BitVec::N(m) => apply1($f, m),
-            BitVec::B(m) => apply1($f, m),
             BitVec::U(m) => apply1($f, m),
         }
     }};
     (ref $self:ident, $f:expr) => {{
         match $self {
             BitVec::N(ref m) => apply1($f, m),
-            BitVec::B(ref m) => apply1($f, m),
             BitVec::U(ref m) => apply1($f, m),
         }
     }};
     (ref mut $self:ident, $f:expr) => {{
         match $self {
             BitVec::N(ref mut m) => apply1($f, m),
-            BitVec::B(ref mut m) => apply1($f, m),
             BitVec::U(ref mut m) => apply1($f, m),
         }
     }};
@@ -98,7 +89,6 @@ macro_rules! bind2 {
     ($self:ident, $other:ident, $f:expr) => {{
         match ($self, $other) {
             (BitVec::N(m), BitVec::N(n)) => BitVec::N(apply2($f, m, n)),
-            (BitVec::B(m), BitVec::B(n)) => BitVec::B(apply2($f, m, n)),
             (BitVec::U(m), BitVec::U(n)) => BitVec::U(apply2($f, m, n)),
             _ => panic!("cannot apply operation to operands with different bit sizes"),
         }
@@ -106,7 +96,6 @@ macro_rules! bind2 {
     (ref $self:ident, $other:ident, $f:expr) => {{
         match ($self, $other) {
             (BitVec::N(ref m), BitVec::N(ref n)) => BitVec::N(apply2($f, m, n)),
-            (BitVec::B(ref m), BitVec::B(ref n)) => BitVec::B(apply2($f, m, n)),
             (BitVec::U(ref m), BitVec::U(ref n)) => BitVec::U(apply2($f, m, n)),
             _ => panic!("cannot apply operation to operands with different bit sizes"),
         }
@@ -114,7 +103,6 @@ macro_rules! bind2 {
     (ref mut $self:ident, $other:ident, $f:expr) => {{
         match ($self, $other) {
             (BitVec::N(ref mut m), BitVec::N(ref mut n)) => BitVec::N(apply2($f, m, n)),
-            (BitVec::B(ref mut m), BitVec::B(ref mut n)) => BitVec::B(apply2($f, m, n)),
             (BitVec::U(ref mut m), BitVec::U(ref mut n)) => BitVec::U(apply2($f, m, n)),
             _ => panic!("cannot apply operation to operands with different bit sizes"),
         }
@@ -125,7 +113,6 @@ macro_rules! fold_map2 {
     ($self:ident, $other:ident, $f:expr) => {{
         match ($self, $other) {
             (BitVec::N(m), BitVec::N(n)) => apply2($f, m, n),
-            (BitVec::B(m), BitVec::B(n)) => apply2($f, m, n),
             (BitVec::U(m), BitVec::U(n)) => apply2($f, m, n),
             _ => panic!("cannot apply operation to operands with different bit sizes"),
         }
@@ -133,7 +120,6 @@ macro_rules! fold_map2 {
     (ref $self:ident, $other:ident, $f:expr) => {{
         match ($self, $other) {
             (BitVec::N(ref m), BitVec::N(ref n)) => apply2($f, m, n),
-            (BitVec::B(ref m), BitVec::B(ref n)) => apply2($f, m, n),
             (BitVec::U(ref m), BitVec::U(ref n)) => apply2($f, m, n),
             _ => panic!("cannot apply operation to operands with different bit sizes"),
         }
@@ -141,7 +127,6 @@ macro_rules! fold_map2 {
     (ref mut $self:ident, ref $other:ident, $f:expr) => {{
         match ($self, $other) {
             (BitVec::N(ref mut m), BitVec::N(ref n)) => apply2_mut($f, m, n),
-            (BitVec::B(ref mut m), BitVec::B(ref n)) => apply2_mut($f, m, n),
             (BitVec::U(ref mut m), BitVec::U(ref n)) => apply2_mut($f, m, n),
             _ => panic!("cannot apply operation to operands with different bit sizes"),
         }
@@ -149,7 +134,6 @@ macro_rules! fold_map2 {
     (ref mut $self:ident, ref mut $other:ident, $f:expr) => {{
         match ($self, $other) {
             (BitVec::N(ref mut m), BitVec::N(ref mut n)) => apply2($f, m, n),
-            (BitVec::B(ref mut m), BitVec::B(ref mut n)) => apply2($f, m, n),
             (BitVec::U(ref mut m), BitVec::U(ref mut n)) => apply2($f, m, n),
             _ => panic!("cannot apply operation to operands with different bit sizes"),
         }
@@ -162,12 +146,6 @@ impl From<core_u64::BitVec> for BitVec {
     }
 }
 
-impl From<core_u128::BitVec> for BitVec {
-    fn from(bv: core_u128::BitVec) -> Self {
-        Self::B(bv)
-    }
-}
-
 impl From<core_bigint::BitVec> for BitVec {
     fn from(bv: core_bigint::BitVec) -> Self {
         Self::U(bv)
@@ -176,25 +154,25 @@ impl From<core_bigint::BitVec> for BitVec {
 
 impl fmt::Display for BitVec {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fold_map!(self, |slf| write!(f, "{}:{}", slf.0, slf.bits()))
+        fold_map!(self, |slf| fmt::Display::fmt(slf, f))
     }
 }
 
 impl fmt::LowerHex for BitVec {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fold_map!(self, |slf| write!(f, "{:#x}:{}", slf.0, slf.bits()))
+        fold_map!(self, |slf| fmt::LowerHex::fmt(slf, f))
     }
 }
 
 impl fmt::UpperHex for BitVec {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fold_map!(self, |slf| write!(f, "{:#X}:{}", slf.0, slf.bits()))
+        fold_map!(self, |slf| fmt::UpperHex::fmt(slf, f))
     }
 }
 
 impl fmt::Binary for BitVec {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fold_map!(self, |slf| write!(f, "{:#b}:{}", slf.0, slf.bits()))
+        fold_map!(self, |slf| fmt::Binary::fmt(slf, f))
     }
 }
 
@@ -233,27 +211,19 @@ impl BitVec {
         if bits <= 64 {
             let v = core_bigint::BitVec::from_bigint(v, bits).to_u64().unwrap();
             Self::N(core_u64::BitVec::from_uint(v, bits))
-        } else if bits <= 128 {
-            let v = core_bigint::BitVec::from_bigint(v, bits).to_u128().unwrap();
-            Self::B(core_u128::BitVec::from_uint(v, bits))
         } else {
             Self::U(core_bigint::BitVec::from_bigint(v, bits))
         }
     }
 
     #[allow(unused)]
-    pub(crate) fn from_bigint_with(v: BigInt, mask: Arc<BigInt>) -> Self {
+    pub(crate) fn from_bigint_with(v: BigInt, mask: &'static BigInt) -> Self {
         let bits = mask.count_ones().unwrap() as usize;
         if bits <= 64 {
             let v = core_bigint::BitVec::from_bigint_with(v, mask)
                 .to_u64()
                 .unwrap();
             Self::N(core_u64::BitVec::from_uint(v, bits))
-        } else if bits <= 128 {
-            let v = core_bigint::BitVec::from_bigint_with(v, mask)
-                .to_u128()
-                .unwrap();
-            Self::B(core_u128::BitVec::from_uint(v, bits))
         } else {
             Self::U(core_bigint::BitVec::from_bigint_with(v, mask))
         }
@@ -262,7 +232,6 @@ impl BitVec {
     pub fn as_bigint(&self) -> Cow<BigInt> {
         match self {
             Self::N(ref bv) => Cow::Owned(BigInt::from(bv.0)),
-            Self::B(ref bv) => Cow::Owned(BigInt::from(bv.0)),
             Self::U(ref bv) => Cow::Borrowed(bv.as_raw()),
         }
     }
@@ -275,8 +244,6 @@ impl BitVec {
     pub fn zero(bits: usize) -> Self {
         if bits <= 64 {
             Self::N(core_u64::BitVec::zero(bits))
-        } else if bits <= 128 {
-            Self::B(core_u128::BitVec::zero(bits))
         } else {
             Self::U(core_bigint::BitVec::zero(bits))
         }
@@ -285,8 +252,6 @@ impl BitVec {
     pub fn one(bits: usize) -> Self {
         if bits <= 64 {
             Self::N(core_u64::BitVec::one(bits))
-        } else if bits <= 128 {
-            Self::B(core_u128::BitVec::one(bits))
         } else {
             Self::U(core_bigint::BitVec::one(bits))
         }
@@ -371,8 +336,6 @@ impl BitVec {
     pub fn from_be_bytes(buf: &[u8]) -> Self {
         if buf.len() <= 8 {
             Self::N(core_u64::BitVec::from_be_bytes(buf))
-        } else if buf.len() <= 16 {
-            Self::B(core_u128::BitVec::from_be_bytes(buf))
         } else {
             Self::U(core_bigint::BitVec::from_be_bytes(buf))
         }
@@ -381,8 +344,6 @@ impl BitVec {
     pub fn from_le_bytes(buf: &[u8]) -> Self {
         if buf.len() <= 8 {
             Self::N(core_u64::BitVec::from_le_bytes(buf))
-        } else if buf.len() <= 16 {
-            Self::B(core_u128::BitVec::from_le_bytes(buf))
         } else {
             Self::U(core_bigint::BitVec::from_le_bytes(buf))
         }
@@ -494,8 +455,6 @@ impl BitVec {
     pub fn max_value_with(bits: usize, signed: bool) -> Self {
         if bits <= 64 {
             Self::N(core_u64::BitVec::max_value_with(bits, signed))
-        } else if bits <= 128 {
-            Self::B(core_u128::BitVec::max_value_with(bits, signed))
         } else {
             Self::U(core_bigint::BitVec::max_value_with(bits, signed))
         }
@@ -508,8 +467,6 @@ impl BitVec {
     pub fn min_value_with(bits: usize, signed: bool) -> Self {
         if bits <= 64 {
             Self::N(core_u64::BitVec::min_value_with(bits, signed))
-        } else if bits <= 128 {
-            Self::B(core_u128::BitVec::min_value_with(bits, signed))
         } else {
             Self::U(core_bigint::BitVec::min_value_with(bits, signed))
         }
@@ -549,38 +506,8 @@ impl BitVec {
                     } else {
                         Self::N(bv.unsigned().cast(size))
                     }
-                } else if size <= 128 {
-                    let v = core_u128::BitVec::from_u64(bv.0, bv.bits());
-                    Self::B(if signed {
-                        v.signed().cast(size).signed()
-                    } else {
-                        v.unsigned().cast(size)
-                    })
                 } else {
                     let v = core_bigint::BitVec::from_u64(bv.0, bv.bits());
-                    Self::U(if signed {
-                        v.signed().cast(size).signed()
-                    } else {
-                        v.unsigned().cast(size)
-                    })
-                }
-            }
-            Self::B(bv) => {
-                if size <= 64 {
-                    let v = core_u64::BitVec::from_u64(bv.0 as u64, 64);
-                    Self::N(if signed {
-                        v.signed().cast(size).signed()
-                    } else {
-                        v.unsigned().cast(size)
-                    })
-                } else if size <= 128 {
-                    if signed {
-                        Self::B(bv.signed().cast(size).signed())
-                    } else {
-                        Self::B(bv.unsigned().cast(size))
-                    }
-                } else {
-                    let v = core_bigint::BitVec::from_u128(bv.0, bv.bits());
                     Self::U(if signed {
                         v.signed().cast(size).signed()
                     } else {
@@ -592,13 +519,6 @@ impl BitVec {
                 if size <= 64 {
                     let v = core_u64::BitVec::from_u64(bv.cast(64).to_u64().unwrap(), 64);
                     Self::N(if signed {
-                        v.signed().cast(size).signed()
-                    } else {
-                        v.unsigned().cast(size)
-                    })
-                } else if size <= 128 {
-                    let v = core_u128::BitVec::from_u128(bv.cast(128).to_u128().unwrap(), 128);
-                    Self::B(if signed {
                         v.signed().cast(size).signed()
                     } else {
                         v.unsigned().cast(size)
@@ -628,41 +548,8 @@ impl BitVec {
                     } else {
                         bv.unsigned_cast_assign(size);
                     }
-                } else if size <= 128 {
-                    let mut v = core_u128::BitVec::from_u64(bv.0, bv.bits());
-                    if signed {
-                        v.signed_cast_assign(size);
-                    } else {
-                        v.unsigned_cast_assign(size);
-                    }
-                    *self = Self::B(v);
                 } else {
                     let mut v = core_bigint::BitVec::from_u64(bv.0, bv.bits());
-                    if signed {
-                        v.signed_cast_assign(size);
-                    } else {
-                        v.unsigned_cast_assign(size);
-                    }
-                    *self = Self::U(v);
-                }
-            }
-            Self::B(ref mut bv) => {
-                if size <= 64 {
-                    let mut v = core_u64::BitVec::from_u64(bv.0 as u64, 64);
-                    if signed {
-                        v.signed_cast_assign(size);
-                    } else {
-                        v.unsigned_cast_assign(size);
-                    }
-                    *self = Self::N(v);
-                } else if size <= 128 {
-                    if signed {
-                        bv.signed_cast_assign(size);
-                    } else {
-                        bv.unsigned_cast_assign(size);
-                    }
-                } else {
-                    let mut v = core_bigint::BitVec::from_u128(bv.0, bv.bits());
                     if signed {
                         v.signed_cast_assign(size);
                     } else {
@@ -685,19 +572,6 @@ impl BitVec {
                         v.unsigned_cast_assign(size);
                     }
                     *self = Self::N(v);
-                } else if size <= 128 {
-                    if signed {
-                        bv.signed_cast_assign(128);
-                    } else {
-                        bv.unsigned_cast_assign(128);
-                    }
-                    let mut v = core_u128::BitVec::from_u128(bv.to_u128().unwrap(), 128);
-                    if signed {
-                        v.signed_cast_assign(size);
-                    } else {
-                        v.unsigned_cast_assign(size);
-                    }
-                    *self = Self::B(v);
                 } else {
                     if signed {
                         bv.signed_cast_assign(size);
@@ -1139,8 +1013,6 @@ macro_rules! impl_from_for {
                 let bits = ::std::mem::size_of::<$t>() * 8;
                 if bits <= 64 {
                     Self::N(core_u64::BitVec::from(t))
-                } else if bits <= 128 {
-                    Self::B(core_u128::BitVec::from(t))
                 } else {
                     Self::U(core_bigint::BitVec::from(t))
                 }
@@ -1228,8 +1100,6 @@ macro_rules! impl_from_t_for {
                 pub fn [< from_ $t >](t: $t, bits: usize) -> Self {
                     if bits <= 64 {
                         Self::N(core_u64::BitVec::[< from_ $t >](t, bits))
-                    } else if bits <= 128 {
-                        Self::B(core_u128::BitVec::[< from_ $t >](t, bits))
                     } else {
                         Self::U(core_bigint::BitVec::[< from_ $t >](t, bits))
                     }
