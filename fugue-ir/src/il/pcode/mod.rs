@@ -456,8 +456,8 @@ impl PCodeOp {
                 result: Operand::from_varnodedata(manager, registers, output.unwrap_unchecked()),
             },
             Opcode::LZCount => PCodeOp::LZCount {
-                operand: Operand::from_varnodedata(manager, registers, inputs.next().unsafe_unwrap()),
-                result: Operand::from_varnodedata(manager, registers, output.unsafe_unwrap()),
+                operand: Operand::from_varnodedata(manager, registers, inputs.next().unwrap_unchecked()),
+                result: Operand::from_varnodedata(manager, registers, output.unwrap_unchecked()),
             },
             Opcode::BoolNot => PCodeOp::BoolNot {
                 operand: Operand::from_varnodedata(manager, registers, inputs.next().unwrap_unchecked()),
