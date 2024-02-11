@@ -1,0 +1,17 @@
+[package]
+name = "fugue-state-derive"
+version = "0.3.0"
+authors = ["Sam Thomas <st@xv.ax>"]
+edition = "2021"
+license = "MIT"
+description = "A binary analysis framework written in Rust"
+homepage = "https://fugue.re"
+
+[lib]
+proc_macro = true
+
+[dependencies]
+itertools = "0.10"
+proc-macro2 = "1"
+syn = { version = "2", features = ["full"] }
+quote = "1"
