@@ -447,6 +447,7 @@ pub enum UnOp {
     ROUND,
 
     POPCOUNT,
+    LZCOUNT,
 }
 
 #[derive(
@@ -582,6 +583,9 @@ where
             }
             ExprT::UnOp(UnOp::POPCOUNT, expr) => {
                 write!(f, "popcount({})", expr)
+            },
+            ExprT::UnOp(UnOp::LZCOUNT, expr) => {
+                write!(f, "lzcount({})", expr)
             }
 
             ExprT::UnRel(UnRel::NAN, expr) => {
@@ -932,6 +936,15 @@ where
                 write!(
                     f,
                     "{}popcount{}({})",
+                    d.fmt.keyword_start,
+                    d.fmt.keyword_end,
+                    expr.display_full(Cow::Borrowed(&*d.fmt))
+                )
+            }
+            ExprT::UnOp(UnOp::LZCOUNT, expr) => {
+                write!(
+                    f,
+                    "{}lzcount{}({})",
                     d.fmt.keyword_start,
                     d.fmt.keyword_end,
                     expr.display_full(Cow::Borrowed(&*d.fmt))
@@ -1875,6 +1888,13 @@ where
         Self::unary_op(UnOp::POPCOUNT, expr.into())
     }
 
+    pub fn count_leading_zeros<E>(expr: E) -> Self
+    where
+        E: Into<Self>,
+    {
+        Self::unary_op(UnOp::LZCOUNT, expr.into())
+    }
+
     pub fn int_neg<E>(expr: E) -> Self
     where
         E: Into<Self>,
@@ -2489,6 +2509,15 @@ impl StmtT<Location, BitVec, Var> {
                 let popcount = ExprT::count_ones(input);
 
                 Self::assign(output, ExprT::cast_unsigned(popcount, size))
+            },
+            Opcode::LZCount => {
+                let input = ExprT::from_space(inputs.next().unwrap(), manager);
+                let output = Var::from(output.unwrap());
+
+                let size = output.bits();
+                let lzcount = ExprT::count_leading_zeros(input);
+
+                Self::assign(output, ExprT::cast_unsigned(lzcount, size))
             }
             Opcode::BoolNot => {
                 let input = ExprT::from_space(inputs.next().unwrap(), manager);
@@ -3242,6 +3271,14 @@ impl StmtT<Location, BitVec, Var> {
                 let popcount = ExprT::unary_op(UnOp::POPCOUNT, ExprT::from_space(operand, manager));
 
                 Self::assign(output, ExprT::cast_unsigned(popcount, size))
+            }
+            PCodeOp::LZCount { result, operand } => {
+                let output = Var::from_space(result, manager);
+
+                let size = output.bits();
+                let lzcount = ExprT::unary_op(UnOp::LZCOUNT, ExprT::from_space(operand, manager));
+
+                Self::assign(output, ExprT::cast_unsigned(lzcount, size))
             }
             PCodeOp::BoolNot { result, operand } => Self::assign(
                 Var::from_space(result, manager),
