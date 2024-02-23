@@ -82,6 +82,7 @@ impl SymbolTable {
                 "operand_sym_head" => SymbolKind::Operand,
                 "start_sym_head" => SymbolKind::Start,
                 "end_sym_head" => SymbolKind::End,
+                "next2_sym_head" => SymbolKind::Next2,
                 "subtable_sym_head" => SymbolKind::Subtable,
                 "flowdest_sym_head" => SymbolKind::FlowDest,
                 "flowref_sym_head" => SymbolKind::FlowRef,

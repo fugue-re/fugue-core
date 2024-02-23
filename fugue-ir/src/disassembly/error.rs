@@ -15,6 +15,8 @@ pub enum Error {
     InstructionResolution,
     #[error("next address undefined")]
     InvalidNextAddress,
+    #[error("address after next address undefined")]
+    InvalidNext2Address,
     #[error("constructor invalid")]
     InvalidConstructor,
     #[error("pattern invalid")]

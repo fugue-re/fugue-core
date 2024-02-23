@@ -13,7 +13,6 @@ use crate::disassembly::{Error, IRBuilderArena};
 use crate::space::{AddressSpace, AddressSpaceId};
 use crate::space_manager::SpaceManager;
 
-
 #[derive(Debug, Clone)]
 pub struct FixedHandle<'space> {
     pub space: &'space AddressSpace,
@@ -52,6 +51,7 @@ pub enum SymbolKind {
     Operand,
     Start,
     End,
+    Next2,
     Subtable,
     FlowDest,
     FlowRef,
@@ -143,6 +143,12 @@ pub enum Symbol {
         name: Ustr,
         pattern_value: PatternExpression,
     },
+    Next2 {
+        id: usize,
+        scope: usize,
+        name: Ustr,
+        pattern_value: PatternExpression,
+    },
     Subtable {
         id: usize,
         scope: usize,
@@ -176,6 +182,7 @@ impl Symbol {
             | Self::Operand { id, .. }
             | Self::Start { id, .. }
             | Self::End { id, .. }
+            | Self::Next2 { id, .. }
             | Self::Subtable { id, .. }
             | Self::FlowDest { id, .. }
             | Self::FlowRef { id, .. } => *id,
@@ -195,6 +202,7 @@ impl Symbol {
             | Self::Operand { ref name, .. }
             | Self::Start { ref name, .. }
             | Self::End { ref name, .. }
+            | Self::Next2 { ref name, .. }
             | Self::Subtable { ref name, .. }
             | Self::FlowDest { ref name, .. }
             | Self::FlowRef { ref name, .. } => name,
@@ -395,6 +403,25 @@ impl Symbol {
                     temporary_offset: 0,
                 }
             }
+            Self::Next2 { .. } => {
+                return Err(Error::InvalidNext2Address)
+                /*
+                let space = manager.unchecked_space_by_id(walker.address().space());
+                let size = space.address_size();
+                FixedHandle {
+                    space,
+                    size,
+                    offset_space: None,
+                    offset_offset: walker
+                        .next2_address(bytes)
+                        .ok_or_else(|| Error::InvalidNext2Address)?
+                        .offset(),
+                    offset_size: 0,
+                    temporary_space: None,
+                    temporary_offset: 0,
+                }
+                */
+            }
             Self::VarnodeList {
                 pattern_value,
                 varnode_table,
@@ -402,7 +429,11 @@ impl Symbol {
             } => {
                 let index = pattern_value.value(walker, symbols)?;
                 let varnode = symbols.unchecked_symbol(
-                    unsafe { varnode_table.get_unchecked(index as usize).unwrap_unchecked() }, //.ok_or_else(|| Error::InvalidSymbol)?
+                    unsafe {
+                        varnode_table
+                            .get_unchecked(index as usize)
+                            .unwrap_unchecked()
+                    }, //.ok_or_else(|| Error::InvalidSymbol)?
                 ); //.ok_or_else(|| Error::InvalidSymbol)?;
                 varnode.fixed_handle(walker, manager, symbols)?
             }
@@ -432,7 +463,8 @@ impl Symbol {
             | Self::Context { pattern_value, .. }
             | Self::VarnodeList { pattern_value, .. }
             | Self::Start { pattern_value, .. }
-            | Self::End { pattern_value, .. } => pattern_value,
+            | Self::End { pattern_value, .. }
+            | Self::Next2 { pattern_value, .. } => pattern_value,
             Self::Operand { local_expr, .. } => local_expr,
             _ => unreachable!(), //return Err(Error::InvalidPattern),
         }
@@ -490,7 +522,9 @@ impl Symbol {
                 let (index, bits) = pattern_value.value_with(walker, symbols).unwrap();
                 if index >= 0 && (index as usize) < varnode_table.len() {
                     let named = symbols.unchecked_symbol(unsafe {
-                        varnode_table.get_unchecked(index as usize).unwrap_unchecked()
+                        varnode_table
+                            .get_unchecked(index as usize)
+                            .unwrap_unchecked()
                     });
                     operands.push_with(named.name(), bits);
                 }
@@ -524,6 +558,9 @@ impl Symbol {
             }
             Self::End { .. } => {
                 operands.push(walker.unchecked_next_address());
+            }
+            Self::Next2 { .. } => {
+                operands.push(walker.unchecked_next2_address());
             }
             _ => unreachable!(),
         }
@@ -582,7 +619,9 @@ impl Symbol {
                         "{}",
                         symbols
                             .unchecked_symbol(unsafe {
-                                varnode_table.get_unchecked(index as usize).unwrap_unchecked()
+                                varnode_table
+                                    .get_unchecked(index as usize)
+                                    .unwrap_unchecked()
                             })
                             .name()
                     )?;
@@ -626,6 +665,9 @@ impl Symbol {
             }
             Self::End { .. } => {
                 write!(fmt, "{:#x}", walker.unchecked_next_address().offset())
+            }
+            Self::Next2 { .. } => {
+                write!(fmt, "{:#x}", walker.unchecked_next2_address().offset())
             }
             _ => unreachable!(),
         }
@@ -681,7 +723,9 @@ impl Symbol {
                 if index >= 0 && (index as usize) < varnode_table.len() {
                     let register = symbols
                         .unchecked_symbol(unsafe {
-                            varnode_table.get_unchecked(index as usize).unwrap_unchecked()
+                            varnode_table
+                                .get_unchecked(index as usize)
+                                .unwrap_unchecked()
                         })
                         .name();
                     tokens.push(Token::register(register));
@@ -716,6 +760,9 @@ impl Symbol {
             }
             Self::End { .. } => {
                 tokens.push(walker.unchecked_next_address());
+            }
+            Self::Next2 { .. } => {
+                tokens.push(walker.unchecked_next2_address());
             }
             _ => unreachable!(),
         }
@@ -1058,6 +1105,20 @@ impl SymbolBuilder {
                     scope: self.scope,
                     name: self.name,
                     pattern_value: PatternExpression::EndInstruction,
+                }
+            }
+            SymbolKind::Next2 => {
+                if input.tag_name().name() != "next2_sym" {
+                    return Err(DeserialiseError::TagUnexpected(
+                        input.tag_name().name().to_owned(),
+                    ));
+                }
+
+                Symbol::Next2 {
+                    id: self.id,
+                    scope: self.scope,
+                    name: self.name,
+                    pattern_value: PatternExpression::Next2Instruction,
                 }
             }
             SymbolKind::FlowDest => {

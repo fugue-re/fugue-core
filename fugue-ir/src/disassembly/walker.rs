@@ -171,6 +171,7 @@ pub struct ParserContext<'b, 'z> {
 
     address: AddressValue,
     next_address: Option<AddressValue>,
+    // next2_address: Option<AddressValue>,
 
     delay_slot: usize,
 
@@ -187,6 +188,7 @@ impl<'b, 'z> ParserContext<'b, 'z> {
             backing: [0; 16],
             address: AddressValue::new(space_manager.default_space(), 0),
             next_address: None,
+            // next2_address: None,
             delay_slot: 0,
             alloc: 1,
             state: bvec![in arena.inner(); ConstructState::default(); 75],
@@ -213,6 +215,7 @@ impl<'b, 'z> ParserContext<'b, 'z> {
             context_commit: BVec::with_capacity_in(2, arena.inner()),
             address,
             next_address: None,
+            // next2_address: None,
             delay_slot: 0,
             alloc: 1,
             state: bvec![in arena.inner(); ConstructState::default(); 75], // state * param
@@ -568,6 +571,14 @@ impl<'b, 'c, 'z> ParserWalker<'b, 'c, 'z> {
 
     pub fn next_address(&self) -> Option<AddressValue> {
         self.ctx.next_address.clone()
+    }
+
+    pub fn unchecked_next2_address(&self) -> &AddressValue {
+        unimplemented!("inst_next2")
+    }
+
+    pub fn next2_address(&self) -> Option<AddressValue> {
+        None
     }
 
     pub fn length(&self) -> usize {
