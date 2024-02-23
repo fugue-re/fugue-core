@@ -39,6 +39,7 @@ pub enum PatternExpression {
     },
     StartInstruction,
     EndInstruction,
+    Next2Instruction,
     Plus(Box<Self>, Box<Self>),
     Sub(Box<Self>, Box<Self>),
     Mult(Box<Self>, Box<Self>),
@@ -58,7 +59,8 @@ impl PatternExpression {
             Self::TokenField { .. } |
             Self::ContextField { .. } |
             Self::StartInstruction |
-            Self::EndInstruction => Some(0),
+            Self::EndInstruction |
+            Self::Next2Instruction => Some(0),
             Self::Constant { value, .. } => Some(*value),
             _ => None,
         }
@@ -72,7 +74,8 @@ impl PatternExpression {
                 Some(bits::zero_extend(!0i64, bit_end - bit_start))
             },
             Self::StartInstruction |
-            Self::EndInstruction => Some(0),
+            Self::EndInstruction |
+            Self::Next2Instruction => Some(0),
             Self::Constant { value, .. } => Some(*value),
             _ => None,
         }
@@ -199,6 +202,7 @@ impl PatternExpression {
             },
             Self::StartInstruction => (walker.address().offset() as i64, None),
             Self::EndInstruction => (walker.next_address().map(|a| a.offset() as i64).unwrap_or(0), None),
+            Self::Next2Instruction => (walker.next2_address().map(|a| a.offset() as i64).unwrap_or(0), None),
             Self::Plus(ref lhs, ref rhs) => {
                 let (l, m) = lhs.value_with(walker, symbols)?;
                 let (r, n) = rhs.value_with(walker, symbols)?;
@@ -399,6 +403,7 @@ impl PatternExpression {
             },
             Self::StartInstruction => walker.address().offset() as i64,
             Self::EndInstruction => walker.next_address().map(|a| a.offset() as i64).unwrap_or(0),
+            Self::Next2Instruction => walker.next2_address().map(|a| a.offset() as i64).unwrap_or(0),
             Self::Plus(ref lhs, ref rhs) => {
                 lhs.value(walker, symbols)?
                     .wrapping_add(rhs.value(walker, symbols)?)
@@ -471,6 +476,7 @@ impl PatternExpression {
             },
             "start_exp" => Self::StartInstruction,
             "end_exp" => Self::EndInstruction,
+            "next2_exp" => Self::EndInstruction,
             "plus_exp" => {
                 let mut children = input.children().filter(xml::Node::is_element);
                 Self::Plus(
