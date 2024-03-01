@@ -61,7 +61,9 @@ impl LanguageBuilder {
         let tag = tag.into();
         let convention = convention.as_ref();
 
-        let translator = if let Some(translator) = { TRANSLATOR_CACHE.read().get(&tag).cloned() } {
+        let translator = { TRANSLATOR_CACHE.read().get(&tag).cloned() };
+
+        let translator = if let Some(translator) = translator {
             translator
         } else {
             let builder = self
@@ -123,5 +125,52 @@ impl Language {
 
     pub fn translator_mut(&mut self) -> &mut Translator {
         Arc::make_mut(&mut self.translator)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use fugue_ir::Address;
+
+    use super::*;
+
+    #[test]
+    #[ignore]
+    fn test_load_arm32() -> anyhow::Result<()> {
+        let lbuilder = LanguageBuilder::new("data")?;
+        let language = lbuilder.build("ARM:LE:32:v7", "default")?;
+
+        let memory = &[
+            0x03, 0x00, 0x51, 0xE3, 0x0A, 0x00, 0x00, 0x9A, 0x00, 0x30, 0xA0, 0xE3, 0x01, 0x10,
+            0x80, 0xE0, 0x03, 0x00, 0x80, 0xE2, 0x01, 0x20, 0xD0, 0xE4, 0x02, 0x30, 0x83, 0xE0,
+            0x01, 0x00, 0x50, 0xE1, 0xFF, 0x30, 0x03, 0xE2, 0xFA, 0xFF, 0xFF, 0x1A, 0x00, 0x00,
+            0x63, 0xE2, 0xFF, 0x00, 0x00, 0xE2, 0x1E, 0xFF, 0x2F, 0xE1, 0x00, 0x00, 0xA0, 0xE3,
+            0x1E, 0xFF, 0x2F, 0xE1,
+        ];
+
+        let address = Address::from(0x00015E38u32);
+        let mut off = 0usize;
+
+        let mut lifter = language.lifter();
+        let irb = lifter.irb(1024);
+
+        while off < memory.len() {
+            let insn = lifter.disassemble(&irb, address + off, &memory[off..])?;
+            let pcode = lifter.lift(&irb, address + off, &memory[off..])?;
+
+            println!("--- insn @ {} ---", insn.address());
+            println!("{} {}", insn.mnemonic(), insn.operands());
+            println!();
+
+            println!("--- pcode @ {} ---", pcode.address());
+            for (i, op) in pcode.operations().iter().enumerate() {
+                println!("{i:02} {}", op.display(language.translator()));
+            }
+            println!();
+
+            off += insn.len();
+        }
+
+        Ok(())
     }
 }

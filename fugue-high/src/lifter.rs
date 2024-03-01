@@ -16,6 +16,28 @@ pub struct Insn<'a> {
     pub length: u8,
 }
 
+impl<'a> Insn<'a> {
+    pub fn address(&self) -> Address {
+        self.address
+    }
+
+    pub fn mnemonic(&self) -> &str {
+        &self.mnemonic
+    }
+
+    pub fn operands(&self) -> &str {
+        &self.operands
+    }
+
+    pub fn delay_slots(&self) -> usize {
+        self.delay_slots as _
+    }
+
+    pub fn len(&self) -> usize {
+        self.length as _
+    }
+}
+
 #[derive(Debug)]
 pub struct PCode<'a> {
     pub address: Address,
@@ -23,6 +45,25 @@ pub struct PCode<'a> {
     pub delay_slots: u8,
     pub length: u8,
 }
+
+impl<'a> PCode<'a> {
+    pub fn address(&self) -> Address {
+        self.address
+    }
+
+    pub fn operations(&self) -> &[PCodeData<'a>] {
+        &self.operations
+    }
+
+    pub fn delay_slots(&self) -> usize {
+        self.delay_slots as _
+    }
+
+    pub fn len(&self) -> usize {
+        self.length as _
+    }
+}
+
 
 #[self_referencing]
 struct LifterInner<'a> {

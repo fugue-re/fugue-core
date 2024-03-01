@@ -10,3 +10,6 @@ ouroboros = "0.18"
 rustc-hash = "1.1"
 static_init = "1"
 thiserror = "1"
+
+[dev-dependencies]
+anyhow = "1"
