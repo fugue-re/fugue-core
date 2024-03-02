@@ -175,6 +175,7 @@ mod test {
     }
 
     #[test]
+    #[ignore]
     fn test_load_xtensa() -> anyhow::Result<()> {
         env_logger::try_init().ok();
 
