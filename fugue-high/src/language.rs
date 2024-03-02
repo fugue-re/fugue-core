@@ -173,4 +173,42 @@ mod test {
 
         Ok(())
     }
+
+    #[test]
+    fn test_load_xtensa() -> anyhow::Result<()> {
+        env_logger::try_init().ok();
+
+        let lbuilder = LanguageBuilder::new("data")?;
+        let language = lbuilder.build("Xtensa:LE:32:default", "default")?;
+
+        let memory = &[
+            0x36, 0x41, 0x00, 0x25, 0xFE, 0xFF, 0x0C, 0x1B, 0xAD, 0x02, 0x81, 0x4C, 0xFA, 0xE0,
+            0x08, 0x00, 0x1D, 0xF0,
+        ];
+
+        let address = Address::from(0x40375C28u32);
+        let mut off = 0usize;
+
+        let mut lifter = language.lifter();
+        let irb = lifter.irb(1024);
+
+        while off < memory.len() {
+            let insn = lifter.disassemble(&irb, address + off, &memory[off..])?;
+            let pcode = lifter.lift(&irb, address + off, &memory[off..])?;
+
+            println!("--- insn @ {} ---", insn.address());
+            println!("{} {}", insn.mnemonic(), insn.operands());
+            println!();
+
+            println!("--- pcode @ {} ---", pcode.address());
+            for (i, op) in pcode.operations().iter().enumerate() {
+                println!("{i:02} {}", op.display(language.translator()));
+            }
+            println!();
+
+            off += insn.len();
+        }
+
+        Ok(())
+    }
 }

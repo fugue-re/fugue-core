@@ -17,3 +17,4 @@ thiserror = "1"
 
 [dev-dependencies]
 anyhow = "1"
+env_logger = "0.10"

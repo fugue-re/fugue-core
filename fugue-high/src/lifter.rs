@@ -64,7 +64,6 @@ impl<'a> PCode<'a> {
     }
 }
 
-
 #[self_referencing]
 struct LifterInner<'a> {
     translator: &'a Translator,
