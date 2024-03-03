@@ -4,6 +4,7 @@ version = "0.3.0"
 edition = "2021"
 
 [dependencies]
+bitflags = "2"
 fugue-arch = { version = "0.3", path = "../fugue-arch" }
 fugue-ir = { version = "0.3", path = "../fugue-ir" }
 nom = "7"
@@ -18,3 +19,5 @@ thiserror = "1"
 [dev-dependencies]
 anyhow = "1"
 env_logger = "0.10"
+yaxpeax-arch = { version = "0.2", default-features = false }
+yaxpeax-arm = "0.2"
