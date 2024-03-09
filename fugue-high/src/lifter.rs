@@ -1,3 +1,4 @@
+use std::cell::{Cell, Ref, RefCell};
 use std::mem;
 
 use fugue_ir::disassembly::lift::{ArenaString, ArenaVec};
@@ -199,3 +200,173 @@ impl<'a> Lifter<'a> {
         *self = Self::new_with(translator, ctx);
     }
 }
+
+bitflags::bitflags! {
+    #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+    pub struct LiftedInsnProperties: u16 {
+        const FALL        = 0b0000_0000_0000_0001;
+        const BRANCH      = 0b0000_0000_0000_0010;
+        const CALL        = 0b0000_0000_0000_0100;
+        const RETURN      = 0b0000_0000_0000_1000;
+
+        const INDIRECT    = 0b0000_0000_0001_0000;
+
+        const BRANCH_DEST = 0b0000_0000_0010_0000;
+        const CALL_DEST   = 0b0000_0000_0100_0000;
+
+        // 1. instruction's address referenced as an immediate
+        //    on the rhs of an assignment
+        // 2. the instruction is a fall from padding
+        const MAYBE_TAKEN = 0b0000_0000_1000_0000;
+
+        // instruction is a semantic NO-OP
+        const NOP         = 0b0000_0001_0000_0000;
+
+        // instruction is a trap (e.g., UD2)
+        const TRAP        = 0b0000_0010_0000_0000;
+
+        // instruction falls into invalid
+        const INVALID     = 0b0000_0100_0000_0000;
+
+        // is contained within a function
+        const IN_FUNCTION = 0b0000_1000_0000_0000;
+
+        // is jump table target
+        const IN_TABLE    = 0b0001_0000_0000_0000;
+
+        // treat as invalid if repeated
+        const NONSENSE    = 0b0010_0000_0000_0000;
+
+        const HALT        = 0b0100_0000_0000_0000;
+
+        const UNVIABLE    = Self::TRAP.bits() | Self::INVALID.bits();
+
+        const DEST        = Self::BRANCH_DEST.bits() | Self::CALL_DEST.bits();
+        const FLOW        = Self::BRANCH.bits() | Self::CALL.bits() | Self::RETURN.bits();
+
+        const TAKEN       = Self::DEST.bits() | Self::MAYBE_TAKEN.bits();
+    }
+}
+
+pub struct LiftedInsn<'a, 'b, T: 'a = ()> {
+    pub address: Address,
+    pub bytes: &'b [u8],
+    pub properties: Cell<LiftedInsnProperties>,
+    pub operations: RefCell<Option<ArenaVec<'a, PCodeData<'a>>>>,
+    pub delay_slots: u8,
+    pub length: u8,
+    pub data: T,
+}
+
+impl<'a, 'b, T: 'a> LiftedInsn<'a, 'b, T> {
+    pub fn address(&self) -> Address {
+        self.address
+    }
+
+    pub fn properties(&self) -> LiftedInsnProperties {
+        self.properties.get()
+    }
+
+    pub fn bytes(&self) -> &[u8] {
+        &self.bytes[..self.len()]
+    }
+
+    pub fn data(&self) -> &T {
+        &self.data
+    }
+
+    pub fn data_mut(&mut self) -> &mut T {
+        &mut self.data
+    }
+
+    pub fn len(&self) -> usize {
+        self.length as _
+    }
+
+    pub fn pcode(
+        &self,
+        lifter: &mut Lifter,
+        irb: &'a IRBuilderArena,
+    ) -> Result<Ref<ArenaVec<'a, PCodeData<'a>>>, Error> {
+        if let Some(operations) = self.try_pcode() {
+            return Ok(operations);
+        }
+
+        self.operations
+            .replace(Some(lifter.lift(irb, self.address, self.bytes)?.operations));
+
+        self.pcode(lifter, irb)
+    }
+
+    pub fn try_pcode(&self) -> Option<Ref<ArenaVec<'a, PCodeData<'a>>>> {
+        Ref::filter_map(self.operations.borrow(), |v| v.as_ref()).ok()
+    }
+
+    pub fn into_pcode(
+        self,
+        lifter: &mut Lifter,
+        irb: &'a IRBuilderArena,
+    ) -> Result<PCode<'a>, Error> {
+        if let Some(operations) = self.operations.into_inner() {
+            return Ok(PCode {
+                address: self.address,
+                operations,
+                delay_slots: self.delay_slots,
+                length: self.length,
+            });
+        }
+
+        lifter.lift(irb, self.address, self.bytes)
+    }
+}
+
+pub trait InsnLifter<'a, T: 'a = ()> {
+    type Error;
+
+    fn properties<'b>(
+        &mut self,
+        lifter: &mut Lifter,
+        irb: &'a IRBuilderArena,
+        address: Address,
+        bytes: &'b [u8],
+    ) -> Result<LiftedInsn<'a, 'b, T>, Self::Error>;
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct DefaultInsnLifter;
+
+impl DefaultInsnLifter {
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+impl<'a> InsnLifter<'a> for DefaultInsnLifter {
+    type Error = Error;
+
+    fn properties<'b>(
+        &mut self,
+        lifter: &mut Lifter,
+        irb: &'a IRBuilderArena,
+        address: Address,
+        bytes: &'b [u8],
+    ) -> Result<LiftedInsn<'a, 'b>, Self::Error> {
+        let PCode {
+            address,
+            operations,
+            delay_slots,
+            length,
+        } = lifter.lift(irb, address, bytes)?;
+
+        Ok(LiftedInsn {
+            address,
+            bytes,
+            operations: RefCell::new(Some(operations)),
+            properties: Cell::new(LiftedInsnProperties::default()),
+            delay_slots,
+            length,
+            data: (),
+        })
+    }
+}
+

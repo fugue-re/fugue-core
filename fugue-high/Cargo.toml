@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 bitflags = "2"
 fugue-arch = { version = "0.3", path = "../fugue-arch" }
+fugue-bv = { version = "0.3", path = "../fugue-bv" }
 fugue-ir = { version = "0.3", path = "../fugue-ir" }
 nom = "7"
 ouroboros = "0.18"
@@ -15,9 +16,9 @@ serde = { version = "1", features = ["derive"] }
 serde_yaml = "0.9"
 static_init = "1"
 thiserror = "1"
+yaxpeax-arch = { version = "0.2", default-features = false }
+yaxpeax-arm = "0.2"
 
 [dev-dependencies]
 anyhow = "1"
 env_logger = "0.10"
-yaxpeax-arch = { version = "0.2", default-features = false }
-yaxpeax-arm = "0.2"
