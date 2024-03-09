@@ -190,6 +190,10 @@ impl<'a> Lifter<'a> {
         })
     }
 
+    pub fn translator(&self) -> &Translator {
+        self.0.borrow_translator()
+    }
+
     pub fn reset(&mut self) {
         let translator = *self.0.borrow_translator();
         let mut ctx = translator.context_database();
