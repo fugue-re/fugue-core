@@ -88,10 +88,7 @@ where
         }
     }
 
-    pub fn step(
-        &mut self,
-        operation: &PCodeData,
-    ) -> Result<EvaluatorTarget, EvaluatorError> {
+    pub fn step(&mut self, operation: &PCodeData) -> Result<EvaluatorTarget, EvaluatorError> {
         match operation.opcode {
             Opcode::Copy => {
                 let val = self.context.read_vnd(&operation.inputs[0])?;
@@ -102,29 +99,38 @@ where
                 let src = &operation.inputs[1];
                 let lsz = dst.size();
 
-                let loc = bv2addr(self.context.read_vnd(src)?)?;
-                let mem = VarnodeData::new(self.default_space, loc.offset(), lsz);
-
-                let val = self.context.read_vnd(&mem)?;
+                let loc = self.read_addr(src)?;
+                let val = self.read_mem(loc, lsz)?;
 
                 self.assign(dst, val)?;
             }
             Opcode::Store => {
                 let dst = &operation.inputs[1];
                 let src = &operation.inputs[2];
-                let ssz = src.size();
-
-                let loc = bv2addr(self.context.read_vnd(dst)?)?;
-                let mem = VarnodeData::new(self.default_space, loc.offset(), ssz);
 
                 let val = self.context.read_vnd(&src)?;
+                let loc = self.read_addr(dst)?;
 
-                self.assign(&mem, val)?;
+                self.write_mem(loc, &val)?;
             }
-            op => { return Err(EvaluatorError::Unsupported(op)) },
+            op => return Err(EvaluatorError::Unsupported(op)),
         }
 
         Ok(EvaluatorTarget::Fall)
+    }
+
+    fn read_addr(&mut self, var: &VarnodeData) -> Result<Address, EvaluatorError> {
+        bv2addr(self.context.read_vnd(var)?)
+    }
+
+    fn read_mem(&mut self, addr: Address, sz: usize) -> Result<BitVec, EvaluatorError> {
+        let mem = VarnodeData::new(self.default_space, addr.offset(), sz);
+        self.context.read_vnd(&mem)
+    }
+
+    fn write_mem(&mut self, addr: Address, val: &BitVec) -> Result<(), EvaluatorError> {
+        let mem = VarnodeData::new(self.default_space, addr.offset(), val.bits() / 8);
+        self.context.write_vnd(&mem, val)
     }
 
     fn assign(&mut self, var: &VarnodeData, val: BitVec) -> Result<(), EvaluatorError> {
