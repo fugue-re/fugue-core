@@ -12,6 +12,8 @@ use crate::lifter::Lifter;
 pub enum EvaluatorError {
     #[error("invalid address: {0:x}")]
     Address(BitVec),
+    #[error("division by zero")]
+    DivideByZero,
     #[error("{0}")]
     Lift(fugue_ir::error::Error),
     #[error("unsupported opcode: {0:?}")]
@@ -59,6 +61,7 @@ where
 {
     context: &'b mut C,
     default_space: &'a AddressSpace,
+    #[allow(unused)]
     translator: &'a Translator,
 }
 
@@ -72,6 +75,10 @@ fn bv2addr(bv: BitVec) -> Result<Address, EvaluatorError> {
     bv.to_u64()
         .map(Address::from)
         .ok_or_else(|| EvaluatorError::Address(bv))
+}
+
+fn bool2bv(val: bool) -> BitVec {
+    BitVec::from(if val { 1u8 } else { 0u8 })
 }
 
 impl<'a, 'b, C> Evaluator<'a, 'b, C>
@@ -113,10 +120,221 @@ where
 
                 self.write_mem(loc, &val)?;
             }
+            Opcode::IntAdd => {
+                self.lift_unsigned_int2(operation, |lhs, rhs| Ok(lhs + rhs))?;
+            }
+            Opcode::IntSub => {
+                self.lift_unsigned_int2(operation, |lhs, rhs| Ok(lhs - rhs))?;
+            }
+            Opcode::IntMul => {
+                self.lift_unsigned_int2(operation, |lhs, rhs| Ok(lhs * rhs))?;
+            }
+            Opcode::IntDiv => {
+                self.lift_unsigned_int2(operation, |lhs, rhs| {
+                    if rhs.is_zero() {
+                        Err(EvaluatorError::DivideByZero)
+                    } else {
+                        Ok(lhs / rhs)
+                    }
+                })?;
+            }
+            Opcode::IntSDiv => {
+                self.lift_signed_int2(operation, |lhs, rhs| {
+                    if rhs.is_zero() {
+                        Err(EvaluatorError::DivideByZero)
+                    } else {
+                        Ok(lhs / rhs)
+                    }
+                })?;
+            }
+            Opcode::IntRem => {
+                self.lift_unsigned_int2(operation, |lhs, rhs| {
+                    if rhs.is_zero() {
+                        Err(EvaluatorError::DivideByZero)
+                    } else {
+                        Ok(lhs % rhs)
+                    }
+                })?;
+            }
+            Opcode::IntSRem => {
+                self.lift_signed_int2(operation, |lhs, rhs| {
+                    if rhs.is_zero() {
+                        Err(EvaluatorError::DivideByZero)
+                    } else {
+                        Ok(lhs % rhs)
+                    }
+                })?;
+            }
+            Opcode::IntLShift => {
+                self.lift_unsigned_int2(operation, |lhs, rhs| Ok(lhs << rhs))?;
+            }
+            Opcode::IntRShift => {
+                self.lift_unsigned_int2(operation, |lhs, rhs| Ok(lhs >> rhs))?;
+            }
+            Opcode::IntSRShift => {
+                self.lift_signed_int2(operation, |lhs, rhs| Ok(lhs >> rhs))?;
+            }
+            Opcode::IntAnd => {
+                self.lift_unsigned_int2(operation, |lhs, rhs| Ok(lhs & rhs))?;
+            }
+            Opcode::IntOr => {
+                self.lift_unsigned_int2(operation, |lhs, rhs| Ok(lhs | rhs))?;
+            }
+            Opcode::IntXor => {
+                self.lift_unsigned_int2(operation, |lhs, rhs| Ok(lhs ^ rhs))?;
+            }
+            Opcode::IntCarry => {
+                self.lift_unsigned_int2(operation, |lhs, rhs| Ok(bool2bv(lhs.carry(&rhs))))?;
+            }
+            Opcode::IntSCarry => {
+                self.lift_signed_int2(operation, |lhs, rhs| Ok(bool2bv(lhs.signed_carry(&rhs))))?;
+            }
+            Opcode::IntSBorrow => {
+                self.lift_signed_int2(operation, |lhs, rhs| Ok(bool2bv(lhs.signed_borrow(&rhs))))?;
+            }
+            Opcode::IntEq => {
+                self.lift_unsigned_int2(operation, |lhs, rhs| Ok(bool2bv(lhs == rhs)))?;
+            }
+            Opcode::IntNotEq => {
+                self.lift_unsigned_int2(operation, |lhs, rhs| Ok(bool2bv(lhs != rhs)))?;
+            }
+            Opcode::IntLess => {
+                self.lift_unsigned_int2(operation, |lhs, rhs| Ok(bool2bv(lhs < rhs)))?;
+            }
+            Opcode::IntSLess => {
+                self.lift_signed_int2(operation, |lhs, rhs| Ok(bool2bv(lhs < rhs)))?;
+            }
+            Opcode::IntLessEq => {
+                self.lift_unsigned_int2(operation, |lhs, rhs| Ok(bool2bv(lhs <= rhs)))?;
+            }
+            Opcode::IntSLessEq => {
+                self.lift_signed_int2(operation, |lhs, rhs| Ok(bool2bv(lhs <= rhs)))?;
+            }
+            Opcode::IntSExt => {
+                self.lift_signed_int1(operation, |val| Ok(val))?;
+            }
+            Opcode::IntZExt => {
+                self.lift_unsigned_int1(operation, |val| Ok(val))?;
+            }
+            Opcode::IntNeg => {
+                self.lift_signed_int1(operation, |val| Ok(-val))?;
+            }
+            Opcode::IntNot => {
+                self.lift_unsigned_int1(operation, |val| Ok(!val))?;
+            }
+            Opcode::BoolNot => {
+                self.lift_bool1(operation, |val| Ok(!val))?;
+            }
+            Opcode::BoolAnd => {
+                self.lift_bool2(operation, |lhs, rhs| Ok(lhs & rhs))?;
+            }
+            Opcode::BoolOr => {
+                self.lift_bool2(operation, |lhs, rhs| Ok(lhs | rhs))?;
+            }
+            Opcode::BoolXor => {
+                self.lift_bool2(operation, |lhs, rhs| Ok(lhs ^ rhs))?;
+            }
+            Opcode::LZCount => self.lift_unsigned_int1(operation, |val| {
+                Ok(BitVec::from_u32(val.leading_zeros(), val.bits()))
+            })?,
+            Opcode::PopCount => self.lift_unsigned_int1(operation, |val| {
+                Ok(BitVec::from_u32(val.count_ones(), val.bits()))
+            })?,
             op => return Err(EvaluatorError::Unsupported(op)),
         }
 
         Ok(EvaluatorTarget::Fall)
+    }
+
+    fn lift_signed_int2<F>(&mut self, operation: &PCodeData, op: F) -> Result<(), EvaluatorError>
+    where
+        F: FnOnce(BitVec, BitVec) -> Result<BitVec, EvaluatorError>,
+    {
+        self.lift_int2(operation, |val, bits| val.signed().cast(bits), op)
+    }
+
+    fn lift_unsigned_int2<F>(&mut self, operation: &PCodeData, op: F) -> Result<(), EvaluatorError>
+    where
+        F: FnOnce(BitVec, BitVec) -> Result<BitVec, EvaluatorError>,
+    {
+        self.lift_int2(operation, |val, bits| val.unsigned().cast(bits), op)
+    }
+
+    fn lift_int2<F, G>(
+        &mut self,
+        operation: &PCodeData,
+        cast: F,
+        op: G,
+    ) -> Result<(), EvaluatorError>
+    where
+        F: Fn(BitVec, usize) -> BitVec,
+        G: FnOnce(BitVec, BitVec) -> Result<BitVec, EvaluatorError>,
+    {
+        let lhs = self.context.read_vnd(&operation.inputs[0])?;
+        let rhs = self.context.read_vnd(&operation.inputs[1])?;
+        let dst = operation.output.as_ref().unwrap();
+
+        let siz = lhs.bits().max(rhs.bits());
+        let val = op(cast(lhs, siz), cast(rhs, siz))?;
+
+        self.assign(dst, val.cast(dst.size() * 8))
+    }
+
+    fn lift_signed_int1<F>(&mut self, operation: &PCodeData, op: F) -> Result<(), EvaluatorError>
+    where
+        F: FnOnce(BitVec) -> Result<BitVec, EvaluatorError>,
+    {
+        self.lift_int1(operation, |val| val.signed(), op)
+    }
+
+    fn lift_unsigned_int1<F>(&mut self, operation: &PCodeData, op: F) -> Result<(), EvaluatorError>
+    where
+        F: FnOnce(BitVec) -> Result<BitVec, EvaluatorError>,
+    {
+        self.lift_int1(operation, |val| val.unsigned(), op)
+    }
+
+    fn lift_int1<F, G>(
+        &mut self,
+        operation: &PCodeData,
+        cast: F,
+        op: G,
+    ) -> Result<(), EvaluatorError>
+    where
+        F: Fn(BitVec) -> BitVec,
+        G: FnOnce(BitVec) -> Result<BitVec, EvaluatorError>,
+    {
+        let rhs = self.context.read_vnd(&operation.inputs[0])?;
+        let dst = operation.output.as_ref().unwrap();
+
+        let val = op(cast(rhs))?;
+
+        self.assign(dst, val.cast(dst.size() * 8))
+    }
+
+    fn lift_bool2<F>(&mut self, operation: &PCodeData, op: F) -> Result<(), EvaluatorError>
+    where
+        F: FnOnce(bool, bool) -> Result<bool, EvaluatorError>,
+    {
+        let lhs = self.context.read_vnd(&operation.inputs[0])?;
+        let rhs = self.context.read_vnd(&operation.inputs[1])?;
+        let dst = operation.output.as_ref().unwrap();
+
+        let val = bool2bv(op(!lhs.is_zero(), !rhs.is_zero())?);
+
+        self.assign(dst, val.cast(dst.size() * 8))
+    }
+
+    fn lift_bool1<F>(&mut self, operation: &PCodeData, op: F) -> Result<(), EvaluatorError>
+    where
+        F: FnOnce(bool) -> Result<bool, EvaluatorError>,
+    {
+        let rhs = self.context.read_vnd(&operation.inputs[0])?;
+        let dst = operation.output.as_ref().unwrap();
+
+        let val = bool2bv(op(!rhs.is_zero())?);
+
+        self.assign(dst, val.cast(dst.size() * 8))
     }
 
     fn read_addr(&mut self, var: &VarnodeData) -> Result<Address, EvaluatorError> {
