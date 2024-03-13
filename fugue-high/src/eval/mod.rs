@@ -50,9 +50,9 @@ pub trait EvaluatorContext {
 pub struct DummyContext {
     base: Address,
     endian: Endian,
-    memory: fixed_state::FixedState,
-    registers: fixed_state::FixedState,
-    temporaries: fixed_state::FixedState,
+    memory: FixedState,
+    registers: FixedState,
+    temporaries: FixedState,
 }
 
 impl DummyContext {
