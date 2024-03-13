@@ -4,9 +4,11 @@ version = "0.3.0"
 edition = "2021"
 
 [dependencies]
+anyhow = "1"
 bitflags = "2"
 fugue-arch = { version = "0.3", path = "../fugue-arch" }
 fugue-bv = { version = "0.3", path = "../fugue-bv" }
+fugue-bytes = { version = "0.3", path = "../fugue-bytes" }
 fugue-ir = { version = "0.3", path = "../fugue-ir" }
 nom = "7"
 ouroboros = "0.18"

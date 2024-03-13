@@ -1,5 +1,6 @@
 use fugue_bv::BitVec;
 
+use fugue_bytes::Endian;
 use fugue_ir::disassembly::{Opcode, PCodeData};
 use fugue_ir::{Address, AddressSpace, Translator, VarnodeData};
 
@@ -7,6 +8,9 @@ use thiserror::Error;
 
 use crate::ir::Location;
 use crate::lifter::Lifter;
+
+pub mod fixed_state;
+use self::fixed_state::FixedState;
 
 #[derive(Debug, Error)]
 pub enum EvaluatorError {
@@ -16,8 +20,26 @@ pub enum EvaluatorError {
     DivideByZero,
     #[error("{0}")]
     Lift(fugue_ir::error::Error),
+    #[error("{0}")]
+    State(anyhow::Error),
     #[error("unsupported opcode: {0:?}")]
     Unsupported(Opcode),
+}
+
+impl EvaluatorError {
+    pub fn state<E>(e: E) -> Self
+    where
+        E: std::error::Error + Send + Sync + 'static,
+    {
+        Self::State(anyhow::Error::new(e))
+    }
+
+    pub fn state_with<M>(msg: M) -> Self
+    where
+        M: std::fmt::Display + std::fmt::Debug + Send + Sync + 'static,
+    {
+        Self::State(anyhow::Error::msg(msg))
+    }
 }
 
 pub trait EvaluatorContext {
@@ -25,7 +47,41 @@ pub trait EvaluatorContext {
     fn write_vnd(&mut self, var: &VarnodeData, val: &BitVec) -> Result<(), EvaluatorError>;
 }
 
-pub struct DummyContext;
+pub struct DummyContext {
+    base: Address,
+    endian: Endian,
+    memory: fixed_state::FixedState,
+    registers: fixed_state::FixedState,
+    temporaries: fixed_state::FixedState,
+}
+
+impl DummyContext {
+    pub fn new(lifter: &Lifter, base: impl Into<Address>, size: usize) -> Self {
+        let t = lifter.translator();
+
+        Self {
+            base: base.into(),
+            endian: if t.is_big_endian() {
+                Endian::Big
+            } else {
+                Endian::Little
+            },
+            memory: FixedState::new(size),
+            registers: FixedState::new(t.register_space_size()),
+            temporaries: FixedState::new(t.unique_space_size()),
+        }
+    }
+
+    fn translate(&self, addr: u64) -> Result<usize, EvaluatorError> {
+        let addr = addr
+            .checked_sub(self.base.into())
+            .ok_or(EvaluatorError::state_with(
+                "address translation out-of-bounds",
+            ))?;
+
+        Ok(addr as usize)
+    }
+}
 
 impl EvaluatorContext for DummyContext {
     fn read_vnd(&mut self, var: &VarnodeData) -> Result<BitVec, EvaluatorError> {
@@ -33,22 +89,36 @@ impl EvaluatorContext for DummyContext {
         if spc.is_constant() {
             Ok(BitVec::from_u64(var.offset(), var.size() * 8))
         } else if spc.is_register() {
-            todo!("read a register")
+            self.registers
+                .read_val_with(var.offset() as usize, var.size(), self.endian)
+                .map_err(EvaluatorError::state)
         } else if spc.is_unique() {
-            todo!("read a temporary")
+            self.temporaries
+                .read_val_with(var.offset() as usize, var.size(), self.endian)
+                .map_err(EvaluatorError::state)
         } else {
-            todo!("read memory")
+            let addr = self.translate(var.offset())?;
+            self.memory
+                .read_val_with(addr, var.size(), self.endian)
+                .map_err(EvaluatorError::state)
         }
     }
 
     fn write_vnd(&mut self, var: &VarnodeData, val: &BitVec) -> Result<(), EvaluatorError> {
         let spc = var.space();
         if spc.is_register() {
-            todo!("write a register: {val}")
+            self.registers
+                .write_val_with(var.offset() as usize, val, self.endian)
+                .map_err(EvaluatorError::state)
         } else if spc.is_unique() {
-            todo!("write a temporary: {val}")
+            self.temporaries
+                .write_val_with(var.offset() as usize, val, self.endian)
+                .map_err(EvaluatorError::state)
         } else if spc.is_default() {
-            todo!("write memory: {val}")
+            let addr = self.translate(var.offset())?;
+            self.memory
+                .write_val_with(addr, val, self.endian)
+                .map_err(EvaluatorError::state)
         } else {
             panic!("cannot write to constant Varnode")
         }
