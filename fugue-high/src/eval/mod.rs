@@ -1,11 +1,11 @@
 use fugue_bv::BitVec;
 
 use fugue_ir::disassembly::{Opcode, PCodeData};
-use fugue_ir::il::Location;
 use fugue_ir::{Address, AddressSpace, Translator, VarnodeData};
 
 use thiserror::Error;
 
+use crate::ir::Location;
 use crate::lifter::Lifter;
 
 #[derive(Debug, Error)]
@@ -65,10 +65,12 @@ where
     translator: &'a Translator,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum EvaluatorTarget {
     Branch(Location),
+    Call(Location),
     Fall,
+    Return(Location),
 }
 
 fn bv2addr(bv: BitVec) -> Result<Address, EvaluatorError> {
@@ -95,7 +97,11 @@ where
         }
     }
 
-    pub fn step(&mut self, operation: &PCodeData) -> Result<EvaluatorTarget, EvaluatorError> {
+    pub fn step(
+        &mut self,
+        loc: Location,
+        operation: &PCodeData,
+    ) -> Result<EvaluatorTarget, EvaluatorError> {
         match operation.opcode {
             Opcode::Copy => {
                 let val = self.context.read_vnd(&operation.inputs[0])?;
@@ -240,10 +246,70 @@ where
             Opcode::PopCount => self.lift_unsigned_int1(operation, |val| {
                 Ok(BitVec::from_u32(val.count_ones(), val.bits()))
             })?,
+            Opcode::Subpiece => self.subpiece(operation)?,
+            Opcode::Branch => {
+                let locn =
+                    Location::absolute_from(loc.address(), operation.inputs[0], loc.position());
+                return Ok(EvaluatorTarget::Branch(locn));
+            }
+            Opcode::CBranch => {
+                if self.read_bool(&operation.inputs[1])? {
+                    let locn =
+                        Location::absolute_from(loc.address(), operation.inputs[0], loc.position());
+                    return Ok(EvaluatorTarget::Branch(locn));
+                }
+            }
+            Opcode::IBranch => {
+                let addr = self.read_addr(&operation.inputs[0])?;
+                return Ok(EvaluatorTarget::Branch(addr.into()));
+            }
+            Opcode::Call => {
+                let locn =
+                    Location::absolute_from(loc.address(), operation.inputs[0], loc.position());
+                return Ok(EvaluatorTarget::Call(locn));
+            }
+            Opcode::ICall => {
+                let addr = self.read_addr(&operation.inputs[0])?;
+                return Ok(EvaluatorTarget::Call(addr.into()));
+            }
+            Opcode::Return => {
+                let addr = self.read_addr(&operation.inputs[0])?;
+                return Ok(EvaluatorTarget::Return(addr.into()));
+            }
             op => return Err(EvaluatorError::Unsupported(op)),
         }
 
         Ok(EvaluatorTarget::Fall)
+    }
+
+    fn subpiece(&mut self, operation: &PCodeData) -> Result<(), EvaluatorError> {
+        let src = self.context.read_vnd(&operation.inputs[0])?;
+        let src_size = src.bits();
+
+        let off = operation.inputs[1].offset() as usize * 8;
+
+        let dst = operation.output.as_ref().unwrap();
+        let dst_size = dst.size() * 8;
+
+        let trun_size = src_size.saturating_sub(off);
+        let trun = if dst_size > trun_size {
+            // extract high + expand
+            if trun_size >= src_size {
+                src
+            } else {
+                src >> (src_size - trun_size) as u32
+            }
+            .unsigned()
+            .cast(trun_size)
+            .cast(dst_size)
+        } else {
+            // extract
+            if off > 0 { src >> off as u32 } else { src }
+                .unsigned()
+                .cast(dst_size)
+        };
+
+        self.assign(dst, trun)
     }
 
     fn lift_signed_int2<F>(&mut self, operation: &PCodeData, op: F) -> Result<(), EvaluatorError>
@@ -335,6 +401,11 @@ where
         let val = bool2bv(op(!rhs.is_zero())?);
 
         self.assign(dst, val.cast(dst.size() * 8))
+    }
+
+    fn read_bool(&mut self, var: &VarnodeData) -> Result<bool, EvaluatorError> {
+        let val = self.context.read_vnd(var)?;
+        Ok(!val.is_zero())
     }
 
     fn read_addr(&mut self, var: &VarnodeData) -> Result<Address, EvaluatorError> {

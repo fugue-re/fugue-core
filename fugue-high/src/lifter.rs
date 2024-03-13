@@ -1,69 +1,14 @@
 use std::cell::{Cell, Ref, RefCell};
 use std::mem;
 
-use fugue_ir::disassembly::lift::{ArenaString, ArenaVec};
+use fugue_ir::disassembly::lift::ArenaVec;
 use fugue_ir::disassembly::{ContextDatabase, IRBuilderArena, PCodeData, ParserContext};
 use fugue_ir::error::Error;
 use fugue_ir::{Address, Translator};
 
 use ouroboros::self_referencing;
 
-#[derive(Debug)]
-pub struct Insn<'a> {
-    pub address: Address,
-    pub mnemonic: ArenaString<'a>,
-    pub operands: ArenaString<'a>,
-    pub delay_slots: u8,
-    pub length: u8,
-}
-
-impl<'a> Insn<'a> {
-    pub fn address(&self) -> Address {
-        self.address
-    }
-
-    pub fn mnemonic(&self) -> &str {
-        &self.mnemonic
-    }
-
-    pub fn operands(&self) -> &str {
-        &self.operands
-    }
-
-    pub fn delay_slots(&self) -> usize {
-        self.delay_slots as _
-    }
-
-    pub fn len(&self) -> usize {
-        self.length as _
-    }
-}
-
-#[derive(Debug)]
-pub struct PCode<'a> {
-    pub address: Address,
-    pub operations: ArenaVec<'a, PCodeData<'a>>,
-    pub delay_slots: u8,
-    pub length: u8,
-}
-
-impl<'a> PCode<'a> {
-    pub fn address(&self) -> Address {
-        self.address
-    }
-
-    pub fn operations(&self) -> &[PCodeData<'a>] {
-        &self.operations
-    }
-
-    pub fn delay_slots(&self) -> usize {
-        self.delay_slots as _
-    }
-
-    pub fn len(&self) -> usize {
-        self.length as _
-    }
-}
+use crate::ir::{Insn, PCode};
 
 #[self_referencing]
 struct LifterInner<'a> {
@@ -373,4 +318,3 @@ impl<'a> InsnLifter<'a> for DefaultInsnLifter {
         })
     }
 }
-

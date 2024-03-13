@@ -12,7 +12,8 @@ pub use yaxpeax_arm::armv7::{
     DecodeError as ARMDecoderError, InstDecoder as ARMInstDecoder, Instruction as ARMInstruction,
 };
 
-use crate::lifter::{InsnLifter, LiftedInsn, LiftedInsnProperties, Lifter, PCode};
+use crate::ir::PCode;
+use crate::lifter::{InsnLifter, LiftedInsn, LiftedInsnProperties, Lifter};
 
 pub struct ARMInsnLifter {
     decoder: ARMInstDecoder,
