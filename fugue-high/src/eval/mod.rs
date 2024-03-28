@@ -1,6 +1,4 @@
 use fugue_bv::BitVec;
-
-use fugue_bytes::Endian;
 use fugue_ir::disassembly::{Opcode, PCodeData};
 use fugue_ir::{Address, AddressSpace, Translator, VarnodeData};
 
@@ -8,6 +6,8 @@ use thiserror::Error;
 
 use crate::ir::Location;
 use crate::lifter::Lifter;
+
+pub mod dummy;
 
 pub mod fixed_state;
 use self::fixed_state::FixedState;
@@ -45,84 +45,6 @@ impl EvaluatorError {
 pub trait EvaluatorContext {
     fn read_vnd(&mut self, var: &VarnodeData) -> Result<BitVec, EvaluatorError>;
     fn write_vnd(&mut self, var: &VarnodeData, val: &BitVec) -> Result<(), EvaluatorError>;
-}
-
-pub struct DummyContext {
-    base: Address,
-    endian: Endian,
-    memory: FixedState,
-    registers: FixedState,
-    temporaries: FixedState,
-}
-
-impl DummyContext {
-    pub fn new(lifter: &Lifter, base: impl Into<Address>, size: usize) -> Self {
-        let t = lifter.translator();
-
-        Self {
-            base: base.into(),
-            endian: if t.is_big_endian() {
-                Endian::Big
-            } else {
-                Endian::Little
-            },
-            memory: FixedState::new(size),
-            registers: FixedState::new(t.register_space_size()),
-            temporaries: FixedState::new(t.unique_space_size()),
-        }
-    }
-
-    fn translate(&self, addr: u64) -> Result<usize, EvaluatorError> {
-        let addr = addr
-            .checked_sub(self.base.into())
-            .ok_or(EvaluatorError::state_with(
-                "address translation out-of-bounds",
-            ))?;
-
-        Ok(addr as usize)
-    }
-}
-
-impl EvaluatorContext for DummyContext {
-    fn read_vnd(&mut self, var: &VarnodeData) -> Result<BitVec, EvaluatorError> {
-        let spc = var.space();
-        if spc.is_constant() {
-            Ok(BitVec::from_u64(var.offset(), var.size() * 8))
-        } else if spc.is_register() {
-            self.registers
-                .read_val_with(var.offset() as usize, var.size(), self.endian)
-                .map_err(EvaluatorError::state)
-        } else if spc.is_unique() {
-            self.temporaries
-                .read_val_with(var.offset() as usize, var.size(), self.endian)
-                .map_err(EvaluatorError::state)
-        } else {
-            let addr = self.translate(var.offset())?;
-            self.memory
-                .read_val_with(addr, var.size(), self.endian)
-                .map_err(EvaluatorError::state)
-        }
-    }
-
-    fn write_vnd(&mut self, var: &VarnodeData, val: &BitVec) -> Result<(), EvaluatorError> {
-        let spc = var.space();
-        if spc.is_register() {
-            self.registers
-                .write_val_with(var.offset() as usize, val, self.endian)
-                .map_err(EvaluatorError::state)
-        } else if spc.is_unique() {
-            self.temporaries
-                .write_val_with(var.offset() as usize, val, self.endian)
-                .map_err(EvaluatorError::state)
-        } else if spc.is_default() {
-            let addr = self.translate(var.offset())?;
-            self.memory
-                .write_val_with(addr, val, self.endian)
-                .map_err(EvaluatorError::state)
-        } else {
-            panic!("cannot write to constant Varnode")
-        }
-    }
 }
 
 pub struct Evaluator<'a, 'b, C>
@@ -169,9 +91,10 @@ where
 
     pub fn step(
         &mut self,
-        loc: Location,
+        loc: impl Into<Location>,
         operation: &PCodeData,
     ) -> Result<EvaluatorTarget, EvaluatorError> {
+        let loc = loc.into();
         match operation.opcode {
             Opcode::Copy => {
                 let val = self.context.read_vnd(&operation.inputs[0])?;

@@ -84,10 +84,10 @@ impl Location {
     }
 }
 
-impl From<Address> for Location {
-    fn from(address: Address) -> Self {
+impl<T> From<T> for Location where Address: From<T> {
+    fn from(value: T) -> Self {
         Self {
-            address,
+            address: value.into(),
             position: 0,
         }
     }
