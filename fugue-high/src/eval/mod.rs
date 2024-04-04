@@ -27,6 +27,8 @@ pub enum EvaluatorError {
 }
 
 impl EvaluatorError {
+
+    /// used to generate a generic State EvaluatorError
     pub fn state<E>(e: E) -> Self
     where
         E: std::error::Error + Send + Sync + 'static,
@@ -34,6 +36,7 @@ impl EvaluatorError {
         Self::State(anyhow::Error::new(e))
     }
 
+    /// used to generate a generic State EvaluatorError with custom message
     pub fn state_with<M>(msg: M) -> Self
     where
         M: std::fmt::Display + std::fmt::Debug + Send + Sync + 'static,
@@ -42,11 +45,25 @@ impl EvaluatorError {
     }
 }
 
+/// Provided to the Evaluator struct to implement reads and writes to varnodes
+/// 
+/// Varnodes don't have explicitly associated memory, so a Context struct is required
+/// to implement concrete reads and writes. See DummyContext for a simple example of how 
+/// this might be done
 pub trait EvaluatorContext {
+    /// read as "read varnode"
+    /// given a varnode, returns a bitvec containing the varnode's associated data
     fn read_vnd(&mut self, var: &VarnodeData) -> Result<BitVec, EvaluatorError>;
+
+    /// read as "write varnode"
+    /// given a varnode and bitvec value to write, stores the bitvec data for later retrieval
     fn write_vnd(&mut self, var: &VarnodeData, val: &BitVec) -> Result<(), EvaluatorError>;
 }
 
+/// A dummy context to provide the Evaluator for testing purposes
+/// 
+/// implements 3 persistent varnode address/memory spaces, each of which has a 
+/// single associated contiguous block of memory
 pub struct DummyContext {
     base: Address,
     endian: Endian,
@@ -56,6 +73,8 @@ pub struct DummyContext {
 }
 
 impl DummyContext {
+
+    /// instantiates a new dummy context
     pub fn new(lifter: &Lifter, base: impl Into<Address>, size: usize) -> Self {
         let t = lifter.translator();
 
@@ -72,6 +91,7 @@ impl DummyContext {
         }
     }
 
+    /// utility function to translate an absolute address to be relative to the context base address
     fn translate(&self, addr: u64) -> Result<usize, EvaluatorError> {
         let addr = addr
             .checked_sub(self.base.into())
@@ -478,21 +498,29 @@ where
         Ok(!val.is_zero())
     }
 
-    fn read_addr(&mut self, var: &VarnodeData) -> Result<Address, EvaluatorError> {
+    pub fn read_addr(&mut self, var: &VarnodeData) -> Result<Address, EvaluatorError> {
         bv2addr(self.context.read_vnd(var)?)
     }
 
-    fn read_mem(&mut self, addr: Address, sz: usize) -> Result<BitVec, EvaluatorError> {
+    pub fn read_mem(&mut self, addr: Address, sz: usize) -> Result<BitVec, EvaluatorError> {
         let mem = VarnodeData::new(self.default_space, addr.offset(), sz);
         self.context.read_vnd(&mem)
     }
 
-    fn write_mem(&mut self, addr: Address, val: &BitVec) -> Result<(), EvaluatorError> {
+    pub fn write_mem(&mut self, addr: Address, val: &BitVec) -> Result<(), EvaluatorError> {
         let mem = VarnodeData::new(self.default_space, addr.offset(), val.bits() / 8);
         self.context.write_vnd(&mem, val)
     }
 
-    fn assign(&mut self, var: &VarnodeData, val: BitVec) -> Result<(), EvaluatorError> {
+    pub fn assign(&mut self, var: &VarnodeData, val: BitVec) -> Result<(), EvaluatorError> {
         self.context.write_vnd(var, &val.cast(var.size() * 8))
+    }
+
+    pub fn read_reg<S: AsRef<str>>(&mut self, name: S) -> Result<BitVec, EvaluatorError> {
+        if let Some(reg) = self.translator.register_by_name(name) {
+            self.context.read_vnd(&reg)
+        } else {
+            Err(EvaluatorError::state_with("register does not exist"))
+        }
     }
 }
