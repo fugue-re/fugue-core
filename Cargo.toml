@@ -8,7 +8,8 @@ members = [
   "fugue-high",
   "fugue-ir",
   "fugue-state",
-  "fugue-state-derive",
+  "fugue-state-derive", 
+  "fugue-emu",
 ]
 resolver = "2"
 
