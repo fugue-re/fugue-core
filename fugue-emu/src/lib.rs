@@ -1,5 +1,7 @@
 pub mod context;
 
+
+
 #[allow(unused_imports)]
 #[cfg(test)]
 mod tests {
@@ -266,7 +268,7 @@ mod tests {
 
             // println!("--- pcode @ {} ---", pcode.address());
             let mut branch = false;
-            for (i, op) in pcode.operations().iter().enumerate() {
+            for (_i, op) in pcode.operations().iter().enumerate() {
                 // println!("{i:02} {}", op.display(lang.translator()));
                 
                 let target = evaluator

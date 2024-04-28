@@ -1,7 +1,7 @@
 //! A concrete context module
 //! 
 //! an evaluator context with a segmented memory map
-
+#![allow(unused_imports)]
 use fugue::bv::BitVec;
 use fugue::bytes::Endian;
 use fugue::ir::{
@@ -50,7 +50,7 @@ impl ConcreteContext {
 
         // allocate memory map in 4kb chunks. 
         for &(addr, size) in map_sizes.iter() {
-            if (size % 0x1000 != 0 || addr % 0x1000 != 0) {
+            if size % 0x1000 != 0 || addr % 0x1000 != 0 {
                 panic!("memory map not 4KB aligned.");
             }
             let mut addr_base = addr >> 12;
@@ -85,6 +85,7 @@ impl ConcreteContext {
     }
 }
 
+// note: these will break if attempt to access a varnode with size larger than 0x1000
 impl EvaluatorContext for ConcreteContext {
     fn read_vnd(&mut self, var: &VarnodeData) -> Result<BitVec, EvaluatorError> {
         let spc = var.space();
