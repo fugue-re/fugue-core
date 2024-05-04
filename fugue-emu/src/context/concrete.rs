@@ -1,7 +1,8 @@
 //! A concrete context module
 //! 
-//! an evaluator context with a segmented memory map
+//! single-block memory meant for use with context manager
 #![allow(unused_imports)]
+use std::fmt;
 use fugue::bv::BitVec;
 use fugue::bytes::Endian;
 use fugue::ir::{
@@ -15,63 +16,39 @@ use fugue::high::{
     lifter::Lifter,
     eval::{
         fixed_state::FixedState,
+        fixed_state::FixedStateError,
         EvaluatorError,
         EvaluatorContext,
     },
 };
 use std::collections::HashMap;
+use crate::context::{
+    Context,
+    MappedContext,
+    ContextError,
+};
 
-// todo
-// implement a MemoryMap structure that contains more info from svd
-
-/// ConcreteContext
+/// ConcreteMemory
 /// 
-/// Implements memory as a segmented memory map of FixedStates.
-/// Assumes a 32-bit Address.
-/// Memory is segmented in minimum 0x1000 byte (4 KB) segments.
-pub struct ConcreteContext {
+/// Implements memory as a single Fixed State.
+/// Assumes a 32-bit Address and that all accesses are by absolute address.
+pub struct ConcreteMemory {
     base: Address,
     endian: Endian,
-    memory_map: HashMap<u32, FixedState>,
-    registers: FixedState,
-    temporaries: FixedState,
+    memory: FixedState,
 }
 
-impl ConcreteContext {
+impl ConcreteMemory {
     /// instantiate a new concrete context
     pub fn new(
-        lifter: &Lifter, 
         base: impl Into<Address>, 
-        map_sizes: Vec<(u32, usize)>
+        endian: Endian, 
+        size: usize
     ) -> Self {
-        let t = lifter.translator();
-
-        let mut memory_map = HashMap::new();
-
-        // allocate memory map in 4kb chunks. 
-        for &(addr, size) in map_sizes.iter() {
-            if size % 0x1000 != 0 || addr % 0x1000 != 0 {
-                panic!("memory map not 4KB aligned.");
-            }
-            let mut addr_base = addr >> 12;
-            let mut remaining = size;
-            while remaining > 0 {
-                memory_map.insert(addr_base, FixedState::new(0x1000));
-                remaining -= 0x1000;
-                addr_base += 1;
-            }
-        }
-
         Self {
             base: base.into(),
-            endian: if t.is_big_endian() {
-                Endian::Big
-            } else {
-                Endian::Little
-            },
-            memory_map: memory_map,
-            registers: FixedState::new(t.register_space_size()),
-            temporaries: FixedState::new(t.unique_space_size()),
+            endian: endian,
+            memory: FixedState::new(size),
         }
     }
 
@@ -86,53 +63,72 @@ impl ConcreteContext {
 }
 
 // note: these will break if attempt to access a varnode with size larger than 0x1000
-impl EvaluatorContext for ConcreteContext {
+impl EvaluatorContext for ConcreteMemory {
+
     fn read_vnd(&mut self, var: &VarnodeData) -> Result<BitVec, EvaluatorError> {
         let spc = var.space();
-        if spc.is_constant() {
-            Ok(BitVec::from_u64(var.offset(), var.size() * 8))
-        } else if spc.is_register() {
-            self.registers
-                .read_val_with(var.offset() as usize, var.size(), self.endian)
-                .map_err(EvaluatorError::state)
-        } else if spc.is_unique() {
-            self.temporaries
-                .read_val_with(var.offset() as usize, var.size(), self.endian)
+        if spc.is_default() {
+            let addr = self.translate(var.offset())?;
+            self.memory
+                .read_val_with(addr, var.size(), self.endian)
                 .map_err(EvaluatorError::state)
         } else {
-            let addr = self.translate(var.offset())?;
-            // translate addr to access memory hashmap
-            let addr_base = (addr >> 12) as u32;
-            let offset = addr & 0xFFF;
-            let memory_chunk = self.memory_map.get_mut(&addr_base)
-                .ok_or(EvaluatorError::state_with(format!("address not mapped 0x{:x}", addr)))?;
-            memory_chunk
-                .read_val_with(offset, var.size(), self.endian)
-                .map_err(EvaluatorError::state)
+            Err(EvaluatorError::state_with("expected default address space id "))
         }
     }
 
     fn write_vnd(&mut self, var: &VarnodeData, val: &BitVec) -> Result<(), EvaluatorError> {
         let spc = var.space();
-        if spc.is_constant() {
-            panic!("cannot write to constant Varnode")
-        } else if spc.is_register() {
-            self.registers
-                .write_val_with(var.offset() as usize, val, self.endian)
-                .map_err(EvaluatorError::state)
-        } else if spc.is_unique() {
-            self.temporaries
-                .write_val_with(var.offset() as usize, val, self.endian)
+        if spc.is_default() {
+            let addr = self.translate(var.offset())?;
+            self.memory
+                .write_val_with(addr, val, self.endian)
                 .map_err(EvaluatorError::state)
         } else {
-            let addr = self.translate(var.offset())?;
-            let addr_base = (addr >> 12) as u32;
-            let offset = addr & 0xFFF;
-            let memory_chunk = self.memory_map.get_mut(&addr_base)
-                .ok_or(EvaluatorError::state_with(format!("address not mapped 0x{:x}", addr)))?;
-            memory_chunk
-                .write_val_with(offset, val, self.endian)
-                .map_err(EvaluatorError::state)
-        } 
+            Err(EvaluatorError::state_with("expected default address space id "))
+        }
+    }
+}
+
+impl MappedContext for ConcreteMemory {
+
+    fn base(&self) -> Address {
+        self.base.clone()
+    }
+
+    fn size(&self) -> usize {
+        self.memory.len()
+    }
+
+    /// read bytes from memory
+    /// returns a vector of bytes
+    fn read_bytes(
+        &self, 
+        address: impl Into<Address>, 
+        size: usize
+    ) -> Result<Vec<u8>, ContextError> {
+        let offset = self.translate(u64::from(address.into()))
+            .map_err(ContextError::state)?;
+        self.memory.view_bytes(offset, size)
+            .map_err(ContextError::state)
+            .map(Vec::from)
+    }
+
+    /// write bytes to memory
+    fn write_bytes(
+        &mut self,
+        address: impl Into<Address>,
+        values: &[u8],
+    ) -> Result<(), ContextError> {
+        let offset = self.translate(u64::from(address.into()))
+            .map_err(ContextError::state)?;
+        self.memory.write_bytes(offset, values)
+            .map_err(ContextError::state)
+    }
+}
+
+impl From<ConcreteMemory> for Context {
+    fn from(value: ConcreteMemory) -> Self {
+        Context::Concrete(value)
     }
 }
