@@ -23,10 +23,10 @@ use fugue::high::{
 };
 use std::collections::HashMap;
 use crate::context::{
-    Context,
     MappedContext,
     ContextError,
 };
+
 
 /// ConcreteMemory
 /// 
@@ -104,10 +104,10 @@ impl MappedContext for ConcreteMemory {
     /// returns a vector of bytes
     fn read_bytes(
         &self, 
-        address: impl Into<Address>, 
+        address: Address, 
         size: usize
     ) -> Result<Vec<u8>, ContextError> {
-        let offset = self.translate(u64::from(address.into()))
+        let offset = self.translate(u64::from(address))
             .map_err(ContextError::state)?;
         self.memory.view_bytes(offset, size)
             .map_err(ContextError::state)
@@ -117,18 +117,12 @@ impl MappedContext for ConcreteMemory {
     /// write bytes to memory
     fn write_bytes(
         &mut self,
-        address: impl Into<Address>,
+        address: Address,
         values: &[u8],
     ) -> Result<(), ContextError> {
-        let offset = self.translate(u64::from(address.into()))
+        let offset = self.translate(u64::from(address))
             .map_err(ContextError::state)?;
         self.memory.write_bytes(offset, values)
             .map_err(ContextError::state)
-    }
-}
-
-impl From<ConcreteMemory> for Context {
-    fn from(value: ConcreteMemory) -> Self {
-        Context::Concrete(value)
     }
 }

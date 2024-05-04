@@ -7,7 +7,6 @@ pub mod context;
 mod tests {
     use super::*;
     use crate::context::{
-        Context,
         ContextType,
         ContextError,
         MappedContext,

@@ -39,10 +39,6 @@ impl ContextError {
     }
 }
 
-/// the context
-pub enum Context {
-    Concrete(concrete::ConcreteMemory),
-}
 pub enum ContextType {
     Concrete,
 }
@@ -55,74 +51,13 @@ pub trait MappedContext: EvaluatorContext {
     /// returns a vector of bytes
     fn read_bytes(
         &self, 
-        address: impl Into<Address>, 
+        address: Address,
         size: usize
     ) -> Result<Vec<u8>, ContextError>;
     /// write bytes to context
     fn write_bytes(
         &mut self,
-        address: impl Into<Address>,
+        address: Address,
         values: &[u8],
     ) -> Result<(), ContextError>;
-}
-
-// pattern inspired by https://stackoverflow.com/questions/59889518
-// may need a refactor eventually
-impl EvaluatorContext for Context {
-    fn read_vnd(
-        &mut self, 
-        var: &VarnodeData
-    ) -> Result<BitVec, EvaluatorError> {
-        match self {
-            Context::Concrete(c) => c.read_vnd(var),
-        }
-    }
-
-    fn write_vnd(
-        &mut self, 
-        var: &VarnodeData, 
-        val: &BitVec
-    ) -> Result<(), EvaluatorError> {
-        match self {
-            Context::Concrete(c) => c.write_vnd(var, val),
-        }
-    }
-}
-
-impl MappedContext for Context {
-    fn base(&self) -> Address {
-        match self {
-            Context::Concrete(c) => c.base(),
-        }
-    }
-
-    fn size(&self) -> usize {
-        match self {
-            Context::Concrete(c) => c.size(),
-        }
-    }
-    
-    fn read_bytes(
-        &self, 
-        address: impl Into<Address>, 
-        size: usize
-    ) -> Result<Vec<u8>, ContextError> {
-        match self {
-            Context::Concrete(c) => {
-                c.read_bytes(address, size)
-            },
-        }
-    }
-    
-    fn write_bytes(
-        &mut self,
-        address: impl Into<Address>,
-        values: &[u8],
-    ) -> Result<(), ContextError> {
-        match self {
-            Context::Concrete(c) => {
-                c.write_bytes(address, values)
-            },
-        }
-    }
 }

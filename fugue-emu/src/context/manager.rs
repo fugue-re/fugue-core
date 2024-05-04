@@ -18,7 +18,6 @@ use fugue::high::{
 };
 
 use crate::context::{
-    Context,
     ContextType,
     MappedContext,
     ContextError,
@@ -36,7 +35,7 @@ use super::concrete::ConcreteMemory;
 /// the user.
 pub struct ContextManager<'a> {
     // primary data
-    memory_map: MultiKeyMap<Address, Context>,
+    memory_map: MultiKeyMap<Address, Box<dyn MappedContext>>,
     regs: FixedState,
     tmps: FixedState,
     endian: Endian,
@@ -111,15 +110,15 @@ impl<'a> ContextManager<'a> {
             }
         }
 
-        let context = Context::from(match context_type {
+        let context = match context_type {
             Some(ContextType::Concrete) | None => {
                 ConcreteMemory::new(Address::from(base_address), self.endian, size)
             }
             // for additional future memory types
-        });
+        };
 
         // add memory to memory map
-        self.memory_map.insert(base_address, context);
+        self.memory_map.insert(base_address, Box::new(context));
         let mut addr_alias = base_address + 0x1000u64;
         while addr_alias < base_address + size {
             // must create aliases for 0x1000-aligned addresses
@@ -138,7 +137,7 @@ impl<'a> ContextManager<'a> {
     pub fn get_mut_context_at(
         &mut self, 
         addr: impl Into<Address>
-    ) -> Result<&mut Context, ContextError> {
+    ) -> Result<&mut Box<dyn MappedContext>, ContextError> {
         let address = u64::from(addr.into());
         let align = Address::from(address & !0xFFFu64);
         self.memory_map.get_mut(&align)
