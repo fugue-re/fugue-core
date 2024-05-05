@@ -1,11 +1,13 @@
 pub mod context;
-
-
+pub mod engine;
+pub mod emu;
 
 #[allow(unused_imports)]
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::context;
+    use crate::engine;
     use crate::context::{
         ContextType,
         ContextError,
@@ -13,6 +15,10 @@ mod tests {
     };
     use crate::context::concrete::ConcreteMemory;
     use crate::context::manager::ContextManager;
+    use crate::engine::{
+        Engine,
+        EngineType,
+    };
     use fugue::high::eval::{
         Evaluator,
         EvaluatorContext,
@@ -220,7 +226,121 @@ mod tests {
         assert_eq!(write_val, BitVec::from_le_bytes(&read_bytes));
     }
 
-    
+    #[test]
+    fn test_engine_initialize() {
+        let lang_builder = LanguageBuilder::new("../data/processors")
+            .expect("language builder not instantiated");
+        let lang = lang_builder.build("ARM:LE:32:Cortex", "default")
+            .expect("language failed to build");
+
+        let mut engine_lifter = lang.lifter();
+        let context_lifter = lang.lifter();
+
+        let mut context_manager = ContextManager::new(context_lifter);
+
+        #[allow(unused)]
+        let mut engine = Engine::new(
+            &mut engine_lifter, 
+            EngineType::Concrete,
+            None,
+        );
+    }
+
+    #[test]
+    fn test_engine_fetch() {
+        // set up language
+        let lang_builder = LanguageBuilder::new("../data/processors")
+            .expect("language builder not instantiated");
+        let lang = lang_builder.build("ARM:LE:32:Cortex", "default")
+            .expect("language failed to build");
+
+        // initalize lifters for contex and engine
+        let mut engine_lifter = lang.lifter();
+        let context_lifter = lang.lifter();
+
+        // map concrete context memory
+        let mut context_manager = ContextManager::new(context_lifter);
+        context_manager.map_memory(
+            0x0u64,
+            0x1000usize,
+            Some(ContextType::Concrete)
+        ).expect("failed to map memory");
+
+        // initialize engine
+        let mut engine = Engine::new(
+            &mut engine_lifter, 
+            EngineType::Concrete,
+            None,
+        );
+
+        let insn_bytes: &[u8] = &[
+            0x70, 0x47,             // 00: bx lr
+        ];
+
+        context_manager
+            .write_bytes(Address::from(0x400u64), insn_bytes)
+            .expect("failed to write bytes");
+
+        engine.set_pc(0x400u64, &mut context_manager)
+            .expect("failed to set pc");
+
+        let pc_loc = engine.get_pc_loc(&mut context_manager);
+        
+        assert!(pc_loc.address == 0x400u64);
+
+        let pcode = engine.fetch(&pc_loc, &mut context_manager)
+            .expect("failed to fetch instruction");
+
+        assert!(pcode.operations.len() > 0, "pcode: {:?}", pcode);
+    }
+
+    fn test_engine_step() {
+
+        // set up language
+        let lang_builder = LanguageBuilder::new("../data/processors")
+            .expect("language builder not instantiated");
+        let lang = lang_builder.build("ARM:LE:32:Cortex", "default")
+            .expect("language failed to build");
+
+        // initalize lifters for contex and engine
+        let mut engine_lifter = lang.lifter();
+        let context_lifter = lang.lifter();
+
+        // map concrete context memory
+        let mut context_manager = ContextManager::new(context_lifter);
+        context_manager.map_memory(
+            0x0u64,
+            0x1000usize,
+            Some(ContextType::Concrete)
+        ).expect("failed to map memory");
+
+        // initialize engine
+        let mut engine = Engine::new(
+            &mut engine_lifter, 
+            EngineType::Concrete,
+            None,
+        );
+
+        let insn_bytes: &[u8] = &[
+            0x0c, 0x20,  // 00: movs    r0, #12
+            0x04, 0x21,  // 02: movs    r1, #4
+            0x08, 0x44,  // 04: add     r0, r1
+            0x88, 0x42,  // 06: cmp     r0, r1
+            0x18, 0xbf,  // 08: it      ne
+            0x02, 0x30,  // 0a: addne   r0, #2
+        ];
+
+        context_manager
+            .write_bytes(Address::from(0u64), insn_bytes)
+            .expect("failed to write bytes");
+
+        // check pc defaults to 0
+        let pc_loc = engine.get_pc_loc(&mut context_manager);
+        assert!(pc_loc.address == 0x400u64);
+
+        engine
+            .step(&mut context_manager)
+    }
 
     // // 
     // // general tests

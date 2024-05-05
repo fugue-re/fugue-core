@@ -3,15 +3,8 @@ pub mod manager;
 
 use thiserror::Error;
 
-use fugue::bv::BitVec;
-use fugue::ir::{
-    Address,
-    VarnodeData,
-};
-use fugue::high::eval::{
-    EvaluatorContext,
-    EvaluatorError,
-};
+use fugue::ir::Address;
+use fugue::high::eval::EvaluatorContext;
 
 // ContextError
 #[derive(Debug, Error)]

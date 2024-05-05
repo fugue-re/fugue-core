@@ -112,7 +112,7 @@ fn main() {
         &BitVec::from_i32(5, 32usize)
     ).expect("failed to write varnode!");
 
-    let mut evaluator = Evaluator::new(&context_lifter, &mut context);
+    let mut evaluator = Evaluator::new(&context_lifter);
 
     // prep for execution
     let mut offset = 0usize;
@@ -135,16 +135,16 @@ fn main() {
             println!("{i:02} {}", op.display(lang.translator()));
             
             let target = evaluator
-                .step(Location::from(address + offset), op)
+                .step(Location::from(address + offset), op, &mut context)
                 .expect("evaluator error!");
 
             match target {
                 EvaluatorTarget::Fall => {
                     println!("sp: {:?} r0: {:?} r3: {:?} r7: {:?}",
-                        evaluator.read_reg("sp").unwrap(),
-                        evaluator.read_reg("r0").unwrap(),
-                        evaluator.read_reg("r3").unwrap(),
-                        evaluator.read_reg("r7").unwrap()
+                        evaluator.read_reg("sp", &mut context).unwrap(),
+                        evaluator.read_reg("r0", &mut context).unwrap(),
+                        evaluator.read_reg("r3", &mut context).unwrap(),
+                        evaluator.read_reg("r7", &mut context).unwrap()
                     );  
                 },
                 EvaluatorTarget::Branch(loc) |

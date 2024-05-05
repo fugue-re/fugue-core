@@ -1,7 +1,12 @@
+//! context manager module
+#![allow(unused_imports)]
+
 use std::fmt;
+// todo: reimplement without multikeymap
+// multikeymap uses 2 hashmaps, we only really need one and a vector
+// which might give us performance improvement.
 use multi_key_map::MultiKeyMap;
 
-#[allow(unused_imports)]
 use fugue::bv::BitVec;
 use fugue::bytes::Endian;
 use fugue::ir::{
@@ -9,6 +14,7 @@ use fugue::ir::{
     VarnodeData,
 };
 use fugue::high::{
+    language::Language,
     lifter::Lifter,
     eval::{
         fixed_state::FixedState,
@@ -51,8 +57,10 @@ impl<'a> ContextManager<'a> {
     /// this is to make explicit that the lifter created for the context manager
     /// cannot be used for anything else.
     pub fn new(
+        // lang: &'a Language,
         lifter: Lifter<'a>,
     ) -> Self {
+        // let lifter = lang.lifter();
         let t = lifter.translator();
         let endian = if t.is_big_endian() { 
             Endian::Big 
@@ -134,17 +142,57 @@ impl<'a> ContextManager<'a> {
     }
 
     /// utility for mutably borrowing memory structs
+    #[inline]
     pub fn get_mut_context_at(
         &mut self, 
-        addr: impl Into<Address>
+        address: impl Into<Address>
     ) -> Result<&mut Box<dyn MappedContext>, ContextError> {
-        let address = u64::from(addr.into());
-        let align = Address::from(address & !0xFFFu64);
+        let addr = u64::from(address.into());
+        let align = Address::from(addr & !0xFFFu64);
         self.memory_map.get_mut(&align)
             .ok_or(ContextError::state_with(
                 format!("aligned key not found {}", align)
             ))
     }
+
+    /// utility for immmutably borrowing memory structs
+    #[inline]
+    pub fn get_context_at(
+        &self,
+        address: impl Into<Address>
+    ) -> Result<&Box<dyn MappedContext>, ContextError> {
+        let addr = u64::from(address.into());
+        let align = Address::from(addr & !0xFFFu64);
+        self.memory_map.get(&align)
+            .ok_or(ContextError::state_with(
+                format!("aligned key not found {}", align)
+            ))
+    }
+
+    /// returns a vector of bytes
+    pub fn read_bytes(
+        &self, 
+        address: Address,
+        size: usize
+    ) -> Result<Vec<u8>, ContextError> {
+        let context = self
+            .get_context_at(address)
+            .map_err(ContextError::state)?;
+        context.read_bytes(address, size)
+    }
+
+    /// write bytes to context
+    pub fn write_bytes(
+        &mut self,
+        address: Address,
+        values: &[u8],
+    ) -> Result<(), ContextError> {
+        let context = self
+            .get_mut_context_at(address)
+            .map_err(ContextError::state)?;
+        context.write_bytes(address, values)
+    }
+
 }
 
 impl<'a> EvaluatorContext for ContextManager<'a> {
@@ -166,11 +214,9 @@ impl<'a> EvaluatorContext for ContextManager<'a> {
                 .map_err(EvaluatorError::state)
         } else if spc.is_default() {
             let addr = var.offset();
-            let align = Address::from(addr & !0xFFFu64);
-            let context = self.memory_map.get_mut(&align)
-                .ok_or(EvaluatorError::state_with(
-                    format!("aligned key not found for address {}", addr)
-                ))?;
+            let context = self
+                .get_mut_context_at(addr)
+                .map_err(EvaluatorError::state)?;
             context.read_vnd(&var)
         } else {
             panic!("[ContextManager::read_vnd]: invalid space type: {:?}", spc)
@@ -195,11 +241,9 @@ impl<'a> EvaluatorContext for ContextManager<'a> {
                 .map_err(EvaluatorError::state)
         } else if spc.is_default() {
             let addr = var.offset();
-            let align = Address::from(addr & !0xFFFu64);
-            let context = self.memory_map.get_mut(&align)
-                .ok_or(EvaluatorError::state_with(
-                    format!("aligned key not found for address {}", addr)
-                ))?;
+            let context = self
+                .get_mut_context_at(addr)
+                .map_err(EvaluatorError::state)?;
             context.write_vnd(&var, val)
         } else {
             panic!("[ContextManager::write_vnd]]: invalid space type: {:?}", spc)

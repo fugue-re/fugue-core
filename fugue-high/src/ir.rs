@@ -5,6 +5,9 @@ use fugue_ir::disassembly::lift::{ArenaString, ArenaVec};
 use fugue_ir::disassembly::PCodeData;
 use fugue_ir::{Address, VarnodeData};
 
+/// pcode location
+/// address holds the memory address of the corresponding instruction
+/// position holds the offset of the pcode operation relative to the instruction
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Location {
     pub address: Address,
@@ -23,6 +26,7 @@ impl fmt::Display for Location {
     }
 }
 
+/// note that add increments the pcode position, not the address
 impl Add<u32> for Location {
     type Output = Self;
 
@@ -34,6 +38,7 @@ impl Add<u32> for Location {
     }
 }
 
+/// note that add increments the pcode position, not the address
 impl Add<usize> for Location {
     type Output = Self;
 
@@ -124,7 +129,6 @@ impl<'a> Insn<'a> {
     }
 }
 
-#[derive(Debug)]
 pub struct PCode<'a> {
     pub address: Address,
     pub operations: ArenaVec<'a, PCodeData<'a>>,
@@ -147,5 +151,19 @@ impl<'a> PCode<'a> {
 
     pub fn len(&self) -> usize {
         self.length as _
+    }
+}
+
+impl<'a> fmt::Debug for PCode<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "PCode {{ address: 0x{:016x}, delay_slots: {}, length: {},\n  operations: [",
+            u64::from(self.address),
+            self.delay_slots,
+            self.length
+        )?;
+        for op in self.operations.iter() {
+            writeln!(f, "    {:?};", op)?;
+        }
+        writeln!(f, "  ]\n}}")
     }
 }
