@@ -11,6 +11,8 @@ fugue-bv = { version = "0.3", path = "../fugue-bv" }
 fugue-bytes = { version = "0.3", path = "../fugue-bytes" }
 fugue-ir = { version = "0.3", path = "../fugue-ir" }
 nom = "7"
+memmap2 = "0.9"
+object = "0.35"
 ouroboros = "0.18"
 regex = "1"
 rustc-hash = "1.1"
