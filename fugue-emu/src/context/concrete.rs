@@ -107,8 +107,7 @@ impl MappedContext for ConcreteMemory {
         address: Address, 
         size: usize
     ) -> Result<Vec<u8>, ContextError> {
-        let offset = self.translate(u64::from(address))
-            .map_err(ContextError::state)?;
+        let offset = self.translate(u64::from(address))?;
         self.memory.view_bytes(offset, size)
             .map_err(ContextError::state)
             .map(Vec::from)
@@ -120,8 +119,7 @@ impl MappedContext for ConcreteMemory {
         address: Address,
         values: &[u8],
     ) -> Result<(), ContextError> {
-        let offset = self.translate(u64::from(address))
-            .map_err(ContextError::state)?;
+        let offset = self.translate(u64::from(address))?;
         self.memory.write_bytes(offset, values)
             .map_err(ContextError::state)
     }

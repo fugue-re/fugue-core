@@ -10,8 +10,7 @@ use multi_key_map::MultiKeyMap;
 use fugue::bv::BitVec;
 use fugue::bytes::Endian;
 use fugue::ir::{
-    Address,
-    VarnodeData,
+    translator, Address, VarnodeData
 };
 use fugue::high::{
     language::Language,
@@ -91,14 +90,10 @@ impl<'a> ContextManager<'a> {
         // check arguments
         let base_address = base.into();
         if u64::from(base_address) & 0xFFFu64 != 0 {
-            return Err(ContextError::state_with(
-                format!("base address not aligned: {}", base_address)
-            ))
+            return Err(ContextError::UnalignedAddress(base_address))
         }
         if size & 0xFFFusize != 0 {
-            return Err(ContextError::state_with(
-                format!("memory size not aligned: {}", size)
-            ))
+            return Err(ContextError::UnalignedSize(size, 0x1000usize))
         }
 
         // check for collision with existing mapped contexts
@@ -109,12 +104,7 @@ impl<'a> ContextManager<'a> {
             // check for context overlap
             if base_address < context_ubound 
                     && base_address + size > context_lbound {
-                return Err(ContextError::state_with(
-                    format!(
-                        "map conflict: existing context at {:?}", 
-                        context_lbound
-                    )
-                ))
+                return Err(ContextError::MapConflict(base_address, context_lbound))
             }
         }
 
@@ -150,9 +140,7 @@ impl<'a> ContextManager<'a> {
         let addr = u64::from(address.into());
         let align = Address::from(addr & !0xFFFu64);
         self.memory_map.get_mut(&align)
-            .ok_or(ContextError::state_with(
-                format!("aligned key not found {}", align)
-            ))
+            .ok_or(ContextError::Unmapped(addr.into()))
     }
 
     /// utility for immmutably borrowing memory structs
@@ -164,9 +152,7 @@ impl<'a> ContextManager<'a> {
         let addr = u64::from(address.into());
         let align = Address::from(addr & !0xFFFu64);
         self.memory_map.get(&align)
-            .ok_or(ContextError::state_with(
-                format!("aligned key not found {}", align)
-            ))
+            .ok_or(ContextError::Unmapped(addr.into()))
     }
 
     /// returns a vector of bytes
@@ -193,6 +179,35 @@ impl<'a> ContextManager<'a> {
         context.write_bytes(address, values)
     }
 
+    /// read register by name
+    pub fn read_reg<S>(&mut self, name: S) -> Result<BitVec, ContextError> 
+    where
+        S: AsRef<str>
+    {
+        let translator = self.lifter.translator();
+        if let Some(reg) = translator.register_by_name(name) {
+            self.regs
+                .read_val_with(reg.offset() as usize, reg.size(), self.endian)
+                .map_err(ContextError::state)
+        } else {
+            Err(ContextError::state_with("register does not exist"))
+        }
+    }
+
+    /// write register by name
+    pub fn write_reg<S>(&mut self, name: S, val: &BitVec) -> Result<(), ContextError>
+    where
+        S: AsRef<str>
+    {
+        let translator = self.lifter.translator();
+        if let Some(reg) = translator.register_by_name(name) {
+            self.regs
+                .write_val_with(reg.offset() as usize, val, self.endian)
+                .map_err(ContextError::state)
+        } else {
+            Err(ContextError::state_with("register does not exist"))
+        }
+    }
 }
 
 impl<'a> EvaluatorContext for ContextManager<'a> {
@@ -215,8 +230,7 @@ impl<'a> EvaluatorContext for ContextManager<'a> {
         } else if spc.is_default() {
             let addr = var.offset();
             let context = self
-                .get_mut_context_at(addr)
-                .map_err(EvaluatorError::state)?;
+                .get_mut_context_at(addr)?;
             context.read_vnd(&var)
         } else {
             panic!("[ContextManager::read_vnd]: invalid space type: {:?}", spc)
@@ -242,8 +256,7 @@ impl<'a> EvaluatorContext for ContextManager<'a> {
         } else if spc.is_default() {
             let addr = var.offset();
             let context = self
-                .get_mut_context_at(addr)
-                .map_err(EvaluatorError::state)?;
+                .get_mut_context_at(addr)?;
             context.write_vnd(&var, val)
         } else {
             panic!("[ContextManager::write_vnd]]: invalid space type: {:?}", spc)

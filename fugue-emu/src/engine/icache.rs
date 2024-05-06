@@ -47,10 +47,10 @@ impl<'a> ICache<'a> {
             EngineType::Concrete => { // concrete fetch behavior
                 let insn_bytes = context
                     .read_bytes(location.address, 4usize)
-                    .map_err(EngineError::state)?;
+                    .map_err(EngineError::fetch)?;
                 let mut lifter = lifter.clone();
                 lifter.lift(&mut self.irb, location.address, &insn_bytes)
-                    .map_err(EngineError::state)
+                    .map_err(EngineError::fetch)
             },
         }
     }

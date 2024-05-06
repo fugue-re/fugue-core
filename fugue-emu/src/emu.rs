@@ -29,30 +29,29 @@ use crate::engine;
 // EngineError
 #[derive(Debug, Error)]
 pub enum EmulationError {
-    #[error("{0}")]
-    State(anyhow::Error),
     #[error("Engine Error: {0}")]
     Engine(engine::EngineError),
     #[error("Context Error: {0}")]
     Context(context::ContextError),
+    #[error("Evaluator Error: {0}")]
+    Evaluator(EvaluatorError),
 }
 
-impl EmulationError {
-
-    /// used to generate a generic State EmulationError
-    pub fn state<E>(e: E) -> Self
-    where
-        E: std::error::Error + Send + Sync + 'static,
-    {
-        Self::State(anyhow::Error::new(e))
+impl From<context::ContextError> for EmulationError {
+    fn from(err: context::ContextError) -> Self {
+        Self::Context(err)
     }
+}
 
-    /// used to generate a generic State EmulationError with custom message
-    pub fn state_with<M>(msg: M) -> Self
-    where
-        M: std::fmt::Display + std::fmt::Debug + Send + Sync + 'static,
-    {
-        Self::State(anyhow::Error::msg(msg))
+impl From<engine::EngineError> for EmulationError {
+    fn from(err: engine::EngineError) -> Self {
+        Self::Engine(err)
+    }
+}
+
+impl From<EvaluatorError> for EmulationError {
+    fn from(err: EvaluatorError) -> Self {
+        Self::Evaluator(err)
     }
 }
 

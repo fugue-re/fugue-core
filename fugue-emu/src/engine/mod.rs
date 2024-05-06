@@ -36,32 +36,19 @@ use icache::ICache;
 // EngineError
 #[derive(Debug, Error)]
 pub enum EngineError {
-    #[error("{0}")]
-    State(anyhow::Error),
     #[error("Runtime Error: {0}")]
     Runtime(EvaluatorError),
     #[error("Fetch Error: {0}")]
     Fetch(anyhow::Error),
 }
 
+impl From<EvaluatorError> for EngineError {
+    fn from(err: EvaluatorError) -> Self {
+        EngineError::Runtime(err)
+    }
+}
+
 impl EngineError {
-
-    /// used to generate a generic State EngineError
-    pub fn state<E>(e: E) -> Self
-    where
-        E: std::error::Error + Send + Sync + 'static,
-    {
-        Self::State(anyhow::Error::new(e))
-    }
-
-    /// used to generate a generic State EngineError with custom message
-    pub fn state_with<M>(msg: M) -> Self
-    where
-        M: std::fmt::Display + std::fmt::Debug + Send + Sync + 'static,
-    {
-        Self::State(anyhow::Error::msg(msg))
-    }
-
     /// used to generate a Fetch Error
     pub fn fetch<E>(e: E) -> Self
     where
@@ -100,7 +87,7 @@ impl ProgramCounter {
         let val = &BitVec::from_u64(addr, self.vnd.size() * 8);
         context
             .write_vnd(&self.vnd, val)
-            .map_err(EngineError::state)
+            .map_err(EngineError::from)
     }
 
     /// get program counter from context
@@ -182,8 +169,7 @@ impl<'a> Clocked<'a> for Engine<'a> {
         // fetch and lift
         let pc_loc = self.pc.get_pc_loc(context);
         let pcode = self.icache
-            .fetch(&self.lifter,&pc_loc, context, self.engine_type)
-            .map_err(EmulationError::state)?;
+            .fetch(&self.lifter,&pc_loc, context, self.engine_type)?;
         let insn_length = pcode.length;
 
         // evaluate lifted pcode
@@ -191,8 +177,7 @@ impl<'a> Clocked<'a> for Engine<'a> {
         let mut next_pc_addr = pc_loc.address + (insn_length as usize);
         for (_i, op) in pcode.operations().iter().enumerate() {
             let target = self.evaluator
-                .step(pc_loc, op, context)
-                .map_err(EmulationError::state)?;
+                .step(pc_loc, op, context)?;
             match target {
                 EvaluatorTarget::Branch(loc) |
                 EvaluatorTarget::Call(loc) |
@@ -202,8 +187,7 @@ impl<'a> Clocked<'a> for Engine<'a> {
                 EvaluatorTarget::Fall => { },
             };
         }
-        self.pc.set_pc(next_pc_addr, context)
-            .map_err(EmulationError::state)?;
+        self.pc.set_pc(next_pc_addr, context)?;
         
         Ok(())
     }
