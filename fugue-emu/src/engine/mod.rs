@@ -1,12 +1,12 @@
 //! the cpu module
 //! 
 //! contains evaluator, registers, instruction fetch and cache
-#![allow(unused_imports)]
 
 pub mod icache;
 
 use thiserror::Error;
 
+#[allow(unused_imports)]
 use fugue::high::{
     lifter::Lifter,
     ir::{
@@ -25,13 +25,13 @@ use fugue::bv::BitVec;
 use fugue::ir::{
     Address,
     VarnodeData,
-    disassembly::IRBuilderArena,
 };
 use crate::context::manager::ContextManager;
 use crate::emu::{
     EmulationError,
     Clocked,
 };
+use icache::ICache;
 
 // EngineError
 #[derive(Debug, Error)]
@@ -72,8 +72,52 @@ impl EngineError {
 }
 
 /// implemented engine types
+#[derive(Copy, Clone)]
 pub enum EngineType {
     Concrete,
+}
+
+#[derive(Copy, Clone)]
+pub struct ProgramCounter {
+    vnd: VarnodeData,
+}
+
+impl ProgramCounter {
+    /// ProgramCounter constructor
+    /// takes ownership of pc_varnode for itself
+    pub fn new(pc_varnode: &VarnodeData) -> Self {
+        Self { vnd: pc_varnode.clone() }
+    }
+
+    #[inline(always)]
+    /// set program counter to address
+    pub fn set_pc(
+        &mut self, 
+        address: impl Into<Address>,
+        context: &mut impl EvaluatorContext,
+    ) -> Result<(), EngineError> {
+        let addr = u64::from(address.into());
+        let val = &BitVec::from_u64(addr, self.vnd.size() * 8);
+        context
+            .write_vnd(&self.vnd, val)
+            .map_err(EngineError::state)
+    }
+
+    /// get program counter from context
+    #[inline(always)]
+    pub fn get_pc_loc(
+        &mut self,
+        context: &mut impl EvaluatorContext,
+    ) -> Location {
+        // read the pc val in the varnode (expect always exists)
+        // if it doesn't, panic.
+        let read_val = context
+            .read_vnd(&self.vnd)
+            .unwrap()
+            .to_u64().unwrap_or(0u64);
+
+        Location::new(read_val, 0u32)
+    }
 }
 
 /// a concrete emulation engine
@@ -81,12 +125,12 @@ pub enum EngineType {
 /// manages instruction fetches and execution
 pub struct Engine<'a> 
 {
-    lifter: Lifter<'a>,
-    evaluator: Evaluator<'a>,
-    engine_type: EngineType,
-    // icache: icache::Icache, // instruction cache
-    pc_varnode: VarnodeData,
-    irb: IRBuilderArena,
+    pub lifter: Lifter<'a>,
+    pub evaluator: Evaluator<'a>,
+    pub engine_type: EngineType,
+    pub pc: ProgramCounter,
+
+    pub(crate) icache: ICache<'a>, // instruction cache
 }
 
 impl<'a> Engine<'a> {
@@ -108,24 +152,9 @@ impl<'a> Engine<'a> {
             lifter: lifter.clone(),
             evaluator: evaluator,
             engine_type: engine_type,
-            pc_varnode: program_counter_vnd.clone(),
-            irb: lifter.irb(irb_size.unwrap_or(1024)),
+            pc: ProgramCounter::new(program_counter_vnd),
+            icache: ICache::new(lifter.irb(irb_size.unwrap_or(1024))),
         }
-    }
-
-    #[inline(always)]
-    pub fn get_pc_loc<'b>(
-        &mut self,
-        context: &mut ContextManager<'b>,
-    ) -> Location {
-        // read the pc val in the varnode (expect always exists)
-        // if it doesn't, panic.
-        let read_val = context
-            .read_vnd(&self.pc_varnode)
-            .unwrap()
-            .to_u64().unwrap_or(0u64);
-
-        Location::new(read_val, 0u32)
     }
 
     /// get reference to engine lifter
@@ -136,38 +165,6 @@ impl<'a> Engine<'a> {
     /// get engine type
     pub fn engine_type(&self) -> &EngineType {
         &self.engine_type
-    }
-
-    #[inline(always)]
-    /// set program counter to address
-    pub fn set_pc<'b>(
-        &mut self, 
-        address: impl Into<Address>,
-        context: &mut ContextManager<'b>,
-    ) -> Result<(), EngineError> {
-        let addr = u64::from(address.into());
-        let val = &BitVec::from_u64(addr, self.pc_varnode.size() * 8);
-        context
-            .write_vnd(&self.pc_varnode, val)
-            .map_err(EngineError::state)
-    }
-
-    /// fetch and lift instruction at location
-    pub(crate) fn fetch<'b>(
-        &self,
-        location: &Location,
-        context: &mut ContextManager<'b>
-    ) -> Result<PCode, EngineError> {
-        match self.engine_type {
-            EngineType::Concrete => { // concrete fetch behavior
-                let insn_bytes = context
-                    .read_bytes(location.address, 4usize)
-                    .map_err(EngineError::state)?;
-                let mut lifter = self.lifter.clone();
-                lifter.lift(&self.irb, location.address, &insn_bytes)
-                    .map_err(EngineError::state)
-            },
-        }
     }
 
 }
@@ -183,15 +180,16 @@ impl<'a> Clocked<'a> for Engine<'a> {
         // todo: implement interrupts
 
         // fetch and lift
-        let pc_loc = self.get_pc_loc(context);
-        let pcode = self.fetch(&pc_loc, context)
+        let pc_loc = self.pc.get_pc_loc(context);
+        let pcode = self.icache
+            .fetch(&self.lifter,&pc_loc, context, self.engine_type)
             .map_err(EmulationError::state)?;
         let insn_length = pcode.length;
 
         // evaluate lifted pcode
         // right now assumes everything but last is fall-through
         let mut next_pc_addr = pc_loc.address + (insn_length as usize);
-        for (i, op) in pcode.operations().iter().enumerate() {
+        for (_i, op) in pcode.operations().iter().enumerate() {
             let target = self.evaluator
                 .step(pc_loc, op, context)
                 .map_err(EmulationError::state)?;
@@ -204,8 +202,8 @@ impl<'a> Clocked<'a> for Engine<'a> {
                 EvaluatorTarget::Fall => { },
             };
         }
-
-        self.set_pc(next_pc_addr, context);
+        self.pc.set_pc(next_pc_addr, context)
+            .map_err(EmulationError::state)?;
         
         Ok(())
     }

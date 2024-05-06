@@ -8,6 +8,7 @@ mod tests {
     use super::*;
     use crate::context;
     use crate::engine;
+    use crate::emu::Clocked;
     use crate::context::{
         ContextType,
         ContextError,
@@ -236,6 +237,7 @@ mod tests {
         let mut engine_lifter = lang.lifter();
         let context_lifter = lang.lifter();
 
+        #[allow(unused)]
         let mut context_manager = ContextManager::new(context_lifter);
 
         #[allow(unused)]
@@ -281,19 +283,26 @@ mod tests {
             .write_bytes(Address::from(0x400u64), insn_bytes)
             .expect("failed to write bytes");
 
-        engine.set_pc(0x400u64, &mut context_manager)
+        engine.pc.set_pc(0x400u64, &mut context_manager)
             .expect("failed to set pc");
 
-        let pc_loc = engine.get_pc_loc(&mut context_manager);
+        let pc_loc = engine.pc.get_pc_loc(&mut context_manager);
         
         assert!(pc_loc.address == 0x400u64);
 
-        let pcode = engine.fetch(&pc_loc, &mut context_manager)
+        let pcode = engine.icache
+            .fetch(
+                &engine.lifter,
+                &pc_loc, 
+                &mut context_manager, 
+                engine.engine_type
+            )
             .expect("failed to fetch instruction");
 
         assert!(pcode.operations.len() > 0, "pcode: {:?}", pcode);
     }
 
+    #[test]
     fn test_engine_step() {
 
         // set up language
@@ -335,11 +344,19 @@ mod tests {
             .expect("failed to write bytes");
 
         // check pc defaults to 0
-        let pc_loc = engine.get_pc_loc(&mut context_manager);
-        assert!(pc_loc.address == 0x400u64);
+        let pc_loc = engine.pc.get_pc_loc(&mut context_manager);
+        assert!(pc_loc.address == 0u64);
 
-        engine
-            .step(&mut context_manager)
+        for i in 0..6 {
+            assert!(
+                engine.step(&mut context_manager).is_ok(),
+                "failed at step {}", i
+            );
+        }
+
+        // check pc incremented
+        let pc_loc = engine.pc.get_pc_loc(&mut context_manager);
+        assert!(pc_loc.address == 0xcu64);
     }
 
     // // 
