@@ -112,7 +112,7 @@ fn main() {
         &BitVec::from_i32(5, 32usize)
     ).expect("failed to write varnode!");
 
-    let mut evaluator = Evaluator::new(&context_lifter);
+    let mut evaluator = Evaluator::new(context_lifter.translator());
 
     // prep for execution
     let mut offset = 0usize;

@@ -25,6 +25,7 @@ use fugue::bv::BitVec;
 use fugue::ir::{
     Address,
     VarnodeData,
+    Translator,
 };
 use crate::context::manager::ContextManager;
 use crate::emu::{
@@ -123,24 +124,23 @@ pub struct Engine<'a>
 impl<'a> Engine<'a> {
     /// instantiate a new concrete emulation engine
     /// 
-    /// note: lifter, evaluator, and context are consumed, not borrowed
+    /// note: lifter continues to be borrowed by evaluator
     pub fn new(
-        lifter: &'a mut Lifter,
+        translator: &'a Translator,
         engine_type: EngineType,
         irb_size: Option<usize>,
     ) -> Self {
-        let t = lifter.translator();
-        let program_counter_vnd = t.program_counter();
+        let program_counter_vnd = translator.program_counter();
 
         let evaluator = match engine_type {
-            EngineType::Concrete => Evaluator::new(lifter),
+            EngineType::Concrete => Evaluator::new(translator),
         };
         Self {
-            lifter: lifter.clone(),
+            lifter: Lifter::new(&translator),
             evaluator: evaluator,
             engine_type: engine_type,
             pc: ProgramCounter::new(program_counter_vnd),
-            icache: ICache::new(lifter.irb(irb_size.unwrap_or(1024))),
+            icache: ICache::new(Lifter::new(&translator).irb(irb_size.unwrap_or(1024))),
         }
     }
 

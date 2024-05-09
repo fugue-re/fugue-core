@@ -262,7 +262,7 @@ mod tests {
         let lang = lang_builder.build("ARM:LE:32:Cortex", "default")
             .expect("language failed to build");
 
-        let mut engine_lifter = lang.lifter();
+        let engine_lifter = lang.lifter();
         let context_lifter = lang.lifter();
 
         #[allow(unused)]
@@ -270,7 +270,7 @@ mod tests {
 
         #[allow(unused)]
         let mut engine = Engine::new(
-            &mut engine_lifter, 
+            engine_lifter.translator(), 
             EngineType::Concrete,
             None,
         );
@@ -285,7 +285,7 @@ mod tests {
             .expect("language failed to build");
 
         // initalize lifters for contex and engine
-        let mut engine_lifter = lang.lifter();
+        let engine_lifter = lang.lifter();
         let context_lifter = lang.lifter();
 
         // map concrete context memory
@@ -298,7 +298,7 @@ mod tests {
 
         // initialize engine
         let mut engine = Engine::new(
-            &mut engine_lifter, 
+            engine_lifter.translator(), 
             EngineType::Concrete,
             None,
         );
@@ -340,7 +340,7 @@ mod tests {
             .expect("language failed to build");
 
         // initalize lifters for contex and engine
-        let mut engine_lifter = lang.lifter();
+        let engine_lifter = lang.lifter();
         let context_lifter = lang.lifter();
 
         // map concrete context memory
@@ -353,7 +353,7 @@ mod tests {
 
         // initialize engine
         let mut engine = Engine::new(
-            &mut engine_lifter, 
+            engine_lifter.translator(), 
             EngineType::Concrete,
             None,
         );
@@ -437,10 +437,8 @@ mod tests {
             .expect("language failed to build");
 
         // initalize lifters for contex and engine
-        let mut engine_lifter = lang.lifter();
+        let engine_lifter = lang.lifter();
         let context_lifter = lang.lifter();
-        let lifter = lang.lifter();
-        let translator = lifter.translator();
 
         // map concrete context memory
         let mem_size = 0x1000usize;
@@ -453,7 +451,7 @@ mod tests {
 
         // initialize engine
         let mut engine = Engine::new(
-            &mut engine_lifter, 
+            engine_lifter.translator(), 
             EngineType::Concrete,
             None,
         );
@@ -482,7 +480,7 @@ mod tests {
                 Ok(_) => {
                     pc = engine.pc.get_pc_loc(&mut context_manager).address();
                 },
-                Err(EmulationError::Engine(EngineError::Fetch(err))) => {
+                Err(EmulationError::Engine(EngineError::Fetch(_))) => {
                     break;
                 },
                 Err(err) => {

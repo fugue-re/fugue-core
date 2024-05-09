@@ -171,8 +171,7 @@ fn bool2bv(val: bool) -> BitVec {
 }
 
 impl<'a> Evaluator<'a> {
-    pub fn new(lifter: &'a Lifter) -> Self {
-        let translator = lifter.translator();
+    pub fn new(translator: &'a Translator) -> Self {
         let spaces = translator.manager();
         Self {
             default_space: spaces.default_space_ref(),
