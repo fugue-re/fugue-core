@@ -25,14 +25,65 @@ pub trait X86Arch: Arch {
 }
 
 impl X86Arch for x86_32 {
-    fn should_lift(_insn: &Self::Instruction) -> bool {
-        true
+    fn should_lift(insn: &Self::Instruction) -> bool {
+        use yaxpeax_x86::protected_mode::Opcode;
+
+        return match insn.opcode() {
+            Opcode::JO |
+            Opcode::JB |
+            Opcode::JZ |
+            Opcode::JA |
+            Opcode::JS |
+            Opcode::JP |
+            Opcode::JL |
+            Opcode::JG |
+            Opcode::JMP |
+            Opcode::JNO |
+            Opcode::JNB |
+            Opcode::JNZ |
+            Opcode::JNA |
+            Opcode::JNS |
+            Opcode::JNP |
+            Opcode::JGE |
+            Opcode::JLE |
+            Opcode::JMPF |
+            Opcode::JMPE |
+            Opcode::JECXZ => true,
+            Opcode::CALL | Opcode::CALLF => true,
+            Opcode::RETF | Opcode::RETURN => true,
+            _ => false,
+        }
     }
 }
 
 impl X86Arch for x86_64 {
-    fn should_lift(_insn: &Self::Instruction) -> bool {
-        true
+    fn should_lift(insn: &Self::Instruction) -> bool {
+        use yaxpeax_x86::amd64::Opcode;
+
+        return match insn.opcode() {
+            Opcode::JO |
+            Opcode::JB |
+            Opcode::JZ |
+            Opcode::JA |
+            Opcode::JS |
+            Opcode::JP |
+            Opcode::JL |
+            Opcode::JG |
+            Opcode::JMP |
+            Opcode::JNO |
+            Opcode::JNB |
+            Opcode::JNZ |
+            Opcode::JNA |
+            Opcode::JNS |
+            Opcode::JNP |
+            Opcode::JGE |
+            Opcode::JLE |
+            Opcode::JMPF |
+            Opcode::JMPE => true,
+            Opcode::CALL | Opcode::CALLF => true,
+            Opcode::RETF | Opcode::RETURN => true,
+            _ => false,
+        }
     }
 }
 

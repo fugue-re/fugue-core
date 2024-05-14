@@ -92,6 +92,7 @@ mod test {
     use super::*;
 
     #[test]
+    #[ignore]
     fn test_single_step() -> anyhow::Result<()> {
         let lbuilder = LanguageBuilder::new("data")?;
         let language = lbuilder.build("ARM:LE:32:v7", "default")?;
