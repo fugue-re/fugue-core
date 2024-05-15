@@ -1,21 +1,31 @@
 [package]
-name = "fugue"
+name = "fugue-core"
 version = "0.3.0"
-authors = ["Sam Thomas <st@xv.ax>", "Zitai Chen <zitaichen@outlook.com>"]
 edition = "2021"
-license = "MIT"
-description = "A binary analysis framework written in Rust"
-homepage = "https://fugue.re"
-
-[features]
-fp = ["fugue-fp"]
-state = ["fugue-state"]
 
 [dependencies]
-fugue-arch = { path = "../fugue-arch", version = "0.3" }
-fugue-bv = { path = "../fugue-bv", version = "0.3" }
-fugue-bytes = { path = "../fugue-bytes", version = "0.3" }
-fugue-high = { path = "../fugue-high", version = "0.3" }
-fugue-fp = { path = "../fugue-fp", version = "0.3", optional = true }
-fugue-ir = { path = "../fugue-ir", version = "0.3" }
-fugue-state = { path = "../fugue-state", version = "0.3", optional = true }
+anyhow = "1"
+bitflags = "2"
+fugue-arch = { version = "0.3", path = "../fugue-arch" }
+fugue-bv = { version = "0.3", path = "../fugue-bv" }
+fugue-bytes = { version = "0.3", path = "../fugue-bytes" }
+fugue-ir = { version = "0.3", path = "../fugue-ir" }
+gazebo = "0.8"
+nom = "7"
+memmap2 = "0.9"
+object = "0.35"
+ouroboros = "0.18"
+regex = "1"
+rustc-hash = "1.1"
+serde = { version = "1", features = ["derive"] }
+serde_yaml = "0.9"
+static_init = "1"
+thiserror = "1"
+yaxpeax-arch = { version = "0.2", default-features = false }
+yaxpeax-arm = "0.2"
+yaxpeax-x86 = "1.2"
+uuid = "1"
+
+[dev-dependencies]
+anyhow = "1"
+env_logger = "0.10"
