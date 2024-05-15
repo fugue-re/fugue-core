@@ -25,6 +25,7 @@ tempfile = "3"
 thiserror = "1"
 yaxpeax-arch = { version = "0.2", default-features = false }
 yaxpeax-arm = "0.2"
+yaxpeax-x86 = "1.2"
 
 [dev-dependencies]
 anyhow = "1"

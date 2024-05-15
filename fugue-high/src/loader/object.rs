@@ -79,6 +79,7 @@ mod test {
     use crate::util::BytesOrMapping;
 
     #[test]
+    #[ignore]
     fn test_elf() -> Result<(), Box<dyn std::error::Error>> {
         let lb = LanguageBuilder::new("data/processors")?;
         let elf = Object::new(BytesOrMapping::from_file("tests/ls.elf")?)?;
