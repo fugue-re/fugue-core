@@ -10,6 +10,7 @@ use memmap2::Mmap;
 use object::ReadRef;
 
 pub mod patfind;
+pub mod table;
 
 pub enum OwnedOrRef<'a, T> {
     Owned(T),

@@ -10,15 +10,18 @@ fugue-arch = { version = "0.3", path = "../fugue-arch" }
 fugue-bv = { version = "0.3", path = "../fugue-bv" }
 fugue-bytes = { version = "0.3", path = "../fugue-bytes" }
 fugue-ir = { version = "0.3", path = "../fugue-ir" }
+heed = { version = "0.20", features = ["read-txn-no-tls", "posix-sem"] }
 nom = "7"
 memmap2 = "0.9"
 object = "0.35"
 ouroboros = "0.18"
 regex = "1"
+rkyv = "0.7"
 rustc-hash = "1.1"
 serde = { version = "1", features = ["derive"] }
 serde_yaml = "0.9"
 static_init = "1"
+tempfile = "3"
 thiserror = "1"
 yaxpeax-arch = { version = "0.2", default-features = false }
 yaxpeax-arm = "0.2"
