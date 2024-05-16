@@ -34,7 +34,7 @@ pub struct ProjectRawViewMmaped {
 }
 
 pub struct ProjectRawViewMmapedReader<'a> {
-    backing: MmapTableReader<'a, U64<LE>, Vec<u8>>,
+    backing: MmapTableReader<'a, U64<LE>>,
     ranges: &'a [Range<Address>],
 }
 
@@ -82,9 +82,7 @@ impl ProjectRawView for ProjectRawViewMmaped {
         let mut ranges = Vec::new();
         let mut backing =
             MmapTable::temporary("binary-view").map_err(ProjectRawViewError::backing)?;
-        let mut tx = backing
-            .writer::<Vec<u8>>()
-            .map_err(ProjectRawViewError::backing)?;
+        let mut tx = backing.writer().map_err(ProjectRawViewError::backing)?;
 
         // Load the segments into the backing store (and keep track of the ranges)
         //
@@ -100,7 +98,7 @@ impl ProjectRawView for ProjectRawViewMmaped {
             // TODO: can we avoid owning the data--it seems needless for what we want to do with
             // it here?
             //
-            tx.set(addr, data.into_owned())
+            tx.set(addr, data.as_ref())
                 .map_err(ProjectRawViewError::backing)?;
 
             ranges.push(addr..addr + size);
@@ -283,7 +281,7 @@ mod test {
         let input = BytesOrMapping::from_file("tests/ls.elf")?;
 
         // Create the project from the mapping object
-        let _prj = Project::<ProjectRawViewInMemory>::new(&Object::new(input)?)?;
+        let _prj = Project::<ProjectRawViewMmaped>::new(&Object::new(input)?)?;
 
         Ok(())
     }

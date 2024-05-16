@@ -14,7 +14,7 @@ pub struct MmapTable<K> {
     temporary: Option<TempDir>,
 }
 
-pub struct MmapTableReader<'a, K, T>
+pub struct MmapTypedTableReader<'a, K, T>
 where
     T: Archive,
 {
@@ -23,13 +23,23 @@ where
     _marker: PhantomData<T>,
 }
 
-pub struct MmapTableWriter<'a, K, T>
+pub struct MmapTypedTableWriter<'a, K, T>
 where
     T: Archive,
 {
     table: &'a MmapTable<K>,
     txn: RwTxn<'a>,
     _marker: PhantomData<T>,
+}
+
+pub struct MmapTableReader<'a, K> {
+    table: &'a MmapTable<K>,
+    txn: RoTxn<'a>,
+}
+
+pub struct MmapTableWriter<'a, K> {
+    table: &'a MmapTable<K>,
+    txn: RwTxn<'a>,
 }
 
 #[derive(Debug, Error)]
@@ -102,7 +112,25 @@ where
         Ok(slf)
     }
 
-    pub fn reader<'a, T>(&'a self) -> Result<MmapTableReader<'a, K, T>, MmapTableError>
+    pub fn reader<'a>(&'a self) -> Result<MmapTableReader<'a, K>, MmapTableError> {
+        let txn = self
+            .environment
+            .read_txn()
+            .map_err(MmapTableError::database)?;
+
+        Ok(MmapTableReader { table: self, txn })
+    }
+
+    pub fn writer<'a>(&'a mut self) -> Result<MmapTableWriter<'a, K>, MmapTableError> {
+        let txn = self
+            .environment
+            .write_txn()
+            .map_err(MmapTableError::database)?;
+
+        Ok(MmapTableWriter { table: self, txn })
+    }
+
+    pub fn typed_reader<'a, T>(&'a self) -> Result<MmapTypedTableReader<'a, K, T>, MmapTableError>
     where
         T: Archive,
     {
@@ -110,14 +138,17 @@ where
             .environment
             .read_txn()
             .map_err(MmapTableError::database)?;
-        Ok(MmapTableReader {
+
+        Ok(MmapTypedTableReader {
             table: self,
             txn,
             _marker: PhantomData,
         })
     }
 
-    pub fn writer<'a, T>(&'a mut self) -> Result<MmapTableWriter<'a, K, T>, MmapTableError>
+    pub fn typed_writer<'a, T>(
+        &'a mut self,
+    ) -> Result<MmapTypedTableWriter<'a, K, T>, MmapTableError>
     where
         T: Archive,
     {
@@ -125,7 +156,8 @@ where
             .environment
             .write_txn()
             .map_err(MmapTableError::database)?;
-        Ok(MmapTableWriter {
+
+        Ok(MmapTypedTableWriter {
             table: self,
             txn,
             _marker: PhantomData,
@@ -133,7 +165,7 @@ where
     }
 }
 
-impl<'a, K, T> MmapTableReader<'a, K, T>
+impl<'a, K, T> MmapTypedTableReader<'a, K, T>
 where
     T: Archive,
 {
@@ -152,7 +184,20 @@ where
     }
 }
 
-impl<'a, K, T> MmapTableWriter<'a, K, T>
+impl<'a, K> MmapTableReader<'a, K> {
+    pub fn get<KE>(&self, key: impl AsRef<KE>) -> Result<Option<&[u8]>, MmapTableError>
+    where
+        K: for<'b> BytesEncode<'b, EItem = KE>,
+        KE: ?Sized + 'static,
+    {
+        self.table
+            .database
+            .get(&self.txn, key.as_ref())
+            .map_err(MmapTableError::database)
+    }
+}
+
+impl<'a, K, T> MmapTypedTableWriter<'a, K, T>
 where
     T: Archive + Serialize<AllocSerializer<1024>>,
 {
@@ -216,6 +261,66 @@ where
     }
 }
 
+impl<'a, K> MmapTableWriter<'a, K> {
+    pub fn get<KE>(&self, key: impl AsRef<KE>) -> Result<Option<&[u8]>, MmapTableError>
+    where
+        K: for<'b> BytesEncode<'b, EItem = KE>,
+        KE: ?Sized + 'static,
+    {
+        self.table
+            .database
+            .get(&self.txn, key.as_ref())
+            .map_err(MmapTableError::database)
+    }
+
+    pub fn set<KE>(
+        &mut self,
+        key: impl AsRef<KE>,
+        val: impl AsRef<[u8]>,
+    ) -> Result<(), MmapTableError>
+    where
+        K: for<'b> BytesEncode<'b, EItem = KE>,
+        KE: ?Sized + 'static,
+    {
+        self.table
+            .database
+            .put(&mut self.txn, key.as_ref(), val.as_ref())
+            .map_err(MmapTableError::database)?;
+
+        Ok(())
+    }
+
+    pub fn clear(&mut self) -> Result<(), MmapTableError> {
+        self.table
+            .database
+            .clear(&mut self.txn)
+            .map_err(MmapTableError::database)?;
+
+        Ok(())
+    }
+
+    pub fn remove<KE>(&mut self, key: impl AsRef<KE>) -> Result<(), MmapTableError>
+    where
+        K: for<'b> BytesEncode<'b, EItem = KE>,
+        KE: ?Sized + 'static,
+    {
+        self.table
+            .database
+            .delete(&mut self.txn, key.as_ref())
+            .map_err(MmapTableError::database)?;
+
+        Ok(())
+    }
+
+    pub fn abort(self) {
+        self.txn.abort()
+    }
+
+    pub fn commit(self) -> Result<(), MmapTableError> {
+        self.txn.commit().map_err(MmapTableError::database)
+    }
+}
+
 #[cfg(test)]
 mod test {
     use heed::types::Str;
@@ -227,7 +332,7 @@ mod test {
         let mut pt = MmapTable::<Str>::temporary("project")?;
 
         {
-            let mut writer = pt.writer::<Vec<u8>>()?;
+            let mut writer = pt.writer()?;
 
             writer.set("mapping1", vec![0u8; 10])?;
             writer.set("mapping2", vec![0u8; 100 * 1024 * 1024])?;
@@ -237,7 +342,7 @@ mod test {
         }
 
         {
-            let reader = pt.reader::<Vec<u8>>()?;
+            let reader = pt.reader()?;
 
             let bytes = reader.get("mapping2")?.unwrap();
 
