@@ -12,6 +12,7 @@ fugue-bytes = { version = "0.3", path = "../fugue-bytes" }
 fugue-ir = { version = "0.3", path = "../fugue-ir" }
 gazebo = "0.8"
 heed = { version = "0.20", features = ["read-txn-no-tls", "posix-sem"] }
+iset = "0.2"
 nom = "7"
 memmap2 = "0.9"
 object = "0.35"

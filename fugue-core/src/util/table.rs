@@ -1,33 +1,33 @@
 use std::marker::PhantomData;
 use std::path::Path;
 
-use heed::types::{Bytes, Str};
-use heed::{Database, Env, EnvOpenOptions, RoTxn, RwTxn};
+use heed::types::Bytes;
+use heed::{BytesEncode, Database, Env, EnvOpenOptions, RoTxn, RwTxn};
 use rkyv::ser::serializers::AllocSerializer;
 use rkyv::{Archive, Serialize};
 use tempfile::TempDir;
 use thiserror::Error;
 
-pub struct MmapTable {
+pub struct MmapTable<K> {
     environment: Env,
-    database: Database<Str, Bytes>,
+    database: Database<K, Bytes>,
     temporary: Option<TempDir>,
 }
 
-pub struct MmapTableReader<'a, T>
+pub struct MmapTableReader<'a, K, T>
 where
     T: Archive,
 {
-    table: &'a MmapTable,
+    table: &'a MmapTable<K>,
     txn: RoTxn<'a>,
     _marker: PhantomData<T>,
 }
 
-pub struct MmapTableWriter<'a, T>
+pub struct MmapTableWriter<'a, K, T>
 where
     T: Archive,
 {
-    table: &'a MmapTable,
+    table: &'a MmapTable<K>,
     txn: RwTxn<'a>,
     _marker: PhantomData<T>,
 }
@@ -63,7 +63,10 @@ impl MmapTableError {
     }
 }
 
-impl MmapTable {
+impl<K> MmapTable<K>
+where
+    K: 'static,
+{
     pub fn new(name: impl AsRef<str>, backing: impl AsRef<Path>) -> Result<Self, MmapTableError> {
         let environment = unsafe {
             EnvOpenOptions::new()
@@ -99,7 +102,7 @@ impl MmapTable {
         Ok(slf)
     }
 
-    pub fn reader<'a, T>(&'a self) -> Result<MmapTableReader<'a, T>, MmapTableError>
+    pub fn reader<'a, T>(&'a self) -> Result<MmapTableReader<'a, K, T>, MmapTableError>
     where
         T: Archive,
     {
@@ -114,7 +117,7 @@ impl MmapTable {
         })
     }
 
-    pub fn writer<'a, T>(&'a mut self) -> Result<MmapTableWriter<'a, T>, MmapTableError>
+    pub fn writer<'a, T>(&'a mut self) -> Result<MmapTableWriter<'a, K, T>, MmapTableError>
     where
         T: Archive,
     {
@@ -130,11 +133,15 @@ impl MmapTable {
     }
 }
 
-impl<'a, T> MmapTableReader<'a, T>
+impl<'a, K, T> MmapTableReader<'a, K, T>
 where
     T: Archive,
 {
-    pub fn get(&self, key: impl AsRef<str>) -> Result<Option<&T::Archived>, MmapTableError> {
+    pub fn get<KE>(&self, key: impl AsRef<KE>) -> Result<Option<&T::Archived>, MmapTableError>
+    where
+        K: for<'b> BytesEncode<'b, EItem = KE>,
+        KE: ?Sized + 'static,
+    {
         let val = self
             .table
             .database
@@ -145,11 +152,15 @@ where
     }
 }
 
-impl<'a, T> MmapTableWriter<'a, T>
+impl<'a, K, T> MmapTableWriter<'a, K, T>
 where
     T: Archive + Serialize<AllocSerializer<1024>>,
 {
-    pub fn get(&self, key: impl AsRef<str>) -> Result<Option<&T::Archived>, MmapTableError> {
+    pub fn get<KE>(&self, key: impl AsRef<KE>) -> Result<Option<&T::Archived>, MmapTableError>
+    where
+        K: for<'b> BytesEncode<'b, EItem = KE>,
+        KE: ?Sized + 'static,
+    {
         let val = self
             .table
             .database
@@ -159,7 +170,11 @@ where
         Ok(val.map(|val| unsafe { rkyv::archived_root::<T>(val) }))
     }
 
-    pub fn set(&mut self, key: impl AsRef<str>, val: impl AsRef<T>) -> Result<(), MmapTableError> {
+    pub fn set<KE>(&mut self, key: impl AsRef<KE>, val: impl AsRef<T>) -> Result<(), MmapTableError>
+    where
+        K: for<'b> BytesEncode<'b, EItem = KE>,
+        KE: ?Sized + 'static,
+    {
         let val = rkyv::to_bytes::<_, 1024>(val.as_ref()).map_err(MmapTableError::database)?;
 
         self.table
@@ -179,7 +194,11 @@ where
         Ok(())
     }
 
-    pub fn remove(&mut self, key: impl AsRef<str>) -> Result<(), MmapTableError> {
+    pub fn remove<KE>(&mut self, key: impl AsRef<KE>) -> Result<(), MmapTableError>
+    where
+        K: for<'b> BytesEncode<'b, EItem = KE>,
+        KE: ?Sized + 'static,
+    {
         self.table
             .database
             .delete(&mut self.txn, key.as_ref())
@@ -199,11 +218,13 @@ where
 
 #[cfg(test)]
 mod test {
+    use heed::types::Str;
+
     use super::*;
 
     #[test]
     fn test_project() -> Result<(), Box<dyn std::error::Error>> {
-        let mut pt = MmapTable::temporary("project")?;
+        let mut pt = MmapTable::<Str>::temporary("project")?;
 
         {
             let mut writer = pt.writer::<Vec<u8>>()?;

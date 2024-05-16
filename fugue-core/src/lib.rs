@@ -7,4 +7,5 @@ pub mod language;
 pub mod lifter;
 pub mod loader;
 pub mod prelude;
+pub mod project;
 pub mod util;
