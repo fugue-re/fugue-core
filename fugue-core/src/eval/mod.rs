@@ -279,10 +279,10 @@ where
         let src = self.context.read_vnd(&operation.inputs[0])?;
         let src_size = src.bits();
 
-        let off = operation.inputs[1].offset() as usize * 8;
+        let off = operation.inputs[1].offset() as u32 * 8;
 
         let dst = operation.output.as_ref().unwrap();
-        let dst_size = dst.size() * 8;
+        let dst_size = dst.bits();
 
         let trun_size = src_size.saturating_sub(off);
         let trun = if dst_size > trun_size {
@@ -326,7 +326,7 @@ where
         op: G,
     ) -> Result<(), EvaluatorError>
     where
-        F: Fn(BitVec, usize) -> BitVec,
+        F: Fn(BitVec, u32) -> BitVec,
         G: FnOnce(BitVec, BitVec) -> Result<BitVec, EvaluatorError>,
     {
         let lhs = self.context.read_vnd(&operation.inputs[0])?;
@@ -336,7 +336,7 @@ where
         let siz = lhs.bits().max(rhs.bits());
         let val = op(cast(lhs, siz), cast(rhs, siz))?;
 
-        self.assign(dst, val.cast(dst.size() * 8))
+        self.assign(dst, val.cast(dst.bits()))
     }
 
     fn lift_signed_int1<F>(&mut self, operation: &PCodeData, op: F) -> Result<(), EvaluatorError>
@@ -368,7 +368,7 @@ where
 
         let val = op(cast(rhs))?;
 
-        self.assign(dst, val.cast(dst.size() * 8))
+        self.assign(dst, val.cast(dst.bits()))
     }
 
     fn lift_bool2<F>(&mut self, operation: &PCodeData, op: F) -> Result<(), EvaluatorError>
@@ -381,7 +381,7 @@ where
 
         let val = bool2bv(op(!lhs.is_zero(), !rhs.is_zero())?);
 
-        self.assign(dst, val.cast(dst.size() * 8))
+        self.assign(dst, val.cast(dst.bits()))
     }
 
     fn lift_bool1<F>(&mut self, operation: &PCodeData, op: F) -> Result<(), EvaluatorError>
@@ -393,7 +393,7 @@ where
 
         let val = bool2bv(op(!rhs.is_zero())?);
 
-        self.assign(dst, val.cast(dst.size() * 8))
+        self.assign(dst, val.cast(dst.bits()))
     }
 
     fn read_bool(&mut self, var: &VarnodeData) -> Result<bool, EvaluatorError> {
@@ -411,11 +411,11 @@ where
     }
 
     fn write_mem(&mut self, addr: Address, val: &BitVec) -> Result<(), EvaluatorError> {
-        let mem = VarnodeData::new(self.default_space, addr.offset(), val.bits() / 8);
+        let mem = VarnodeData::new(self.default_space, addr.offset(), val.bytes());
         self.context.write_vnd(&mem, val)
     }
 
     fn assign(&mut self, var: &VarnodeData, val: BitVec) -> Result<(), EvaluatorError> {
-        self.context.write_vnd(var, &val.cast(var.size() * 8))
+        self.context.write_vnd(var, &val.cast(var.bits()))
     }
 }

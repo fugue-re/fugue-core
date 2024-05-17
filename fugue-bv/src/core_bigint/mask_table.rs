@@ -2060,8 +2060,8 @@ fn mask_value(bits: u32) -> BigInt {
 }
 
 #[inline(always)]
-pub(crate) fn lookup_mask(bits: usize) -> &'static BigInt {
+pub(crate) fn lookup_mask(bits: u32) -> &'static BigInt {
     assert!(bits <= 2048, "unsupported BitVec size: {bits}");
 
-    &MASK_TABLE[bits]
+    &MASK_TABLE[bits as usize]
 }

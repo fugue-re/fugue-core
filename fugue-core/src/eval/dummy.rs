@@ -46,7 +46,7 @@ impl EvaluatorContext for DummyContext {
     fn read_vnd(&mut self, var: &VarnodeData) -> Result<BitVec, EvaluatorError> {
         let spc = var.space();
         if spc.is_constant() {
-            Ok(BitVec::from_u64(var.offset(), var.size() * 8))
+            Ok(BitVec::from_u64(var.offset(), var.bits()))
         } else if spc.is_register() {
             self.registers
                 .read_val_with(var.offset() as usize, var.size(), self.endian)

@@ -90,7 +90,7 @@ impl FixedState {
     ) -> Result<(), FixedStateError> {
         debug_assert_eq!(value.bits() % 8, 0);
 
-        let size = value.bits() / 8;
+        let size = value.bytes();
         let view = self.view_bytes_mut(offset, size)?;
 
         if O::ENDIAN.is_big() {
@@ -111,7 +111,7 @@ impl FixedState {
     ) -> Result<(), FixedStateError> {
         debug_assert_eq!(value.bits() % 8, 0);
 
-        let size = value.bits() / 8;
+        let size = value.bytes();
         let view = self.view_bytes_mut(offset, size)?;
 
         if endian.is_big() {

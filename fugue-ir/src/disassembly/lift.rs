@@ -4,7 +4,6 @@ use std::ops::Deref;
 use std::sync::Arc;
 
 use ahash::AHashMap as Map;
-use smallvec::SmallVec;
 use ustr::Ustr;
 
 use crate::address::AddressValue;
@@ -15,7 +14,6 @@ use crate::disassembly::Opcode;
 use crate::disassembly::VarnodeData;
 use crate::disassembly::{Error, ParserContext, ParserWalker};
 use crate::float_format::FloatFormat;
-use crate::register::RegisterNames;
 use crate::space::AddressSpace;
 use crate::space_manager::SpaceManager;
 use crate::Translator;
@@ -25,9 +23,6 @@ pub use bumpalo::collections::Vec as ArenaVec;
 pub use bumpalo::format as arena_format;
 pub use bumpalo::vec as arena_vec;
 pub use bumpalo::Bump as Arena;
-
-use crate::il::ecode::{self, ECode};
-use crate::il::pcode::{self, PCode};
 
 pub type FloatFormats = Map<usize, Arc<FloatFormat>>;
 pub type UserOpStr = Ustr;
@@ -358,9 +353,6 @@ impl IRBuilderArena {
         IRBuilderBase::empty(
             &self,
             translator.manager(),
-            translator.float_formats(),
-            translator.registers(),
-            translator.user_ops(),
             translator.unique_mask(),
         )
     }
@@ -402,18 +394,12 @@ pub struct IRBuilderBase<'b, 'z> {
     labels: ArenaVec<'z, u64>,
 
     manager: &'b SpaceManager,
-    float_formats: &'b FloatFormats,
-    registers: &'b RegisterNames,
-    user_ops: &'b [UserOpStr],
 }
 
 impl<'b, 'z> IRBuilderBase<'b, 'z> {
     pub fn empty(
         alloc: &'z IRBuilderArena,
         manager: &'b SpaceManager,
-        float_formats: &'b FloatFormats,
-        registers: &'b RegisterNames,
-        user_ops: &'b [UserOpStr],
         unique_mask: u64,
     ) -> Self {
         Self {
@@ -425,9 +411,6 @@ impl<'b, 'z> IRBuilderBase<'b, 'z> {
             labels: ArenaVec::with_capacity_in(16, alloc.inner()),
             label_refs: ArenaVec::with_capacity_in(16, alloc.inner()),
             manager,
-            float_formats,
-            registers,
-            user_ops,
         }
     }
 
@@ -809,7 +792,7 @@ impl<'b, 'c, 'cz, 'z> IRBuilder<'b, 'c, 'cz, 'z> {
         Ok(())
     }
 
-    pub fn emit_raw(self, length: usize) -> PCodeRaw<'z> {
+    pub fn emit(self, length: usize) -> PCodeRaw<'z> {
         let mut slf = self;
         slf.walker.base_state();
 
@@ -821,72 +804,6 @@ impl<'b, 'c, 'cz, 'z> IRBuilder<'b, 'c, 'cz, 'z> {
             operations,
             delay_slots: slf.walker.delay_slot() as u8,
             length: length as u8,
-        }
-    }
-
-    pub fn emit_pcode(self, length: usize) -> PCode {
-        let mut slf = self;
-        slf.walker.base_state();
-
-        let address = slf.walker.address();
-        let delay_slots = slf.walker.delay_slot();
-
-        let manager = slf.manager;
-        let registers = slf.registers;
-        let user_ops = slf.user_ops;
-
-        let mut operations = SmallVec::with_capacity(slf.issued.len());
-
-        for op in slf.issued.drain(..) {
-            operations.push(pcode::PCodeOp::from_parts(
-                manager,
-                registers,
-                user_ops,
-                op.opcode,
-                op.inputs.into_iter(),
-                op.output,
-            ));
-        }
-
-        PCode {
-            operations,
-            address,
-            delay_slots,
-            length,
-        }
-    }
-
-    pub fn emit_ecode(self, length: usize) -> ECode {
-        let mut slf = self;
-        slf.walker.base_state();
-
-        let address = slf.walker.address();
-        let delay_slots = slf.walker.delay_slot();
-
-        let manager = slf.manager;
-        let float_formats = slf.float_formats;
-        let user_ops = slf.user_ops;
-
-        let mut operations = SmallVec::with_capacity(slf.issued.len());
-
-        for (i, op) in slf.issued.drain(..).enumerate() {
-            operations.push(ecode::Stmt::from_parts(
-                manager,
-                &float_formats,
-                user_ops,
-                &address,
-                i,
-                op.opcode,
-                op.inputs.into_iter(),
-                op.output,
-            ));
-        }
-
-        ECode {
-            operations,
-            address,
-            delay_slots,
-            length,
         }
     }
 }

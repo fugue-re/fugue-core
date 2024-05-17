@@ -6,14 +6,14 @@ use std::borrow::Cow;
 use std::fmt;
 
 pub trait BitSize {
-    fn bits(&self) -> usize;
+    fn bits(&self) -> u32;
 }
 
 pub trait Variable {
     fn space(&self) -> AddressSpaceId;
-    fn generation(&self) -> usize;
-    fn generation_mut(&mut self) -> &mut usize;
-    fn with_generation(&self, generation: usize) -> Self;
+    fn generation(&self) -> u32;
+    fn generation_mut(&mut self) -> &mut u32;
+    fn with_generation(&self, generation: u32) -> Self;
 }
 
 pub trait TranslateIR<Loc, Val, Var> {
@@ -92,7 +92,7 @@ pub trait TranslatorDisplay<'v, 't> {
 }
 
 impl BitSize for BitVec {
-    fn bits(&self) -> usize {
+    fn bits(&self) -> u32 {
         self.bits()
     }
 }

@@ -4,32 +4,26 @@ use std::sync::Arc;
 
 use fugue_bytes::Order;
 use fugue_ir::convention::{Convention, ReturnAddress};
-use fugue_ir::il::pcode::{Operand, Register};
 use fugue_ir::register::RegisterNames;
-use fugue_ir::{Address, Translator};
+use fugue_ir::{Address, AddressSpace, Translator, VarnodeData};
 
-use crate::{FromStateValues, IntoStateValues, State, StateOps, StateValue};
 use crate::flat::FlatState;
+use crate::{FromStateValues, IntoStateValues, State, StateOps, StateValue};
 
 pub use crate::flat::Error;
 
-#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub enum ReturnLocation {
-    Register(Operand),
-    Relative(Operand, u64),
+    Register(VarnodeData),
+    Relative(VarnodeData, u64),
 }
 
 impl ReturnLocation {
-    pub fn from_convention(translator: &Translator, convention: &Convention) -> Self {
+    pub fn from_convention(convention: &Convention) -> Self {
         match convention.return_address() {
-            ReturnAddress::Register { varnode, .. } => {
-                Self::Register(Operand::from_varnode(translator, *varnode))
-            },
+            ReturnAddress::Register { varnode, .. } => Self::Register(*varnode),
             ReturnAddress::StackRelative { offset, .. } => {
-                Self::Relative(
-                    Operand::from_varnode(translator, *convention.stack_pointer().varnode()),
-                    *offset,
-                )
+                Self::Relative(*convention.stack_pointer().varnode(), *offset)
             }
         }
     }
@@ -37,10 +31,10 @@ impl ReturnLocation {
 
 #[derive(Debug, Clone)]
 pub struct RegisterState<T: StateValue, O: Order> {
-    program_counter: Arc<Operand>,
-    stack_pointer: Arc<Operand>,
+    program_counter: VarnodeData,
+    stack_pointer: VarnodeData,
     register_names: Arc<RegisterNames>,
-    return_location: Arc<ReturnLocation>,
+    return_location: ReturnLocation,
     inner: FlatState<T>,
     marker: PhantomData<O>,
 }
@@ -124,41 +118,55 @@ impl<V: StateValue, O: Order> StateOps for RegisterState<V, O> {
 
     #[inline(always)]
     fn copy_values<F, T>(&mut self, from: F, to: T, size: usize) -> Result<(), Self::Error>
-    where F: Into<Address>,
-          T: Into<Address> {
+    where
+        F: Into<Address>,
+        T: Into<Address>,
+    {
         self.inner.copy_values(from, to, size)
     }
 
     #[inline(always)]
     fn get_values<A>(&self, address: A, bytes: &mut [Self::Value]) -> Result<(), Self::Error>
-    where A: Into<Address> {
+    where
+        A: Into<Address>,
+    {
         self.inner.get_values(address, bytes)
     }
 
     #[inline(always)]
     fn view_values<A>(&self, address: A, size: usize) -> Result<&[Self::Value], Self::Error>
-    where A: Into<Address> {
+    where
+        A: Into<Address>,
+    {
         self.inner.view_values(address, size)
     }
 
     #[inline(always)]
-    fn view_values_mut<A>(&mut self, address: A, size: usize) -> Result<&mut [Self::Value], Self::Error>
-    where A: Into<Address> {
+    fn view_values_mut<A>(
+        &mut self,
+        address: A,
+        size: usize,
+    ) -> Result<&mut [Self::Value], Self::Error>
+    where
+        A: Into<Address>,
+    {
         self.inner.view_values_mut(address, size)
     }
 
     #[inline(always)]
     fn set_values<A>(&mut self, address: A, bytes: &[Self::Value]) -> Result<(), Self::Error>
-    where A: Into<Address> {
+    where
+        A: Into<Address>,
+    {
         self.inner.set_values(address, bytes)
     }
 }
 
 impl<T: StateValue, O: Order> RegisterState<T, O> {
     pub fn new(translator: &Translator, convention: &Convention) -> Self {
-        let program_counter = Arc::new(Operand::from_varnode(translator, *translator.program_counter()));
-        let stack_pointer = Arc::new(Operand::from_varnode(translator, *convention.stack_pointer().varnode()));
-        let return_location = Arc::new(ReturnLocation::from_convention(translator, convention));
+        let program_counter = *translator.program_counter();
+        let stack_pointer = *convention.stack_pointer().varnode();
+        let return_location = ReturnLocation::from_convention(convention);
 
         let space = translator.manager().register_space();
         let register_names = translator.registers().clone();
@@ -176,19 +184,23 @@ impl<T: StateValue, O: Order> RegisterState<T, O> {
         }
     }
 
-    pub fn program_counter(&self) -> Arc<Operand> {
-        self.program_counter.clone()
+    pub fn program_counter(&self) -> VarnodeData {
+        self.program_counter
     }
 
-    pub fn stack_pointer(&self) -> Arc<Operand> {
-        self.stack_pointer.clone()
+    pub fn stack_pointer(&self) -> VarnodeData {
+        self.stack_pointer
     }
 
-    pub fn return_location(&self) -> Arc<ReturnLocation> {
-        self.return_location.clone()
+    pub fn return_location(&self) -> ReturnLocation {
+        self.return_location
     }
 
-    pub fn get_register_values(&self, register: &Register, values: &mut [T]) -> Result<(), Error> {
+    pub fn get_register_values(
+        &self,
+        register: &VarnodeData,
+        values: &mut [T],
+    ) -> Result<(), Error> {
         let view = self.view_values(register.offset(), register.size())?;
         values.clone_from_slice(view);
         Ok(())
@@ -198,25 +210,41 @@ impl<T: StateValue, O: Order> RegisterState<T, O> {
         &self.register_names
     }
 
-    pub fn register_by_name<N>(&self, name: N) -> Option<Register>
-    where N: AsRef<str> {
+    pub fn register_by_name<N>(&self, name: N) -> Option<VarnodeData>
+    where
+        N: AsRef<str>,
+    {
         self.register_names
             .get_by_name(name)
-            .map(|(name, offset, size)| Register::new(name.clone(), offset, size))
+            .map(|(_name, offset, size)| VarnodeData::new(self.space_ref(), offset, size))
     }
 
-    pub fn get_register<V: FromStateValues<T>>(&self, register: &Register) -> Result<V, Error> {
-        Ok(V::from_values::<O>(self.view_values(register.offset(), register.size())?))
+    pub fn get_register<V: FromStateValues<T>>(&self, register: &VarnodeData) -> Result<V, Error> {
+        Ok(V::from_values::<O>(
+            self.view_values(register.offset(), register.size())?,
+        ))
     }
 
-    pub fn set_register_values(&mut self, register: &Register, values: &[T]) -> Result<(), Error> {
+    pub fn set_register_values(
+        &mut self,
+        register: &VarnodeData,
+        values: &[T],
+    ) -> Result<(), Error> {
         let view = self.view_values_mut(register.offset(), register.size())?;
         view.clone_from_slice(values);
         Ok(())
     }
 
-    pub fn set_register<V: IntoStateValues<T>>(&mut self, register: &Register, value: V) -> Result<(), Error> {
+    pub fn set_register<V: IntoStateValues<T>>(
+        &mut self,
+        register: &VarnodeData,
+        value: V,
+    ) -> Result<(), Error> {
         value.into_values::<O>(self.view_values_mut(register.offset(), register.size())?);
         Ok(())
+    }
+
+    pub fn space_ref(&self) -> &AddressSpace {
+        self.inner.address_space_ref()
     }
 }

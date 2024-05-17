@@ -111,7 +111,7 @@ impl<'a> Lifter<'a> {
             let address_val = slf.translator.address(address.into());
             let mut irbb = irb.builder(&slf.translator);
 
-            let pcode_raw = slf.translator.lift_pcode_raw_with(
+            let pcode_raw = slf.translator.lift_with(
                 slf.ctx,
                 slf.pctx,
                 slf.irb,

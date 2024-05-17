@@ -1,6 +1,6 @@
 use fugue_bv::BitVec;
-use fugue_bytes::Order;
 use fugue_bytes::traits::ByteCast;
+use fugue_bytes::Order;
 use fugue_ir::Address;
 
 use paste::paste;
@@ -11,7 +11,10 @@ pub trait StateValue: Clone + Default {
     fn from_byte(value: u8) -> Self;
 }
 
-impl<V> StateValue for V where V: Clone + Default + From<u8> {
+impl<V> StateValue for V
+where
+    V: Clone + Default + From<u8>,
+{
     #[inline(always)]
     fn from_byte(value: u8) -> Self {
         Self::from(value)
@@ -94,20 +97,29 @@ pub trait StateOps: State {
     fn len(&self) -> usize;
 
     fn copy_values<F, T>(&mut self, from: F, to: T, size: usize) -> Result<(), Self::Error>
-    where F: Into<Address>,
-          T: Into<Address>;
+    where
+        F: Into<Address>,
+        T: Into<Address>;
 
     fn get_values<A>(&self, address: A, bytes: &mut [Self::Value]) -> Result<(), Self::Error>
-    where A: Into<Address>;
+    where
+        A: Into<Address>;
 
     fn view_values<A>(&self, address: A, size: usize) -> Result<&[Self::Value], Self::Error>
-    where A: Into<Address>;
+    where
+        A: Into<Address>;
 
-    fn view_values_mut<A>(&mut self, address: A, size: usize) -> Result<&mut [Self::Value], Self::Error>
-    where A: Into<Address>;
+    fn view_values_mut<A>(
+        &mut self,
+        address: A,
+        size: usize,
+    ) -> Result<&mut [Self::Value], Self::Error>
+    where
+        A: Into<Address>;
 
     fn set_values<A>(&mut self, address: A, bytes: &[Self::Value]) -> Result<(), Self::Error>
-    where A: Into<Address>;
+    where
+        A: Into<Address>;
 }
 
 pub trait AsState<S>: State {
@@ -115,7 +127,10 @@ pub trait AsState<S>: State {
     fn state_mut(&mut self) -> &mut S;
 }
 
-impl<S, T> AsState<S> for T where T: State + AsRef<S> + AsMut<S> {
+impl<S, T> AsState<S> for T
+where
+    T: State + AsRef<S> + AsMut<S>,
+{
     fn state_ref(&self) -> &S {
         self.as_ref()
     }
@@ -143,7 +158,12 @@ pub trait AsState3<S, T, U>: State + AsState<S> + AsState<T> + AsState<U> {
 
 pub trait AsState4<S, T, U, V>: State + AsState<S> + AsState<T> + AsState<U> + AsState<V> {
     fn state4_ref(&self) -> (&S, &T, &U, &V) {
-        (self.state_ref(), self.state_ref(), self.state_ref(), self.state_ref())
+        (
+            self.state_ref(),
+            self.state_ref(),
+            self.state_ref(),
+            self.state_ref(),
+        )
     }
 
     fn state4_mut(&mut self) -> (&mut S, &mut T, &mut U, &mut V);

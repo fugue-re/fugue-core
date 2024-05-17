@@ -1,5 +1,4 @@
 use std::borrow::Borrow;
-use std::convert::TryFrom;
 use std::fs::File;
 use std::io::Read;
 use std::path::Path;
@@ -13,10 +12,10 @@ use itertools::Itertools;
 use ustr::Ustr;
 
 use crate::address::AddressValue;
-
+use crate::compiler;
+use crate::convention::Convention;
 use crate::deserialise::parse::XmlExt;
 use crate::deserialise::Error as DeserialiseError;
-
 use crate::disassembly::lift::{FloatFormats, UserOpStr};
 use crate::disassembly::symbol::{FixedHandle, Symbol, SymbolScope, SymbolTable};
 use crate::disassembly::walker::InstructionFormatter;
@@ -27,18 +26,9 @@ use crate::disassembly::VarnodeData;
 use crate::disassembly::{
     IRBuilder, IRBuilderArena, IRBuilderBase, PCodeRaw, ParserContext, ParserState, ParserWalker,
 };
-
-use crate::il::ecode::ECode;
-use crate::il::instruction::{Instruction, InstructionFull};
-use crate::il::pcode::PCode;
-
 use crate::error::Error;
-
 use crate::float_format::FloatFormat;
-
-use crate::compiler;
-use crate::convention::Convention;
-
+use crate::il::instruction::{Instruction, InstructionFull};
 use crate::register::RegisterNames;
 use crate::space_manager::SpaceManager;
 
@@ -271,7 +261,7 @@ impl Translator {
                 }
                 Some(Symbol::UserOp { index, name, .. }) => {
                     if user_ops.len() <= *index {
-                        user_ops.resize_with(index + 1, || Ustr::from(""));
+                        user_ops.resize_with(index + 1, Ustr::default);
                     }
                     user_ops[*index] = name.clone();
                 }
@@ -281,7 +271,7 @@ impl Translator {
 
         if let Some((pc_offset, pc_size)) = pc {
             self.program_counter.offset = pc_offset;
-            self.program_counter.size = pc_size;
+            self.program_counter.size = pc_size as _;
         } else {
             return Err(DeserialiseError::Invariant(
                 "program counter not defined as a register",
@@ -426,31 +416,6 @@ impl Translator {
         self.disassemble_with(db, &mut ctxt, &arena, builder, address, bytes)
     }
 
-    pub fn disassemble_cached_with<'a, 'az, 'z>(
-        &'a self,
-        db: &mut ContextDatabase,
-        context: &mut ParserContext<'a, 'az>,
-        arena: &'az IRBuilderArena,
-        builder: &'z IRBuilderArena,
-        cache: &mut Map<[u8; 2], Instruction<'z>>,
-        address: AddressValue,
-        bytes: &[u8],
-    ) -> Result<Instruction<'z>, Error> {
-        if bytes.len() >= 2 {
-            if let Some(insn) = cache.get(&bytes[..2]) {
-                return Ok(insn.clone());
-            }
-        }
-
-        match self.disassemble_with(db, context, arena, builder, address, bytes) {
-            Ok(insn) if insn.length() == 2 => {
-                cache.insert(<[u8; 2]>::try_from(&bytes[..2]).unwrap(), insn.clone());
-                Ok(insn)
-            }
-            r => r,
-        }
-    }
-
     pub fn disassemble_aux<'a, 'az, 'c, T, E, F>(
         &'a self,
         db: &mut ContextDatabase,
@@ -545,7 +510,7 @@ impl Translator {
         })
     }
 
-    pub fn lift_pcode_raw<'z>(
+    pub fn lift<'z>(
         &self,
         db: &mut ContextDatabase,
         builder: &'z IRBuilderArena,
@@ -555,10 +520,10 @@ impl Translator {
         let arena = IRBuilderArena::with_capacity(1024);
         let mut context = ParserContext::empty(&arena, self.manager());
         let mut base = builder.builder(self);
-        self.lift_pcode_raw_with(db, &mut context, &arena, &mut base, address, bytes)
+        self.lift_with(db, &mut context, &arena, &mut base, address, bytes)
     }
 
-    pub fn lift_pcode_raw_with<'a, 'az, 'z>(
+    pub fn lift_with<'a, 'az, 'z>(
         &'a self,
         db: &mut ContextDatabase,
         context: &mut ParserContext<'a, 'az>,
@@ -628,186 +593,9 @@ impl Translator {
                 IRBuilder::new(builder, ParserWalker::new(context), &mut delay_contexts);
             builder.build(tmpl, None, &self.symbol_table)?;
             builder.resolve_relatives()?;
-            Ok(builder.emit_raw(fall_offset))
+            Ok(builder.emit(fall_offset))
         } else {
             Ok(PCodeRaw::nop_in(builder.arena(), address, walker.length()))
-        }
-    }
-
-    pub fn lift_pcode(
-        &self,
-        db: &mut ContextDatabase,
-        address: AddressValue,
-        bytes: &[u8],
-    ) -> Result<PCode, Error> {
-        let arena = IRBuilderArena::with_capacity(4096);
-        let mut context = ParserContext::empty(&arena, self.manager());
-        self.lift_pcode_with(db, &mut context, &arena, address, bytes)
-    }
-
-    pub fn lift_pcode_with<'a, 'az>(
-        &'a self,
-        db: &mut ContextDatabase,
-        context: &mut ParserContext<'a, 'az>,
-        arena: &'az IRBuilderArena,
-        address: AddressValue,
-        bytes: &[u8],
-    ) -> Result<PCode, Error> {
-        if self.alignment != 1 {
-            if address.offset() % self.alignment as u64 != 0 {
-                return Err(DisassemblyError::IncorrectAlignment {
-                    address: address.offset(),
-                    alignment: self.alignment,
-                })?;
-            }
-        }
-
-        // Main instruction
-        // Parse the pcode of the current instruction
-
-        context.reinitialise(arena, db, address.clone(), bytes);
-        let mut walker = ParserWalker::new(context);
-
-        Translator::resolve(&mut walker, self.root.id(), &self.symbol_table)?;
-        Translator::resolve_handles(&mut walker, &self.manager, &self.symbol_table)?;
-
-        walker.base_state();
-        walker.apply_commits(db, &self.manager, &self.symbol_table)?;
-
-        let mut fall_offset = walker.length();
-
-        let delay_slots = walker.delay_slot();
-        let mut delay_contexts = Map::default();
-
-        if delay_slots > 0 {
-            let mut byte_count = 0;
-            loop {
-                let mut dcontext = ParserContext::new(
-                    arena,
-                    db,
-                    address.clone() + fall_offset,
-                    &bytes[fall_offset..],
-                );
-                let mut dwalker = ParserWalker::new(&mut dcontext);
-
-                Translator::resolve(&mut dwalker, self.root.id(), &self.symbol_table)?;
-                Translator::resolve_handles(&mut dwalker, &self.manager, &self.symbol_table)?;
-
-                dwalker.base_state();
-                dwalker.apply_commits(db, &self.manager, &self.symbol_table)?;
-
-                let length = dwalker.length();
-
-                delay_contexts.insert(address.clone() + fall_offset, dcontext);
-
-                fall_offset += length;
-                byte_count += length;
-
-                if byte_count >= delay_slots {
-                    break;
-                }
-            }
-            walker.set_next_address(address.clone() + fall_offset);
-        }
-
-        if let Some(ctor) = walker.constructor()? {
-            let tmpl = ctor.unchecked_template();
-            let mut base = arena.builder(self);
-            let mut builder =
-                IRBuilder::new(&mut base, ParserWalker::new(context), &mut delay_contexts);
-            builder.build(tmpl, None, &self.symbol_table)?;
-            builder.resolve_relatives()?;
-            Ok(builder.emit_pcode(fall_offset))
-        } else {
-            Ok(PCode::nop(address, walker.length()))
-        }
-    }
-
-    pub fn lift_ecode(
-        &self,
-        db: &mut ContextDatabase,
-        address: AddressValue,
-        bytes: &[u8],
-    ) -> Result<ECode, Error> {
-        let arena = IRBuilderArena::with_capacity(1024);
-        let mut context = ParserContext::empty(&arena, self.manager());
-        self.lift_ecode_with(db, &mut context, &arena, address, bytes)
-    }
-
-    pub fn lift_ecode_with<'a, 'az>(
-        &'a self,
-        db: &mut ContextDatabase,
-        context: &mut ParserContext<'a, 'az>,
-        arena: &'az IRBuilderArena,
-        address: AddressValue,
-        bytes: &[u8],
-    ) -> Result<ECode, Error> {
-        if self.alignment != 1 {
-            if address.offset() % self.alignment as u64 != 0 {
-                return Err(DisassemblyError::IncorrectAlignment {
-                    address: address.offset(),
-                    alignment: self.alignment,
-                })?;
-            }
-        }
-
-        // Main instruction
-        // let mut context = ParserContext::new(db, address.clone(), bytes);
-        context.reinitialise(arena, db, address.clone(), bytes);
-        let mut walker = ParserWalker::new(context);
-
-        Translator::resolve(&mut walker, self.root.id(), &self.symbol_table)?;
-        Translator::resolve_handles(&mut walker, &self.manager, &self.symbol_table)?;
-
-        walker.base_state();
-        walker.apply_commits(db, &self.manager, &self.symbol_table)?;
-
-        let mut fall_offset = walker.length();
-
-        let delay_slots = walker.delay_slot();
-        let mut delay_contexts = Map::default();
-
-        if delay_slots > 0 {
-            let mut byte_count = 0;
-            loop {
-                let mut dcontext = ParserContext::new(
-                    arena,
-                    db,
-                    address.clone() + fall_offset,
-                    &bytes[fall_offset..],
-                );
-                let mut dwalker = ParserWalker::new(&mut dcontext);
-
-                Translator::resolve(&mut dwalker, self.root.id(), &self.symbol_table)?;
-                Translator::resolve_handles(&mut dwalker, &self.manager, &self.symbol_table)?;
-
-                dwalker.base_state();
-                dwalker.apply_commits(db, &self.manager, &self.symbol_table)?;
-
-                let length = dwalker.length();
-
-                delay_contexts.insert(address.clone() + fall_offset, dcontext);
-
-                fall_offset += length;
-                byte_count += length;
-
-                if byte_count >= delay_slots {
-                    break;
-                }
-            }
-            walker.set_next_address(address.clone() + fall_offset);
-        }
-
-        if let Some(ctor) = walker.constructor()? {
-            let tmpl = ctor.unchecked_template();
-            let mut base = arena.builder(self);
-            let mut builder =
-                IRBuilder::new(&mut base, ParserWalker::new(context), &mut delay_contexts);
-            builder.build(tmpl, None, &self.symbol_table)?;
-            builder.resolve_relatives()?;
-            Ok(builder.emit_ecode(fall_offset))
-        } else {
-            Ok(ECode::nop(address, walker.length()))
         }
     }
 
@@ -951,9 +739,10 @@ mod test {
         let bytes = [0x20, 0xf8, 0x48, 0x4f];
 
         let mut db = translator.context_database();
+        let irb = IRBuilderArena::with_capacity(4096);
 
         let addr = translator.address(0x10cbe0u64);
-        let _insn = translator.lift_pcode(&mut db, addr, &bytes)?;
+        let _insn = translator.lift(&mut db, &irb, addr, &bytes)?;
 
         Ok(())
     }
@@ -1005,7 +794,7 @@ mod test {
         let addr = translator.address(0x0u64);
         let mut offset = 0;
         while offset < bytes.len() {
-            let insn = translator.lift_pcode_raw(&mut db, &irb, addr + offset, &bytes[offset..])?;
+            let insn = translator.lift(&mut db, &irb, addr + offset, &bytes[offset..])?;
             println!("{}", insn.display(&translator));
             offset += insn.length();
         }
@@ -1014,7 +803,7 @@ mod test {
         let addr = translator.address(0xb000u64);
         let mut offset = 0;
         while offset < bytes.len() {
-            let insn = translator.lift_pcode_raw(&mut db, &irb, addr + offset, &bytes[offset..])?;
+            let insn = translator.lift(&mut db, &irb, addr + offset, &bytes[offset..])?;
             println!("{}", insn.display(&translator));
             offset += insn.length();
         }
@@ -1040,7 +829,7 @@ mod test {
         let addr = translator.address(0xd92u64);
         let mut offset = 0;
         while offset < bytes.len() {
-            let insn = translator.lift_pcode_raw(&mut db, &irb, addr + offset, &bytes[offset..])?;
+            let insn = translator.lift(&mut db, &irb, addr + offset, &bytes[offset..])?;
             println!("{}", insn.display(&translator));
             offset += insn.length();
         }
