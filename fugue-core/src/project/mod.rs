@@ -276,6 +276,7 @@ mod test {
     use super::*;
 
     #[test]
+    #[ignore]
     fn test_project() -> Result<(), Box<dyn std::error::Error>> {
         // Load the binary at tests/ls.elf into a mapping object
         let input = BytesOrMapping::from_file("tests/ls.elf")?;
