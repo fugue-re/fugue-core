@@ -585,7 +585,7 @@ impl<'b, 'c, 'cz, 'z> IRBuilder<'b, 'c, 'cz, 'z> {
             self.set_unique_offset(address.offset());
 
             let context = unsafe { self.delay_contexts.remove(&address).unwrap_unchecked() };
-            let mut nwalker = ParserWalker::new(context);
+            let mut nwalker = ParserWalker::new(context, self.walker.translator());
             let length = nwalker.length();
 
             // swap out

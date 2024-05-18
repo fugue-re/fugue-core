@@ -22,6 +22,7 @@ pub enum ConstTpl {
     Handle(usize, HandleKind),
     Start,
     Next,
+    Next2,
     CurrentSpace,
     CurrentSpaceSize,
     SpaceId(AddressSpaceId),
@@ -67,6 +68,7 @@ impl ConstTpl {
         match self {
             Self::Start => walker.address().offset(),
             Self::Next => walker.unchecked_next_address().offset(), // .ok_or_else(|| Error::InvalidNextAddress)?.offset(),
+            Self::Next2 => walker.unchecked_next2_address().offset(), // .ok_or_else(|| Error::InvalidNextAddress)?.offset(),
             Self::CurrentSpaceSize => manager
                 .unchecked_space_by_id(walker.address().space())
                 .address_size() as u64,
@@ -233,6 +235,7 @@ impl ConstTpl {
                 ),
                 "start" => Self::Start,
                 "next" => Self::Next,
+                "next2" => Self::Next2,
                 "curspace" => Self::CurrentSpace,
                 "curspace_size" => Self::CurrentSpaceSize,
                 "spaceid" => Self::SpaceId(

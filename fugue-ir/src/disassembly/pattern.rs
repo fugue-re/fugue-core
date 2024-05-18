@@ -476,7 +476,7 @@ impl PatternExpression {
             },
             "start_exp" => Self::StartInstruction,
             "end_exp" => Self::EndInstruction,
-            "next2_exp" => Self::EndInstruction,
+            "next2_exp" => Self::Next2Instruction,
             "plus_exp" => {
                 let mut children = input.children().filter(xml::Node::is_element);
                 Self::Plus(

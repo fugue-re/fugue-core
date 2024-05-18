@@ -11,6 +11,7 @@ use crate::disassembly::pattern::PatternExpression;
 use crate::disassembly::symbol::{Constructor, FixedHandle, Operands, Symbol, SymbolTable, Tokens};
 use crate::disassembly::{Error, IRBuilderArena};
 use crate::space_manager::SpaceManager;
+use crate::translator::Translator;
 
 pub use bumpalo::collections::String as BString;
 pub use bumpalo::collections::Vec as BVec;
@@ -167,7 +168,7 @@ pub struct ParserContext<'b, 'z> {
     context: BVec<'z, u32>,
     context_commit: BVec<'z, ContextSet<'b>>,
 
-    backing: [u8; 16],
+    backing: [u8; 32],
 
     address: AddressValue,
     next_address: Option<AddressValue>,
@@ -185,7 +186,7 @@ impl<'b, 'z> ParserContext<'b, 'z> {
             parse_state: ParserState::Uninitialised,
             context: BVec::with_capacity_in(2, arena.inner()),
             context_commit: BVec::with_capacity_in(2, arena.inner()),
-            backing: [0; 16],
+            backing: [0u8; 32],
             address: AddressValue::new(space_manager.default_space(), 0),
             next_address: None,
             // next2_address: None,
@@ -201,7 +202,7 @@ impl<'b, 'z> ParserContext<'b, 'z> {
         address: AddressValue,
         buffer: &[u8],
     ) -> Self {
-        let mut backing = [0u8; 16];
+        let mut backing = [0u8; 32];
         let length = buffer.len().min(backing.len());
 
         backing[..length].copy_from_slice(&buffer[..length]);
@@ -229,7 +230,7 @@ impl<'b, 'z> ParserContext<'b, 'z> {
         address: AddressValue,
         buffer: &[u8],
     ) {
-        let mut backing = [0u8; 16];
+        let mut backing = [0u8; 32];
         let length = buffer.len().min(backing.len());
 
         backing[..length].copy_from_slice(&buffer[..length]);
@@ -449,6 +450,7 @@ impl<'b, 'z> ParserContext<'b, 'z> {
         db: &mut ContextDatabase,
         manager: &'b SpaceManager,
         symbols: &'b SymbolTable,
+        translator: &'b Translator,
     ) -> Result<(), Error> {
         if self.context_commit.is_empty() {
             return Ok(());
@@ -456,7 +458,7 @@ impl<'b, 'z> ParserContext<'b, 'z> {
 
         let curr_address = self.address.clone();
         let commits = self.context_commit.clone();
-        let mut nwalker = ParserWalker::<'b, 'c, 'z>::new(self);
+        let mut nwalker = ParserWalker::<'b, 'c, 'z>::new(self, translator);
 
         for commit in commits {
             let symbol = commit.triple;
@@ -513,7 +515,12 @@ impl<'b, 'z> ParserContext<'b, 'z> {
     }
 
     pub fn unchecked_constructor(&self, point: usize) -> &'b Constructor {
-        unsafe { self.state.get_unchecked(point).constructor.unwrap_unchecked() }
+        unsafe {
+            self.state
+                .get_unchecked(point)
+                .constructor
+                .unwrap_unchecked()
+        }
     }
 
     pub fn set_next_address(&mut self, address: AddressValue) {
@@ -527,6 +534,7 @@ impl<'b, 'z> ParserContext<'b, 'z> {
 
 pub struct ParserWalker<'b, 'c, 'z> {
     ctx: &'c mut ParserContext<'b, 'z>,
+    translator: &'b Translator,
 
     point: Option<usize>,
     depth: isize,
@@ -534,9 +542,10 @@ pub struct ParserWalker<'b, 'c, 'z> {
 }
 
 impl<'b, 'c, 'z> ParserWalker<'b, 'c, 'z> {
-    pub fn new(ctx: &'c mut ParserContext<'b, 'z>) -> Self {
+    pub fn new(ctx: &'c mut ParserContext<'b, 'z>, translator: &'b Translator) -> Self {
         Self {
             ctx,
+            translator,
             point: Some(0),
             depth: 0,
             breadcrumb: [0; MAX_PARSE_DEPTH],
@@ -581,6 +590,10 @@ impl<'b, 'c, 'z> ParserWalker<'b, 'c, 'z> {
         None
     }
 
+    pub fn translator(&self) -> &'b Translator {
+        self.translator
+    }
+
     pub fn length(&self) -> usize {
         self.ctx.point(0).length
     }
@@ -591,7 +604,8 @@ impl<'b, 'c, 'z> ParserWalker<'b, 'c, 'z> {
     }
 
     pub fn parent_handle_mut(&mut self) -> Option<&mut FixedHandle<'b>> {
-        self.ctx.handle_mut(unsafe { self.point.unwrap_unchecked() })
+        self.ctx
+            .handle_mut(unsafe { self.point.unwrap_unchecked() })
     }
 
     pub fn handle(&self, index: usize) -> Result<Option<FixedHandle<'b>>, Error> {
@@ -819,7 +833,8 @@ impl<'b, 'c, 'z> ParserWalker<'b, 'c, 'z> {
 
         while point.constructor.map(|ct| ct != ctor).unwrap_or(false) {
             if cur_depth == 0 {
-                let mut nwalker = ParserWalker::<'b, 'd, 'z>::new(self.context_mut());
+                let mut nwalker =
+                    ParserWalker::<'b, 'd, 'z>::new(&mut self.ctx, self.translator);
                 let mut state = ConstructState::default();
 
                 state.constructor = Some(ctor);
@@ -851,7 +866,7 @@ impl<'b, 'c, 'z> ParserWalker<'b, 'c, 'z> {
         state.constructor = Some(ctor);
         state.length = point.length;
 
-        let mut nwalker = ParserWalker::<'b, 'd, 'z>::new(self.context_mut());
+        let mut nwalker = ParserWalker::<'b, 'd, 'z>::new(&mut self.ctx, self.translator);
 
         nwalker.point = Some(nwalker.ctx.state.len());
         nwalker.ctx.state.push(state);
@@ -894,7 +909,7 @@ impl<'b, 'c, 'z> ParserWalker<'b, 'c, 'z> {
         manager: &'b SpaceManager,
         symbols: &'b SymbolTable,
     ) -> Result<(), Error> {
-        self.ctx.apply_commits(db, manager, symbols)
+        self.ctx.apply_commits(db, manager, symbols, self.translator)
     }
 
     pub fn set_context_word(&mut self, num: usize, value: u32, mask: u32) {

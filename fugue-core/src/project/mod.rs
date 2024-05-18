@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::fmt::{Debug, Display};
 use std::ops::Range;
@@ -25,23 +26,80 @@ pub trait ProjectRawView: Sized {
 }
 
 pub trait ProjectRawViewReader<'a> {
-    fn view_bytes(&self, address: Address) -> Result<&[u8], ProjectRawViewError>;
+    fn view_bytes(&self, address: impl Into<Address>) -> Result<&[u8], ProjectRawViewError>;
 }
 
 pub struct ProjectRawViewMmaped {
     backing: MmapTable<U64<LE>>,
-    ranges: Vec<Range<Address>>,
+    segments: Vec<LoadedSegment<'static>>,
 }
 
 pub struct ProjectRawViewMmapedReader<'a> {
     backing: MmapTableReader<'a, U64<LE>>,
-    ranges: &'a [Range<Address>],
+    segments: &'a [LoadedSegment<'static>],
+}
+
+pub struct LoadedSegment<'a> {
+    name: Cow<'a, str>,
+    addr: Address,
+    size: usize,
+    data: Cow<'a, [u8]>,
+}
+
+impl<'a> LoadedSegment<'a> {
+    pub fn new(name: impl Into<Cow<'a, str>>, addr: impl Into<Address>, data: impl Into<Cow<'a, [u8]>>) -> Self {
+        let data = data.into();
+        let size = data.len();
+
+        Self {
+            name: name.into(),
+            addr: addr.into(),
+            size,
+            data,
+        }
+    }
+
+    pub fn new_uninit(name: impl Into<Cow<'a, str>>, addr: impl Into<Address>, size: usize) -> Self {
+        Self {
+            name: name.into(),
+            addr: addr.into(),
+            size,
+            data: Cow::Borrowed(&[]),
+        }
+    }
+
+    pub fn borrowed(&self) -> LoadedSegment {
+        LoadedSegment {
+            name: Cow::Borrowed(self.name()),
+            addr: self.addr,
+            size: self.size,
+            data: Cow::Borrowed(self.data()),
+        }
+    }
+
+    pub fn address(&self) -> Address {
+        self.addr
+    }
+
+    pub fn name(&self) -> &str {
+        self.name.as_ref()
+    }
+
+    pub fn data(&self) -> &[u8] {
+        self.data.as_ref()
+    }
+
+    pub fn range(&self) -> Range<Address> {
+        self.addr..self.addr+self.size
+    }
 }
 
 impl<'a> ProjectRawViewReader<'a> for ProjectRawViewMmapedReader<'a> {
-    fn view_bytes(&self, address: Address) -> Result<&[u8], ProjectRawViewError> {
+    fn view_bytes(&self, address: impl Into<Address>) -> Result<&[u8], ProjectRawViewError> {
+        let address = address.into();
         // find the interval that contains this address
-        let Ok(index) = self.ranges.binary_search_by(|iv| {
+        let Ok(index) = self.segments.binary_search_by(|segm| {
+            let iv = segm.range();
             if address < iv.start {
                 Ordering::Greater
             } else if address >= iv.end {
@@ -56,17 +114,16 @@ impl<'a> ProjectRawViewReader<'a> for ProjectRawViewMmapedReader<'a> {
             ));
         };
 
-        let range = &self.ranges[index];
-
+        let segm = &self.segments[index].range();
         let data = self
             .backing
-            .get(range.start)
+            .get(segm.start)
             .map_err(ProjectRawViewError::backing)?
             .ok_or_else(|| {
                 ProjectRawViewError::read_with(address, "interval not present in backing")
             })?;
 
-        let offset = usize::from(address - range.start);
+        let offset = usize::from(address - segm.start);
 
         Ok(&data[offset..])
     }
@@ -79,7 +136,7 @@ impl ProjectRawView for ProjectRawViewMmaped {
     where
         L: Loadable<'a>,
     {
-        let mut ranges = Vec::new();
+        let mut segments = Vec::new();
         let mut backing =
             MmapTable::temporary("binary-view").map_err(ProjectRawViewError::backing)?;
         let mut tx = backing.writer().map_err(ProjectRawViewError::backing)?;
@@ -93,24 +150,22 @@ impl ProjectRawView for ProjectRawViewMmaped {
             let (addr, data) = segm.into_parts();
             let size = data.len();
 
-            println!("mapping: {} -> {}", addr, size);
-
-            // TODO: can we avoid owning the data--it seems needless for what we want to do with
-            // it here?
-            //
             tx.set(addr, data.as_ref())
                 .map_err(ProjectRawViewError::backing)?;
 
-            ranges.push(addr..addr + size);
+            segments.push(LoadedSegment::new_uninit("LOAD", addr, size));
 
             Ok(())
         })?;
 
         // Ensure that the ranges are sorted and non-overlapping
-        ranges.sort_by_key(|r| r.start);
+        segments.sort_by_key(|r| r.address());
 
-        for i in 1..ranges.len() {
-            if ranges[i].start < ranges[i - 1].end {
+        for i in 1..segments.len() {
+            let ri = segments[i].range();
+            let rj = segments[i-1].range();
+
+            if ri.start < rj.end {
                 return Err(ProjectRawViewError::OverlappingRanges);
             }
         }
@@ -118,7 +173,7 @@ impl ProjectRawView for ProjectRawViewMmaped {
         // Finally commit the mapping to the backing store
         tx.commit().map_err(ProjectRawViewError::backing)?;
 
-        Ok(Self { backing, ranges })
+        Ok(Self { backing, segments })
     }
 
     fn reader<'a>(&'a self) -> Result<Self::Reader<'a>, ProjectRawViewError> {
@@ -127,27 +182,28 @@ impl ProjectRawView for ProjectRawViewMmaped {
                 .backing
                 .reader()
                 .map_err(ProjectRawViewError::backing)?,
-            ranges: &self.ranges,
+            segments: &self.segments,
         })
     }
 }
 
 pub struct ProjectRawViewInMemory {
-    backing: IntervalMap<Address, Vec<u8>>,
+    backing: IntervalMap<Address, LoadedSegment<'static>>,
 }
 
 pub struct ProjectRawViewInMemoryReader<'a> {
-    backing: &'a IntervalMap<Address, Vec<u8>>,
+    backing: &'a IntervalMap<Address, LoadedSegment<'static>>,
 }
 
 impl<'a> ProjectRawViewReader<'a> for ProjectRawViewInMemoryReader<'a> {
-    fn view_bytes(&self, address: Address) -> Result<&[u8], ProjectRawViewError> {
+    fn view_bytes(&self, address: impl Into<Address>) -> Result<&[u8], ProjectRawViewError> {
+        let address = address.into();
         self.backing
             .overlap(address)
             .next()
-            .map(|(range, data)| {
+            .map(|(range, segm)| {
                 let offset = usize::from(address - range.start);
-                &data[offset..]
+                &segm.data()[offset..]
             })
             .ok_or_else(|| ProjectRawViewError::read_with(address, "address not mapped"))
     }
@@ -167,13 +223,11 @@ impl ProjectRawView for ProjectRawViewInMemory {
                 let size = data.len();
                 let last_addr = addr + size;
 
-                println!("mapping: {} -> {}", addr, size);
-
                 if mapping.has_overlap(addr..last_addr) {
                     return Err(ProjectRawViewError::OverlappingRanges);
                 }
 
-                mapping.insert(addr..last_addr, data.into_owned());
+                mapping.insert(addr..last_addr, LoadedSegment::new("LOAD", addr, data.into_owned()));
 
                 Ok(mapping)
             })?;
@@ -280,9 +334,24 @@ mod test {
     fn test_project() -> Result<(), Box<dyn std::error::Error>> {
         // Load the binary at tests/ls.elf into a mapping object
         let input = BytesOrMapping::from_file("tests/ls.elf")?;
+        let object = Object::new(input)?;
 
         // Create the project from the mapping object
-        let _prj = Project::<ProjectRawViewMmaped>::new(&Object::new(input)?)?;
+        let project1 = Project::<ProjectRawViewMmaped>::new(&object)?;
+        let project2 = Project::<ProjectRawViewInMemory>::new(&object)?;
+
+        // Let's test a read from a known address...
+        let reader1 = project1.raw().reader()?;
+        let segment1 = reader1.view_bytes(0x4060u32)?;
+
+        assert!(segment1.len() > 4);
+        assert!(&segment1[..4] == b"\xf3\x0f\x1e\xfa");
+
+        let reader2 = project2.raw().reader()?;
+        let segment2 = reader2.view_bytes(0x4060u32)?;
+
+        assert!(segment2.len() > 4);
+        assert_eq!(&segment2[..4], &segment1[..4]);
 
         Ok(())
     }

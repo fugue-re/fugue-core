@@ -440,7 +440,7 @@ impl Translator {
         }
 
         context.reinitialise(arena, db, address.clone(), bytes);
-        let mut walker = ParserWalker::new(context);
+        let mut walker = ParserWalker::new(context, self);
 
         Translator::resolve(&mut walker, self.root.id(), &self.symbol_table)?;
         Translator::resolve_handles(&mut walker, &self.manager, &self.symbol_table)?;
@@ -543,7 +543,7 @@ impl Translator {
 
         // Main instruction
         context.reinitialise(arena, db, address.clone(), bytes);
-        let mut walker = ParserWalker::new(context);
+        let mut walker = ParserWalker::new(context, self);
 
         Translator::resolve(&mut walker, self.root.id(), &self.symbol_table)?;
         Translator::resolve_handles(&mut walker, &self.manager, &self.symbol_table)?;
@@ -565,7 +565,7 @@ impl Translator {
                     address.clone() + fall_offset,
                     &bytes[fall_offset..],
                 );
-                let mut dwalker = ParserWalker::new(&mut dcontext);
+                let mut dwalker = ParserWalker::new(&mut dcontext, self);
 
                 Translator::resolve(&mut dwalker, self.root.id(), &self.symbol_table)?;
                 Translator::resolve_handles(&mut dwalker, &self.manager, &self.symbol_table)?;
@@ -590,7 +590,7 @@ impl Translator {
         if let Some(ctor) = walker.constructor()? {
             let tmpl = ctor.unchecked_template();
             let mut builder =
-                IRBuilder::new(builder, ParserWalker::new(context), &mut delay_contexts);
+                IRBuilder::new(builder, ParserWalker::new(context, self), &mut delay_contexts);
             builder.build(tmpl, None, &self.symbol_table)?;
             builder.resolve_relatives()?;
             Ok(builder.emit(fall_offset))
