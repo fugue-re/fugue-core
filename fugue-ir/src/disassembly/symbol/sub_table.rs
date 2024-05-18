@@ -4,6 +4,7 @@ use crate::deserialise::Error as DeserialiseError;
 use crate::disassembly::construct::ConstructTpl;
 use crate::disassembly::pattern::PatternExpression;
 use crate::disassembly::symbol::{Operands, Symbol, SymbolTable, Token, Tokens};
+use crate::disassembly::ContextDatabase;
 use crate::disassembly::{Error, IRBuilderArena, ParserWalker};
 
 use crate::space_manager::SpaceManager;
@@ -126,10 +127,11 @@ impl Constructor {
         &'b self,
         arena: &'az IRBuilderArena,
         walker: &mut ParserWalker<'b, 'c, 'z>,
+        db: &ContextDatabase,
         symbols: &'b SymbolTable,
     ) -> Operands<'b, 'az> {
         let mut operands = Operands::new(arena);
-        self.operands_into(arena, &mut operands, walker, symbols);
+        self.operands_into(arena, &mut operands, walker, db, symbols);
         operands
     }
 
@@ -138,6 +140,7 @@ impl Constructor {
         arena: &'az IRBuilderArena,
         operands: &mut Operands<'b, 'az>,
         walker: &mut ParserWalker<'b, 'c, 'z>,
+        db: &ContextDatabase,
         symbols: &'b SymbolTable,
     ) {
         if let Some(index) = self.flow_through_index {
@@ -149,7 +152,7 @@ impl Constructor {
                     walker.unchecked_push_operand(index);
                     walker
                         .unchecked_constructor()
-                        .operands_into(arena, operands, walker, symbols);
+                        .operands_into(arena, operands, walker, db, symbols);
                     walker.unchecked_pop_operand();
                     return;
                 }
@@ -162,7 +165,7 @@ impl Constructor {
                     let index = (self.print_pieces[i].as_bytes()[1] - b'A') as usize;
                     symbols
                         .unchecked_symbol(self.operands[index])
-                        .collect_operands(arena, operands, walker, symbols);
+                        .collect_operands(arena, operands, walker, db, symbols);
                 }
             }
         }
@@ -173,6 +176,7 @@ impl Constructor {
         arena: &'az IRBuilderArena,
         operands: &mut Operands<'b, 'az>,
         walker: &mut ParserWalker<'b, 'c, 'z>,
+        db: &ContextDatabase,
         symbols: &'b SymbolTable,
     ) {
         for p in &self.print_pieces {
@@ -181,7 +185,7 @@ impl Constructor {
                 symbols
                     .symbol(self.operands[index])
                     .expect("symbol")
-                    .collect_operands(arena, operands, walker, symbols);
+                    .collect_operands(arena, operands, walker, db, symbols);
             }
         }
     }
@@ -190,6 +194,7 @@ impl Constructor {
         &'b self,
         tokens: &mut Tokens<'b, 'az>,
         walker: &mut ParserWalker<'b, 'c, 'z>,
+        db: &ContextDatabase,
         symbols: &'b SymbolTable,
     ) {
         if let Some(index) = self.flow_through_index {
@@ -201,7 +206,7 @@ impl Constructor {
                     walker.unchecked_push_operand(index);
                     walker
                         .unchecked_constructor()
-                        .mnemonic_tokens(tokens, walker, symbols);
+                        .mnemonic_tokens(tokens, walker, db, symbols);
                     walker.unchecked_pop_operand();
                     return;
                 }
@@ -214,7 +219,7 @@ impl Constructor {
                 let index = (self.print_pieces[i].as_bytes()[1] - b'A') as usize;
                 symbols
                     .unchecked_symbol(self.operands[index])
-                    .tokens(tokens, walker, symbols);
+                    .tokens(tokens, walker, db, symbols);
             } else {
                 tokens.push(Token::symbol(&self.print_pieces[i]));
             }
@@ -225,6 +230,7 @@ impl Constructor {
         &'b self,
         tokens: &mut Tokens<'b, 'az>,
         walker: &mut ParserWalker<'b, 'c, 'z>,
+        db: &ContextDatabase,
         symbols: &'b SymbolTable,
     ) {
         if let Some(index) = self.flow_through_index {
@@ -236,7 +242,7 @@ impl Constructor {
                     walker.unchecked_push_operand(index);
                     walker
                         .unchecked_constructor()
-                        .body_tokens(tokens, walker, symbols);
+                        .body_tokens(tokens, walker, db, symbols);
                     walker.unchecked_pop_operand();
                     return;
                 }
@@ -249,7 +255,7 @@ impl Constructor {
                     let index = (self.print_pieces[i].as_bytes()[1] - b'A') as usize;
                     symbols
                         .unchecked_symbol(self.operands[index])
-                        .tokens(tokens, walker, symbols);
+                        .tokens(tokens, walker, db, symbols);
                 } else {
                     tokens.push(Token::symbol(&self.print_pieces[i]));
                 }
@@ -261,6 +267,7 @@ impl Constructor {
         &'b self,
         tokens: &mut Tokens<'b, 'az>,
         walker: &mut ParserWalker<'b, 'c, 'z>,
+        db: &ContextDatabase,
         symbols: &'b SymbolTable,
     ) {
         for p in &self.print_pieces {
@@ -269,7 +276,7 @@ impl Constructor {
                 symbols
                     .symbol(self.operands[index])
                     .expect("symbol")
-                    .tokens(tokens, walker, symbols);
+                    .tokens(tokens, walker, db, symbols);
             } else {
                 tokens.push(Token::symbol(p));
             }
@@ -280,6 +287,7 @@ impl Constructor {
         &'b self,
         fmt: &mut fmt::Formatter,
         walker: &mut ParserWalker<'b, 'c, 'z>,
+        db: &ContextDatabase,
         symbols: &'b SymbolTable,
     ) -> Result<(), fmt::Error> {
         for p in &self.print_pieces {
@@ -288,7 +296,7 @@ impl Constructor {
                 symbols
                     .symbol(self.operands[index])
                     .expect("symbol")
-                    .format(fmt, walker, symbols)?;
+                    .format(fmt, walker, db, symbols)?;
             } else {
                 write!(fmt, "{}", p)?;
             }
@@ -300,6 +308,7 @@ impl Constructor {
         &'b self,
         fmt: &mut fmt::Formatter,
         walker: &mut ParserWalker<'b, 'c, 'z>,
+        db: &ContextDatabase,
         symbols: &'b SymbolTable,
     ) -> Result<(), fmt::Error> {
         if let Some(index) = self.flow_through_index {
@@ -311,7 +320,7 @@ impl Constructor {
                     walker.unchecked_push_operand(index);
                     walker
                         .unchecked_constructor()
-                        .format_mnemonic(fmt, walker, symbols)?;
+                        .format_mnemonic(fmt, walker, db, symbols)?;
                     walker.unchecked_pop_operand();
                     return Ok(());
                 }
@@ -324,7 +333,7 @@ impl Constructor {
                 let index = (self.print_pieces[i].as_bytes()[1] - b'A') as usize;
                 symbols
                     .unchecked_symbol(self.operands[index])
-                    .format(fmt, walker, symbols)?;
+                    .format(fmt, walker, db, symbols)?;
             } else {
                 write!(fmt, "{}", self.print_pieces[i])?;
             }
@@ -336,6 +345,7 @@ impl Constructor {
         &'b self,
         fmt: &mut fmt::Formatter,
         walker: &mut ParserWalker<'b, 'c, 'z>,
+        db: &ContextDatabase,
         symbols: &'b SymbolTable,
     ) -> Result<(), fmt::Error> {
         if let Some(index) = self.flow_through_index {
@@ -347,7 +357,7 @@ impl Constructor {
                     walker.unchecked_push_operand(index);
                     walker
                         .unchecked_constructor()
-                        .format_body(fmt, walker, symbols)?;
+                        .format_body(fmt, walker, db, symbols)?;
                     walker.unchecked_pop_operand();
                     return Ok(());
                 }
@@ -360,7 +370,7 @@ impl Constructor {
                     let index = (self.print_pieces[i].as_bytes()[1] - b'A') as usize;
                     symbols
                         .unchecked_symbol(self.operands[index])
-                        .format(fmt, walker, symbols)?;
+                        .format(fmt, walker, db, symbols)?;
                 } else {
                     write!(fmt, "{}", self.print_pieces[i])?;
                 }

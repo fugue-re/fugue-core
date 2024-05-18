@@ -9,6 +9,7 @@ use crate::disassembly::symbol::{
     Constructor, DecisionNode, Operand, Operands, SymbolTable, Token, Tokens,
 };
 use crate::disassembly::walker::ParserWalker;
+use crate::disassembly::ContextDatabase;
 use crate::disassembly::{Error, IRBuilderArena};
 use crate::space::{AddressSpace, AddressSpaceId};
 use crate::space_manager::SpaceManager;
@@ -475,6 +476,7 @@ impl Symbol {
         arena: &'az IRBuilderArena,
         operands: &mut Operands<'b, 'az>,
         walker: &mut ParserWalker<'b, 'c, 'z>,
+        db: &ContextDatabase,
         symbols: &'b SymbolTable,
     ) {
         match self {
@@ -491,10 +493,10 @@ impl Symbol {
                         let mut inner = Operands::new(arena);
                         walker
                             .unchecked_constructor()
-                            .collect_operands(arena, &mut inner, walker, symbols);
+                            .collect_operands(arena, &mut inner, walker, db, symbols);
                         operands.append(inner);
                     } else {
-                        sym.collect_operands(arena, operands, walker, symbols);
+                        sym.collect_operands(arena, operands, walker, db, symbols);
                     }
                 } else {
                     let (value, bits) = if let Some(ref def_expr) = def_expr {
@@ -560,7 +562,7 @@ impl Symbol {
                 operands.push(walker.unchecked_next_address());
             }
             Self::Next2 { .. } => {
-                operands.push(walker.unchecked_next2_address());
+                operands.push(walker.unchecked_next2_address(db));
             }
             _ => unreachable!(),
         }
@@ -570,6 +572,7 @@ impl Symbol {
         &'b self,
         fmt: &mut fmt::Formatter,
         walker: &mut ParserWalker<'b, 'c, 'z>,
+        db: &ContextDatabase,
         symbols: &'b SymbolTable,
     ) -> Result<(), fmt::Error> {
         match self {
@@ -585,9 +588,9 @@ impl Symbol {
                     if sym.is_subtable() {
                         walker
                             .unchecked_constructor()
-                            .format(fmt, walker, symbols)?;
+                            .format(fmt, walker, db, symbols)?;
                     } else {
-                        sym.format(fmt, walker, symbols)?;
+                        sym.format(fmt, walker, db, symbols)?;
                     }
                 } else {
                     let value = if let Some(ref def_expr) = def_expr {
@@ -667,7 +670,7 @@ impl Symbol {
                 write!(fmt, "{:#x}", walker.unchecked_next_address().offset())
             }
             Self::Next2 { .. } => {
-                write!(fmt, "{:#x}", walker.unchecked_next2_address().offset())
+                write!(fmt, "{:#x}", walker.unchecked_next2_address(db).offset())
             }
             _ => unreachable!(),
         }
@@ -677,6 +680,7 @@ impl Symbol {
         &'b self,
         tokens: &mut Tokens<'b, 'az>,
         walker: &mut ParserWalker<'b, 'c, 'z>,
+        db: &ContextDatabase,
         symbols: &'b SymbolTable,
     ) {
         match self {
@@ -692,9 +696,9 @@ impl Symbol {
                     if sym.is_subtable() {
                         walker
                             .unchecked_constructor()
-                            .tokens_aux(tokens, walker, symbols);
+                            .tokens_aux(tokens, walker, db, symbols);
                     } else {
-                        sym.tokens(tokens, walker, symbols);
+                        sym.tokens(tokens, walker, db, symbols);
                     }
                 } else {
                     let value = if let Some(ref def_expr) = def_expr {
@@ -762,7 +766,7 @@ impl Symbol {
                 tokens.push(walker.unchecked_next_address());
             }
             Self::Next2 { .. } => {
-                tokens.push(walker.unchecked_next2_address());
+                tokens.push(walker.unchecked_next2_address(db));
             }
             _ => unreachable!(),
         }

@@ -8,6 +8,8 @@ use crate::disassembly::{Error, ParserWalker};
 use crate::space::{AddressSpace, AddressSpaceId};
 use crate::space_manager::SpaceManager;
 
+use super::ContextDatabase;
+
 #[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 pub enum HandleKind {
     Space,
@@ -60,15 +62,16 @@ impl ConstTpl {
         matches!(self, Self::Relative { .. })
     }
 
-    pub fn fix<'a, 'b, 'c, 'z>(
+    pub fn fix<'a, 'b, 'c, 'd, 'z>(
         &'b self,
         walker: &mut ParserWalker<'b, 'c, 'z>,
+        db: &'d ContextDatabase,
         manager: &'a SpaceManager,
     ) -> u64 {
         match self {
             Self::Start => walker.address().offset(),
             Self::Next => walker.unchecked_next_address().offset(), // .ok_or_else(|| Error::InvalidNextAddress)?.offset(),
-            Self::Next2 => walker.unchecked_next2_address().offset(), // .ok_or_else(|| Error::InvalidNextAddress)?.offset(),
+            Self::Next2 => walker.unchecked_next2_address(db).offset(), // .ok_or_else(|| Error::InvalidNextAddress)?.offset(),
             Self::CurrentSpaceSize => manager
                 .unchecked_space_by_id(walker.address().space())
                 .address_size() as u64,
@@ -120,10 +123,11 @@ impl ConstTpl {
         }
     }
 
-    pub fn offset<'a, 'b, 'c, 'z>(
+    pub fn offset<'a, 'b, 'c, 'd, 'z>(
         &'b self,
         handle: &mut FixedHandle<'b>,
         walker: &mut ParserWalker<'b, 'c, 'z>,
+        db: &'d ContextDatabase,
         manager: &'b SpaceManager,
     ) {
         match self {
@@ -138,7 +142,7 @@ impl ConstTpl {
             }
             _ => {
                 handle.offset_space = None;
-                handle.offset_offset = handle.space.wrap_offset(self.fix(walker, manager));
+                handle.offset_offset = handle.space.wrap_offset(self.fix(walker, db, manager));
             }
         }
     }
@@ -267,15 +271,16 @@ pub struct HandleTpl {
 }
 
 impl HandleTpl {
-    pub fn fix<'a, 'b, 'c, 'z>(
+    pub fn fix<'a, 'b, 'c, 'd, 'z>(
         &'b self,
         walker: &mut ParserWalker<'b, 'c, 'z>,
+        db: &'d ContextDatabase,
         manager: &'b SpaceManager,
     ) -> FixedHandle<'b> {
         if self.ptr_space.is_real() {
             let mut handle = FixedHandle::new(self.space.space(walker, manager));
-            handle.size = self.size.fix(walker, manager) as usize;
-            self.ptr_offset.offset(&mut handle, walker, manager);
+            handle.size = self.size.fix(walker, db, manager) as usize;
+            self.ptr_offset.offset(&mut handle, walker, db, manager);
             handle
         } else {
             let mut handle = FixedHandle::new(unsafe {
@@ -283,8 +288,8 @@ impl HandleTpl {
                     .unchecked_fix_space(walker, manager)
                     .unwrap_unchecked()
             });
-            handle.size = self.size.fix(walker, manager) as usize;
-            handle.offset_offset = self.ptr_offset.fix(walker, manager);
+            handle.size = self.size.fix(walker, db, manager) as usize;
+            handle.offset_offset = self.ptr_offset.fix(walker, db, manager);
             handle.offset_space = self.ptr_space.unchecked_fix_space(walker, manager);
 
             if unsafe { handle.offset_space.unwrap_unchecked() }.is_constant() {
@@ -292,9 +297,9 @@ impl HandleTpl {
                 handle.offset_offset = handle.offset_offset * handle.space.word_size() as u64;
                 handle.offset_offset = handle.space.wrap_offset(handle.offset_offset);
             } else {
-                handle.offset_size = self.ptr_size.fix(walker, manager) as usize;
+                handle.offset_size = self.ptr_size.fix(walker, db, manager) as usize;
                 handle.temporary_space = self.tmp_space.unchecked_fix_space(walker, manager);
-                handle.temporary_offset = self.tmp_offset.fix(walker, manager);
+                handle.temporary_offset = self.tmp_offset.fix(walker, db, manager);
             }
 
             handle

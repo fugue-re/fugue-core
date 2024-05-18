@@ -404,9 +404,9 @@ impl Translator {
         Ok(slf)
     }
 
-    pub fn disassemble<'a, 'z>(
+    pub fn disassemble<'a, 'd, 'z>(
         &'a self,
-        db: &mut ContextDatabase,
+        db: &'d mut ContextDatabase,
         builder: &'z IRBuilderArena,
         address: AddressValue,
         bytes: &[u8],
@@ -416,9 +416,9 @@ impl Translator {
         self.disassemble_with(db, &mut ctxt, &arena, builder, address, bytes)
     }
 
-    pub fn disassemble_aux<'a, 'az, 'c, T, E, F>(
+    pub fn disassemble_aux<'a, 'az, 'c, 'd, T, E, F>(
         &'a self,
-        db: &mut ContextDatabase,
+        db: &'d mut ContextDatabase,
         context: &'c mut ParserContext<'a, 'az>,
         arena: &'az IRBuilderArena,
         address: AddressValue,
@@ -426,7 +426,7 @@ impl Translator {
         mut f: F,
     ) -> Result<T, E>
     where
-        F: FnMut(InstructionFormatter<'a, 'c, 'az>, usize, usize) -> Result<T, E>,
+        F: FnMut(InstructionFormatter<'a, 'c, 'd, 'az>, usize, usize) -> Result<T, E>,
         E: From<Error>,
     {
         if self.alignment() != 1 {
@@ -443,7 +443,7 @@ impl Translator {
         let mut walker = ParserWalker::new(context, self);
 
         Translator::resolve(&mut walker, self.root.id(), &self.symbol_table)?;
-        Translator::resolve_handles(&mut walker, &self.manager, &self.symbol_table)?;
+        Translator::resolve_handles(&mut walker, &self.manager, db, &self.symbol_table)?;
 
         walker.base_state();
         walker
@@ -456,15 +456,15 @@ impl Translator {
         let ctor = walker.unchecked_constructor();
 
         f(
-            InstructionFormatter::new(walker, &self.symbol_table, ctor),
+            InstructionFormatter::new(walker, db, &self.symbol_table, ctor),
             delay_slots,
             length,
         )
     }
 
-    pub fn disassemble_with<'a, 'az, 'z>(
+    pub fn disassemble_with<'a, 'd, 'az, 'z>(
         &'a self,
-        db: &mut ContextDatabase,
+        db: &'d mut ContextDatabase,
         context: &mut ParserContext<'a, 'az>,
         arena: &'az IRBuilderArena,
         builder: &'z IRBuilderArena,
@@ -546,7 +546,7 @@ impl Translator {
         let mut walker = ParserWalker::new(context, self);
 
         Translator::resolve(&mut walker, self.root.id(), &self.symbol_table)?;
-        Translator::resolve_handles(&mut walker, &self.manager, &self.symbol_table)?;
+        Translator::resolve_handles(&mut walker, &self.manager, db, &self.symbol_table)?;
 
         walker.base_state();
         walker.apply_commits(db, &self.manager, &self.symbol_table)?;
@@ -568,7 +568,7 @@ impl Translator {
                 let mut dwalker = ParserWalker::new(&mut dcontext, self);
 
                 Translator::resolve(&mut dwalker, self.root.id(), &self.symbol_table)?;
-                Translator::resolve_handles(&mut dwalker, &self.manager, &self.symbol_table)?;
+                Translator::resolve_handles(&mut dwalker, &self.manager, db, &self.symbol_table)?;
 
                 dwalker.base_state();
                 dwalker.apply_commits(db, &self.manager, &self.symbol_table)?;
@@ -599,9 +599,29 @@ impl Translator {
         }
     }
 
-    fn resolve_handles<'b, 'c, 'z>(
+    pub fn length<'d, 'z>(
+        &self,
+        db: &ContextDatabase,
+        arena: &'z IRBuilderArena,
+        address: AddressValue,
+        bytes: &[u8],
+    ) -> Result<usize, Error> {
+        let mut context = ParserContext::empty(&arena, self.manager());
+
+        context.reinitialise(&arena, db, address.clone(), bytes);
+        let mut walker = ParserWalker::new(&mut context, self);
+
+        Translator::resolve(&mut walker, self.root.id(), &self.symbol_table)?;
+        Translator::resolve_handles(&mut walker, &self.manager, db, &self.symbol_table)?;
+
+        walker.base_state();
+        Ok(walker.length())
+    }
+
+    fn resolve_handles<'b, 'c, 'd, 'z>(
         walker: &mut ParserWalker<'b, 'c, 'z>,
         manager: &'b SpaceManager,
+        db: &'d ContextDatabase,
         symbol_table: &'b SymbolTable,
     ) -> Result<(), Error> {
         // assumes resolve has resolved all constructors
@@ -649,7 +669,7 @@ impl Translator {
             if op >= nops {
                 if let Some(templ) = ct.template() {
                     if let Some(res) = templ.result() {
-                        let h = res.fix(walker, manager);
+                        let h = res.fix(walker, db, manager);
                         walker.set_parent_handle(h);
                     }
                 }

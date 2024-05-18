@@ -1,3 +1,4 @@
+use std::cell::Cell;
 use std::cell::RefCell;
 use std::fmt;
 use std::mem::size_of;
@@ -18,34 +19,37 @@ pub use bumpalo::collections::Vec as BVec;
 
 const MAX_PARSE_DEPTH: usize = 64 + 1;
 
-pub struct InstructionFormatter<'b, 'c, 'z> {
+pub struct InstructionFormatter<'b, 'c, 'd, 'z> {
     walker: RefCell<ParserWalker<'b, 'c, 'z>>,
+    db: &'d ContextDatabase,
     symbols: &'b SymbolTable,
     ctor: &'b Constructor,
 }
 
-pub struct MnemonicFormatter<'a, 'b, 'c, 'z> {
-    inner: &'a InstructionFormatter<'b, 'c, 'z>,
+pub struct MnemonicFormatter<'a, 'b, 'c, 'd, 'z> {
+    inner: &'a InstructionFormatter<'b, 'c, 'd, 'z>,
 }
 
-pub struct OperandFormatter<'a, 'b, 'c, 'z> {
-    inner: &'a InstructionFormatter<'b, 'c, 'z>,
+pub struct OperandFormatter<'a, 'b, 'c, 'd, 'z> {
+    inner: &'a InstructionFormatter<'b, 'c, 'd, 'z>,
 }
 
-impl<'b, 'c, 'z> InstructionFormatter<'b, 'c, 'z> {
+impl<'b, 'c, 'd, 'z> InstructionFormatter<'b, 'c, 'd, 'z> {
     pub fn new(
         walker: ParserWalker<'b, 'c, 'z>,
+        db: &'d ContextDatabase,
         symbols: &'b SymbolTable,
         ctor: &'b Constructor,
     ) -> Self {
         Self {
             walker: RefCell::new(walker),
+            db,
             symbols,
             ctor,
         }
     }
 
-    pub fn mnemonic<'a>(&'a self) -> MnemonicFormatter<'a, 'b, 'c, 'z> {
+    pub fn mnemonic<'a>(&'a self) -> MnemonicFormatter<'a, 'b, 'c, 'd, 'z> {
         MnemonicFormatter { inner: self }
     }
 
@@ -53,7 +57,7 @@ impl<'b, 'c, 'z> InstructionFormatter<'b, 'c, 'z> {
         bumpalo::format!(in irb.inner(), "{}", self.mnemonic())
     }
 
-    pub fn operands<'a>(&'a self) -> OperandFormatter<'a, 'b, 'c, 'z> {
+    pub fn operands<'a>(&'a self) -> OperandFormatter<'a, 'b, 'c, 'd, 'z> {
         OperandFormatter { inner: self }
     }
 
@@ -63,7 +67,7 @@ impl<'b, 'c, 'z> InstructionFormatter<'b, 'c, 'z> {
 
     pub fn operand_data<'az>(&self, irb: &'az IRBuilderArena) -> Operands<'b, 'az> {
         self.ctor
-            .operands(irb, &mut self.walker.borrow_mut(), self.symbols)
+            .operands(irb, &mut self.walker.borrow_mut(), self.db, self.symbols)
     }
 
     pub fn tokens<'az>(&self, irb: &'az IRBuilderArena) -> (Tokens<'b, 'az>, Tokens<'b, 'az>) {
@@ -71,6 +75,7 @@ impl<'b, 'c, 'z> InstructionFormatter<'b, 'c, 'z> {
         self.ctor.mnemonic_tokens(
             &mut mnemonic_tokens,
             &mut self.walker.borrow_mut(),
+            self.db,
             self.symbols,
         );
 
@@ -78,6 +83,7 @@ impl<'b, 'c, 'z> InstructionFormatter<'b, 'c, 'z> {
         self.ctor.body_tokens(
             &mut body_tokens,
             &mut self.walker.borrow_mut(),
+            self.db,
             self.symbols,
         );
 
@@ -85,33 +91,37 @@ impl<'b, 'c, 'z> InstructionFormatter<'b, 'c, 'z> {
     }
 }
 
-impl<'b, 'c, 'z> fmt::Display for InstructionFormatter<'b, 'c, 'z> {
+impl<'b, 'c, 'd, 'z> fmt::Display for InstructionFormatter<'b, 'c, 'd, 'z> {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         self.ctor
-            .format_mnemonic(f, &mut self.walker.borrow_mut(), self.symbols)?;
+            .format_mnemonic(f, &mut self.walker.borrow_mut(), self.db, self.symbols)?;
         write!(f, " ")?;
         self.ctor
-            .format_body(f, &mut self.walker.borrow_mut(), self.symbols)?;
+            .format_body(f, &mut self.walker.borrow_mut(), self.db, self.symbols)?;
         Ok(())
     }
 }
 
-impl<'a, 'b, 'c, 'z> fmt::Display for MnemonicFormatter<'a, 'b, 'c, 'z> {
+impl<'a, 'b, 'c, 'd, 'z> fmt::Display for MnemonicFormatter<'a, 'b, 'c, 'd, 'z> {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         self.inner.ctor.format_mnemonic(
             f,
             &mut self.inner.walker.borrow_mut(),
+            self.inner.db,
             self.inner.symbols,
         )?;
         Ok(())
     }
 }
 
-impl<'a, 'b, 'c, 'z> fmt::Display for OperandFormatter<'a, 'b, 'c, 'z> {
+impl<'a, 'b, 'c, 'd, 'z> fmt::Display for OperandFormatter<'a, 'b, 'c, 'd, 'z> {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        self.inner
-            .ctor
-            .format_body(f, &mut self.inner.walker.borrow_mut(), self.inner.symbols)?;
+        self.inner.ctor.format_body(
+            f,
+            &mut self.inner.walker.borrow_mut(),
+            self.inner.db,
+            self.inner.symbols,
+        )?;
         Ok(())
     }
 }
@@ -172,7 +182,7 @@ pub struct ParserContext<'b, 'z> {
 
     address: AddressValue,
     next_address: Option<AddressValue>,
-    // next2_address: Option<AddressValue>,
+    next2_address: Cell<Option<AddressValue>>,
 
     delay_slot: usize,
 
@@ -189,7 +199,7 @@ impl<'b, 'z> ParserContext<'b, 'z> {
             backing: [0u8; 32],
             address: AddressValue::new(space_manager.default_space(), 0),
             next_address: None,
-            // next2_address: None,
+            next2_address: Cell::new(None),
             delay_slot: 0,
             alloc: 1,
             state: bvec![in arena.inner(); ConstructState::default(); 75],
@@ -216,7 +226,7 @@ impl<'b, 'z> ParserContext<'b, 'z> {
             context_commit: BVec::with_capacity_in(2, arena.inner()),
             address,
             next_address: None,
-            // next2_address: None,
+            next2_address: Cell::new(None),
             delay_slot: 0,
             alloc: 1,
             state: bvec![in arena.inner(); ConstructState::default(); 75], // state * param
@@ -570,8 +580,8 @@ impl<'b, 'c, 'z> ParserWalker<'b, 'c, 'z> {
         self.ctx.address.clone()
     }
 
-    pub fn unchecked_next_address(&self) -> &AddressValue {
-        if let Some(ref address) = self.ctx.next_address {
+    pub fn unchecked_next_address(&self) -> AddressValue {
+        if let Some(address) = self.ctx.next_address {
             address
         } else {
             unreachable!()
@@ -579,15 +589,35 @@ impl<'b, 'c, 'z> ParserWalker<'b, 'c, 'z> {
     }
 
     pub fn next_address(&self) -> Option<AddressValue> {
-        self.ctx.next_address.clone()
+        self.ctx.next_address
     }
 
-    pub fn unchecked_next2_address(&self) -> &AddressValue {
-        unimplemented!("inst_next2")
+    pub fn unchecked_next2_address(&self, db: &ContextDatabase) -> AddressValue {
+        if let Some(address) = self.next2_address(db) {
+            address
+        } else {
+            unimplemented!("inst_next2")
+        }
     }
 
-    pub fn next2_address(&self) -> Option<AddressValue> {
-        None
+    pub fn next2_address(&self, db: &ContextDatabase) -> Option<AddressValue> {
+        match self.ctx.next2_address.get() {
+            n2 @ Some(_) => n2,
+            None => {
+                if let Some(next) = self.ctx.next_address {
+                    let irb = IRBuilderArena::with_capacity(128);
+                    let off = (next.offset() - self.ctx.address.offset()) as usize;
+                    let bytes = &self.ctx.backing[off..];
+
+                    self.translator
+                        .length(db, &irb, next, bytes)
+                        .map(|length| next + length)
+                        .ok()
+                } else {
+                    None
+                }
+            }
+        }
     }
 
     pub fn translator(&self) -> &'b Translator {
@@ -833,8 +863,7 @@ impl<'b, 'c, 'z> ParserWalker<'b, 'c, 'z> {
 
         while point.constructor.map(|ct| ct != ctor).unwrap_or(false) {
             if cur_depth == 0 {
-                let mut nwalker =
-                    ParserWalker::<'b, 'd, 'z>::new(&mut self.ctx, self.translator);
+                let mut nwalker = ParserWalker::<'b, 'd, 'z>::new(&mut self.ctx, self.translator);
                 let mut state = ConstructState::default();
 
                 state.constructor = Some(ctor);
@@ -909,7 +938,8 @@ impl<'b, 'c, 'z> ParserWalker<'b, 'c, 'z> {
         manager: &'b SpaceManager,
         symbols: &'b SymbolTable,
     ) -> Result<(), Error> {
-        self.ctx.apply_commits(db, manager, symbols, self.translator)
+        self.ctx
+            .apply_commits(db, manager, symbols, self.translator)
     }
 
     pub fn set_context_word(&mut self, num: usize, value: u32, mask: u32) {
