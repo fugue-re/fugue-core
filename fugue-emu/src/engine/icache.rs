@@ -2,6 +2,7 @@
 //! 
 //! implements translation block caching
 
+use std::collections::BTreeMap;
 use thiserror::Error;
 
 use super::{
@@ -16,6 +17,7 @@ use fugue::high::{
         Location,
     },
 };
+use fugue::ir::Address;
 use fugue::ir::disassembly::IRBuilderArena;
 use crate::context::manager::ContextManager;
 
@@ -24,14 +26,14 @@ use crate::context::manager::ContextManager;
 /// todo: implement actual caching behavior
 pub(crate) struct ICache<'a> {
     irb: IRBuilderArena,
-    pcode: Option<PCode<'a>>,
+    pcode: BTreeMap<Address, PCode<'a>>,
 }
 
 impl<'a> ICache<'a> {
     pub fn new(irb: IRBuilderArena) -> Self {
         Self {
             irb: irb,
-            pcode: None,
+            pcode: BTreeMap::new(),
         }
     }
 

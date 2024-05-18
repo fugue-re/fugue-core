@@ -154,6 +154,11 @@ impl<'a> Engine<'a> {
         &self.engine_type
     }
 
+    /// execute single pcode instruction and return new current location
+    pub fn substep(&mut self) -> Result<(EvaluatorTarget, Location), EmulationError> {
+        // refactor step() to call substep until Location has different address
+        todo!()
+    }
 }
 
 impl<'a> Clocked<'a> for Engine<'a> {
