@@ -1,59 +1,30 @@
 use std::cell::{Cell, Ref, RefCell};
-use std::mem;
 
 use fugue_ir::disassembly::lift::ArenaVec;
-use fugue_ir::disassembly::{ContextDatabase, IRBuilderArena, PCodeData, ParserContext};
+use fugue_ir::disassembly::PCodeRaw;
+use fugue_ir::disassembly::{ContextDatabase, IRBuilderArena, PCodeData};
 use fugue_ir::error::Error;
+use fugue_ir::il::instruction::Instruction;
+use fugue_ir::translator::TranslationContext;
 use fugue_ir::{Address, Translator};
-
-use ouroboros::self_referencing;
 
 use crate::ir::{Insn, PCode};
 
-#[self_referencing]
-struct LifterInner<'a> {
-    translator: &'a Translator,
-    irb: IRBuilderArena,
-    ctx: ContextDatabase,
-    #[borrows(irb)]
-    #[covariant]
-    pctx: ParserContext<'a, 'this>,
-}
-
+#[derive(Clone)]
 #[repr(transparent)]
-pub struct Lifter<'a>(LifterInner<'a>);
-
-impl<'a> Clone for Lifter<'a> {
-    fn clone(&self) -> Self {
-        // we recreate based on the current context database
-        let translator = *self.0.borrow_translator();
-        let ctx = self.0.borrow_ctx().clone();
-
-        Self::new_with(translator, ctx)
-    }
-
-    fn clone_from(&mut self, source: &Self) {
-        // we only need to copy the context database
-        let sctx = source.0.borrow_ctx().clone();
-        self.0.with_ctx_mut(|ctx| *ctx = sctx);
-    }
-}
+pub struct Lifter<'a>(TranslationContext<'a>);
 
 impl<'a> Lifter<'a> {
     pub fn new(translator: &'a Translator) -> Self {
-        Self::new_with(translator, translator.context_database())
+        Self(TranslationContext::new(translator))
     }
 
     pub fn new_with(translator: &'a Translator, ctx: ContextDatabase) -> Self {
-        let irb = IRBuilderArena::with_capacity(4096);
-
-        Self(LifterInner::new(translator, irb, ctx, |irb| {
-            ParserContext::empty(irb, translator.manager())
-        }))
+        Self(TranslationContext::new_with(translator, ctx))
     }
 
     pub fn irb(&self, size: usize) -> IRBuilderArena {
-        IRBuilderArena::with_capacity(size)
+        self.0.irb(size)
     }
 
     pub fn disassemble<'z>(
@@ -62,39 +33,23 @@ impl<'a> Lifter<'a> {
         address: impl Into<Address>,
         bytes: impl AsRef<[u8]>,
     ) -> Result<Insn<'z>, Error> {
+        let address = address.into();
         let bytes = bytes.as_ref();
 
-        self.0.with_mut(|slf| {
-            let address = address.into();
-            let address_val = slf.translator.address(address.into());
+        let Instruction {
+            mnemonic,
+            operands,
+            delay_slots,
+            length,
+            ..
+        } = self.0.disassemble(irb, address, bytes)?;
 
-            let (mnemonic, operand_str, delay_slots, length) = slf.translator.disassemble_aux(
-                slf.ctx,
-                slf.pctx,
-                slf.irb,
-                address_val,
-                bytes,
-                |fmt, delay_slots, length| -> Result<_, Error> {
-                    let mnemonic = fmt.mnemonic_str(irb);
-                    let operand_str = fmt.operands_str(irb);
-
-                    Ok((mnemonic, operand_str, delay_slots, length))
-                },
-            )?;
-
-            if length as usize > bytes.len() {
-                return Err(Error::Disassembly(
-                    fugue_ir::disassembly::Error::InstructionResolution,
-                ));
-            }
-
-            Ok(Insn {
-                address,
-                mnemonic,
-                operands: operand_str,
-                delay_slots: delay_slots as u8,
-                length: length as u8,
-            })
+        Ok(Insn {
+            address,
+            mnemonic,
+            operands,
+            delay_slots: delay_slots as u8,
+            length: length as u8,
         })
     }
 
@@ -104,49 +59,34 @@ impl<'a> Lifter<'a> {
         address: impl Into<Address>,
         bytes: impl AsRef<[u8]>,
     ) -> Result<PCode<'z>, Error> {
+        let address = address.into();
         let bytes = bytes.as_ref();
 
-        self.0.with_mut(|slf| {
-            let address = address.into();
-            let address_val = slf.translator.address(address.into());
-            let mut irbb = irb.builder(&slf.translator);
+        let PCodeRaw {
+            operations,
+            delay_slots,
+            length,
+            ..
+        } = self.0.lift(irb, address, bytes)?;
 
-            let pcode_raw = slf.translator.lift_with(
-                slf.ctx,
-                slf.pctx,
-                slf.irb,
-                &mut irbb,
-                address_val,
-                bytes,
-            )?;
-
-            if pcode_raw.length as usize > bytes.len() {
-                return Err(Error::Disassembly(
-                    fugue_ir::disassembly::Error::InstructionResolution,
-                ));
-            }
-
-            Ok(PCode {
-                address,
-                operations: pcode_raw.operations,
-                delay_slots: pcode_raw.delay_slots as u8,
-                length: pcode_raw.length as u8,
-            })
+        Ok(PCode {
+            address,
+            operations,
+            delay_slots: delay_slots as u8,
+            length: length as u8,
         })
     }
 
     pub fn translator(&self) -> &Translator {
-        self.0.borrow_translator()
+        self.0.translator()
+    }
+
+    pub fn context(&self) -> &ContextDatabase {
+        self.0.context()
     }
 
     pub fn reset(&mut self) {
-        let translator = *self.0.borrow_translator();
-        let mut ctx = translator.context_database();
-
-        // we preserve the old context database
-        self.0.with_ctx_mut(|old_ctx| mem::swap(old_ctx, &mut ctx));
-
-        *self = Self::new_with(translator, ctx);
+        self.0.reset();
     }
 }
 

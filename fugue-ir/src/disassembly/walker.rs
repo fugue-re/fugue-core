@@ -225,7 +225,6 @@ impl<'b, 'z> ParserContext<'b, 'z> {
 
     pub fn reinitialise(
         &mut self,
-        _arena: &'z IRBuilderArena,
         context_db: &ContextDatabase,
         address: AddressValue,
         buffer: &[u8],
