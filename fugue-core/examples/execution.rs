@@ -1,13 +1,13 @@
-use fugue::high::eval::{
-    DummyContext,
+use fugue_core::eval::{
+    dummy::DummyContext,
     Evaluator,
     EvaluatorContext,
     EvaluatorTarget,
 };
-use fugue::high::language::LanguageBuilder;
-use fugue::high::ir::Location;
-use fugue::ir::Address;
-use fugue::bv::BitVec;
+use fugue_core::language::LanguageBuilder;
+use fugue_core::ir::Location;
+use fugue_ir::Address;
+use fugue_bv::BitVec;
 use fugue_ir::VarnodeData;
 
 
@@ -95,21 +95,21 @@ fn main() {
     EvaluatorContext::write_vnd(
         &mut context, 
         &translator.register_by_name("lr").unwrap(),
-        &BitVec::from_u32(0xFFFFFFFFu32, 32usize)
+        &BitVec::from_u32(0xFFFFFFFFu32, 32u32)
     ).expect("failed to write varnode!");
 
     // initialize sp
     EvaluatorContext::write_vnd(
         &mut context, 
         &translator.register_by_name("sp").unwrap(),
-        &BitVec::from_usize(0x1000usize, 32usize)
+        &BitVec::from_usize(0x1000usize, 32u32)
     ).expect("failed to write varnode!");
 
     // initialize r0
     EvaluatorContext::write_vnd(
         &mut context, 
         &translator.register_by_name("r0").unwrap(),
-        &BitVec::from_i32(5, 32usize)
+        &BitVec::from_i32(5, 32u32)
     ).expect("failed to write varnode!");
 
     let mut evaluator = Evaluator::new(context_lifter.translator());

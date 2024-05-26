@@ -1,6 +1,6 @@
 #![allow(unused_variables)]
-use fugue::high::language::LanguageBuilder;
-use fugue::ir::Address;
+use fugue_core::language::LanguageBuilder;
+use fugue_ir::Address;
 
 fn main() {
     // create the language builder, which will use the path specified

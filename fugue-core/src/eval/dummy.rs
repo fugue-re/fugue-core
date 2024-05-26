@@ -94,7 +94,7 @@ mod test {
     #[test]
     #[ignore]
     fn test_single_step() -> anyhow::Result<()> {
-        let lbuilder = LanguageBuilder::new("data")?;
+        let lbuilder = LanguageBuilder::new("../data/processors")?;
         let language = lbuilder.build("ARM:LE:32:v7", "default")?;
 
         let memory = &[
@@ -111,12 +111,12 @@ mod test {
         let pcode = lifter.lift(&irb, 0x15e38u32, memory)?;
 
         let mut context = DummyContext::new(&lifter, 0x15e38u32, 0x1000);
-        let mut evaluator = Evaluator::new(&lifter, &mut context);
+        let mut evaluator = Evaluator::new(lifter.translator());
 
-        evaluator.context.memory.write_bytes(0usize, memory)?;
+        context.memory.write_bytes(0usize, memory)?;
 
         for op in pcode.operations() {
-            evaluator.step(0x15e38u32, &op)?;
+            evaluator.step(0x15e38u32, &op, &mut context)?;
         }
 
         Ok(())

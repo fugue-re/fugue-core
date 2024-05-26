@@ -1,15 +1,15 @@
 #![allow(unused_imports)]
 
-use fugue;
-use fugue::arch::ArchitectureDef;
-use fugue::bytes::Endian;
-use fugue::ir::{
+use fugue_core;
+use fugue_arch::ArchitectureDef;
+use fugue_bytes::Endian;
+use fugue_ir::{
     Translator,
     Address,
     AddressValue,
     LanguageDB,
-    il::pcode::Operand,
-    disassembly::IRBuilderArena
+    disassembly::IRBuilderArena,
+    disassembly::symbol::Operand,
 };
 
 #[test]
@@ -50,7 +50,7 @@ fn translation() {
     let mut offset: usize = 0;
     
     while offset < bytes.len() {
-        let insn = translator.lift_pcode_raw(
+        let insn = translator.lift(
             &mut context_db, 
             &ir_builder,
             addr + offset,

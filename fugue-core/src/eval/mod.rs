@@ -60,9 +60,7 @@ pub trait EvaluatorContext {
     fn write_vnd(&mut self, var: &VarnodeData, val: &BitVec) -> Result<(), EvaluatorError>;
 }
 
-pub struct Evaluator<'a, 'b, C>
-where
-    C: EvaluatorContext,
+pub struct Evaluator<'a>
 {
     default_space: &'a AddressSpace,
     #[allow(unused)]
