@@ -9,7 +9,7 @@ use super::{
     EngineError,
     EngineType,
 };
-use fugue::high::{
+use fugue_core::{
     lifter::Lifter,
     ir::{
         // Insn,
@@ -17,8 +17,8 @@ use fugue::high::{
         Location,
     },
 };
-use fugue::ir::Address;
-use fugue::ir::disassembly::IRBuilderArena;
+use fugue_ir::Address;
+use fugue_ir::disassembly::IRBuilderArena;
 use crate::context::manager::ContextManager;
 
 /// cache for lifted instructions

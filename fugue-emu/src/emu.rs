@@ -5,15 +5,15 @@
 #![allow(unused_imports)]
 use thiserror::Error;
 
-use fugue::bv::BitVec;
-use fugue::bytes::Endian;
-use fugue::ir::{
+use fugue_bv::BitVec;
+use fugue_bytes::Endian;
+use fugue_ir::{
     Address,
     AddressSpace,
     Translator,
     VarnodeData,
 };
-use fugue::high::{
+use fugue_core::{
     ir::Location,
     lifter::Lifter,
     eval::{

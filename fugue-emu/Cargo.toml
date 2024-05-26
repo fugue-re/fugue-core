@@ -8,6 +8,10 @@ edition = "2021"
 
 [dependencies]
 fugue-core = { version = "0.3.0", path = "../fugue-core" }
+fugue-arch = { version = "0.3", path = "../fugue-arch" }
+fugue-bv = { version = "0.3", path = "../fugue-bv" }
+fugue-bytes = { version = "0.3", path = "../fugue-bytes" }
+fugue-ir = { version = "0.3", path = "../fugue-ir" }
 multi_key_map = { version = "0.3.0" }
 anyhow = "1"
 thiserror = "1"

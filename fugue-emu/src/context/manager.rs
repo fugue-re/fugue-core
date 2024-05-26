@@ -7,12 +7,12 @@ use std::fmt;
 // which might give us performance improvement.
 use multi_key_map::MultiKeyMap;
 
-use fugue::bv::BitVec;
-use fugue::bytes::Endian;
-use fugue::ir::{
+use fugue_bv::BitVec;
+use fugue_bytes::Endian;
+use fugue_ir::{
     translator, Address, VarnodeData
 };
-use fugue::high::{
+use fugue_core::{
     language::Language,
     lifter::Lifter,
     eval::{
@@ -218,7 +218,7 @@ impl<'a> EvaluatorContext for ContextManager<'a> {
     ) -> Result<BitVec, EvaluatorError> {
         let spc = var.space();
         if spc.is_constant() {
-            Ok(BitVec::from_u64(var.offset(), var.size() * 8))
+            Ok(BitVec::from_u64(var.offset(), var.bits()))
         } else if spc.is_register() {
             self.regs
                 .read_val_with(var.offset() as usize, var.size(), self.endian)

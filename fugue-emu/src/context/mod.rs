@@ -3,8 +3,8 @@ pub mod manager;
 
 use thiserror::Error;
 
-use fugue::ir::Address;
-use fugue::high::eval::{EvaluatorContext, EvaluatorError};
+use fugue_ir::Address;
+use fugue_core::eval::{EvaluatorContext, EvaluatorError};
 
 // ContextError
 #[derive(Debug, Error)]

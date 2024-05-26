@@ -7,7 +7,7 @@ pub mod icache;
 use thiserror::Error;
 
 #[allow(unused_imports)]
-use fugue::high::{
+use fugue_core::{
     lifter::Lifter,
     ir::{
         Insn,
@@ -21,8 +21,8 @@ use fugue::high::{
         EvaluatorError,
     }
 };
-use fugue::bv::BitVec;
-use fugue::ir::{
+use fugue_bv::BitVec;
+use fugue_ir::{
     Address,
     VarnodeData,
     Translator,
@@ -85,7 +85,7 @@ impl ProgramCounter {
         context: &mut impl EvaluatorContext,
     ) -> Result<(), EngineError> {
         let addr = u64::from(address.into());
-        let val = &BitVec::from_u64(addr, self.vnd.size() * 8);
+        let val = &BitVec::from_u64(addr, self.vnd.bits());
         context
             .write_vnd(&self.vnd, val)
             .map_err(EngineError::from)

@@ -24,15 +24,15 @@ mod tests {
         EngineType,
         EngineError,
     };
-    use fugue::high::eval::{
+    use fugue_core::eval::{
         Evaluator,
         EvaluatorContext,
         EvaluatorError,
         EvaluatorTarget,
     };
-    use fugue::high::language::LanguageBuilder;
-    use fugue::high::ir::Location;
-    use fugue::ir::{
+    use fugue_core::language::LanguageBuilder;
+    use fugue_core::ir::Location;
+    use fugue_ir::{
         Address,
         VarnodeData,
         space::{
@@ -41,8 +41,8 @@ mod tests {
             SpaceKind
         },
     };
-    use fugue::bytes::Endian;
-    use fugue::bv::BitVec;
+    use fugue_bytes::Endian;
+    use fugue_bv::BitVec;
     use std::time::Instant;
 
     #[test]
