@@ -1,11 +1,11 @@
 [workspace]
 members = [
+  "fugue",
   "fugue-arch",
   "fugue-bytes",
   "fugue-bv",
   "fugue-core",
   "fugue-fp",
-  "fugue-high",
   "fugue-ir",
   "fugue-state",
   "fugue-state-derive", 

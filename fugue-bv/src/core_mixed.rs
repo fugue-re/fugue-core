@@ -189,7 +189,7 @@ impl FromStr for BitVec {
         }
         .map_err(|_| ParseError::InvalidConst)?;
 
-        let bits = usize::from_str(sz).map_err(|_| ParseError::InvalidSize)?;
+        let bits = u32::from_str(sz).map_err(|_| ParseError::InvalidSize)?;
 
         Ok(Self::from_bigint(val, bits))
     }
@@ -201,13 +201,13 @@ impl BitVec {
         let val =
             BigInt::from_str_radix(cst, radix as i32).map_err(|_| ParseError::InvalidConst)?;
 
-        let bits = usize::from_str(sz).map_err(|_| ParseError::InvalidSize)?;
+        let bits = u32::from_str(sz).map_err(|_| ParseError::InvalidSize)?;
         Ok(Self::from_bigint(val, bits))
     }
 }
 
 impl BitVec {
-    pub fn from_bigint(v: BigInt, bits: usize) -> Self {
+    pub fn from_bigint(v: BigInt, bits: u32) -> Self {
         if bits <= 64 {
             let v = core_bigint::BitVec::from_bigint(v, bits).to_u64().unwrap();
             Self::N(core_u64::BitVec::from_uint(v, bits))
@@ -218,7 +218,7 @@ impl BitVec {
 
     #[allow(unused)]
     pub(crate) fn from_bigint_with(v: BigInt, mask: &'static BigInt) -> Self {
-        let bits = mask.count_ones().unwrap() as usize;
+        let bits = mask.count_ones().unwrap() as u32;
         if bits <= 64 {
             let v = core_bigint::BitVec::from_bigint_with(v, mask)
                 .to_u64()
@@ -241,7 +241,7 @@ impl BitVec {
         self.as_bigint()
     }
 
-    pub fn zero(bits: usize) -> Self {
+    pub fn zero(bits: u32) -> Self {
         if bits <= 64 {
             Self::N(core_u64::BitVec::zero(bits))
         } else {
@@ -249,7 +249,7 @@ impl BitVec {
         }
     }
 
-    pub fn one(bits: usize) -> Self {
+    pub fn one(bits: u32) -> Self {
         if bits <= 64 {
             Self::N(core_u64::BitVec::one(bits))
         } else {
@@ -273,7 +273,7 @@ impl BitVec {
         fold_map!(self, |slf| slf.leading_zeros())
     }
 
-    pub fn bits(&self) -> usize {
+    pub fn bits(&self) -> u32 {
         fold_map!(self, |slf| slf.bits())
     }
 
@@ -331,6 +331,11 @@ impl BitVec {
 
     pub fn lsb(&self) -> bool {
         fold_map!(self, |slf| slf.lsb())
+    }
+
+    pub fn bytes(&self) -> usize {
+        let bits = self.bits() as usize;
+        bits / 8 + if bits % 8 == 0 { 0 } else { 1 }
     }
 
     pub fn from_be_bytes(buf: &[u8]) -> Self {
@@ -452,7 +457,7 @@ impl BitVec {
         bind2!(self, rhs, |slf, rhs| slf.rem_euclid(rhs))
     }
 
-    pub fn max_value_with(bits: usize, signed: bool) -> Self {
+    pub fn max_value_with(bits: u32, signed: bool) -> Self {
         if bits <= 64 {
             Self::N(core_u64::BitVec::max_value_with(bits, signed))
         } else {
@@ -464,7 +469,7 @@ impl BitVec {
         bind!(self, |slf| slf.max_value())
     }
 
-    pub fn min_value_with(bits: usize, signed: bool) -> Self {
+    pub fn min_value_with(bits: u32, signed: bool) -> Self {
         if bits <= 64 {
             Self::N(core_u64::BitVec::min_value_with(bits, signed))
         } else {
@@ -476,28 +481,28 @@ impl BitVec {
         bind!(self, |slf| slf.min_value())
     }
 
-    pub fn signed_cast(&self, size: usize) -> Self {
+    pub fn signed_cast(&self, size: u32) -> Self {
         self.clone().signed().cast(size)
     }
 
-    pub fn unsigned_cast(&self, size: usize) -> Self {
+    pub fn unsigned_cast(&self, size: u32) -> Self {
         self.clone().unsigned().cast(size)
     }
 
-    pub fn signed_cast_assign(&mut self, bits: usize) {
+    pub fn signed_cast_assign(&mut self, bits: u32) {
         self.cast_assign_with(true, bits)
     }
 
-    pub fn unsigned_cast_assign(&mut self, bits: usize) {
+    pub fn unsigned_cast_assign(&mut self, bits: u32) {
         self.cast_assign_with(false, bits)
     }
 
-    pub fn cast(self, size: usize) -> Self {
+    pub fn cast(self, size: u32) -> Self {
         let signed = self.is_signed();
         self.cast_with(signed, size)
     }
 
-    fn cast_with(self, signed: bool, size: usize) -> Self {
+    fn cast_with(self, signed: bool, size: u32) -> Self {
         match self {
             Self::N(bv) => {
                 if size <= 64 {
@@ -534,12 +539,12 @@ impl BitVec {
         }
     }
 
-    pub fn cast_assign(&mut self, size: usize) {
+    pub fn cast_assign(&mut self, size: u32) {
         let signed = self.is_signed();
         self.cast_assign_with(signed, size)
     }
 
-    fn cast_assign_with(&mut self, signed: bool, size: usize) {
+    fn cast_assign_with(&mut self, signed: bool, size: u32) {
         match self {
             Self::N(ref mut bv) => {
                 if size <= 64 {
@@ -1097,7 +1102,7 @@ macro_rules! impl_from_t_for {
     ($t:ident) => {
         impl BitVec {
             ::paste::paste! {
-                pub fn [< from_ $t >](t: $t, bits: usize) -> Self {
+                pub fn [< from_ $t >](t: $t, bits: u32) -> Self {
                     if bits <= 64 {
                         Self::N(core_u64::BitVec::[< from_ $t >](t, bits))
                     } else {

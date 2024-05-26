@@ -4,7 +4,7 @@ use std::ops::Deref;
 use std::sync::Arc;
 
 use ahash::AHashMap as Map;
-use smallvec::SmallVec;
+use stack_map::StackMap;
 use ustr::Ustr;
 
 use crate::address::AddressValue;
@@ -15,19 +15,15 @@ use crate::disassembly::Opcode;
 use crate::disassembly::VarnodeData;
 use crate::disassembly::{Error, ParserContext, ParserWalker};
 use crate::float_format::FloatFormat;
-use crate::register::RegisterNames;
 use crate::space::AddressSpace;
 use crate::space_manager::SpaceManager;
-use crate::Translator;
+use crate::translator::{Translator, MAX_DELAY_SLOTS};
 
 pub use bumpalo::collections::String as ArenaString;
 pub use bumpalo::collections::Vec as ArenaVec;
 pub use bumpalo::format as arena_format;
 pub use bumpalo::vec as arena_vec;
 pub use bumpalo::Bump as Arena;
-
-use crate::il::ecode::{self, ECode};
-use crate::il::pcode::{self, PCode};
 
 pub type FloatFormats = Map<usize, Arc<FloatFormat>>;
 pub type UserOpStr = Ustr;
@@ -354,17 +350,6 @@ impl IRBuilderArena {
         &self.0
     }
 
-    pub fn builder<'b, 'z>(&'z self, translator: &'b Translator) -> IRBuilderBase<'b, 'z> {
-        IRBuilderBase::empty(
-            &self,
-            translator.manager(),
-            translator.float_formats(),
-            translator.registers(),
-            translator.user_ops(),
-            translator.unique_mask(),
-        )
-    }
-
     pub fn boxed<'z, T>(&'z self, val: T) -> ArenaRef<'z, T> {
         ArenaRef::new_in(self, val)
     }
@@ -390,44 +375,32 @@ impl Deref for IRBuilderArena {
     }
 }
 
-pub struct IRBuilderBase<'b, 'z> {
+pub struct IRBuilderBase<'b, 'cz> {
     const_space: &'b AddressSpace,
     unique_mask: u64,
 
-    alloc: &'z IRBuilderArena,
-
     label_base: usize,
     label_count: usize,
-    label_refs: ArenaVec<'z, RelativeRecord>,
-    labels: ArenaVec<'z, u64>,
+    label_refs: ArenaVec<'cz, RelativeRecord>,
+    labels: ArenaVec<'cz, u64>,
 
     manager: &'b SpaceManager,
-    float_formats: &'b FloatFormats,
-    registers: &'b RegisterNames,
-    user_ops: &'b [UserOpStr],
 }
 
-impl<'b, 'z> IRBuilderBase<'b, 'z> {
+impl<'b, 'cz> IRBuilderBase<'b, 'cz> {
     pub fn empty(
-        alloc: &'z IRBuilderArena,
+        alloc_inner: &'cz IRBuilderArena,
         manager: &'b SpaceManager,
-        float_formats: &'b FloatFormats,
-        registers: &'b RegisterNames,
-        user_ops: &'b [UserOpStr],
         unique_mask: u64,
     ) -> Self {
         Self {
             const_space: manager.constant_space_ref(),
             unique_mask,
-            alloc,
             label_base: 0,
             label_count: 0,
-            labels: ArenaVec::with_capacity_in(16, alloc.inner()),
-            label_refs: ArenaVec::with_capacity_in(16, alloc.inner()),
+            labels: ArenaVec::with_capacity_in(16, alloc_inner.inner()),
+            label_refs: ArenaVec::with_capacity_in(16, alloc_inner.inner()),
             manager,
-            float_formats,
-            registers,
-            user_ops,
         }
     }
 
@@ -438,6 +411,7 @@ impl<'b, 'z> IRBuilderBase<'b, 'z> {
         self.label_refs.clear();
     }
 
+    /*
     pub(crate) fn arena(&self) -> &'z Arena {
         self.alloc
     }
@@ -449,13 +423,15 @@ impl<'b, 'z> IRBuilderBase<'b, 'z> {
     pub fn alloc_vec<T>(&self) -> ArenaVec<'z, T> {
         ArenaVec::new_in(self.alloc)
     }
+    */
 }
 
 pub struct IRBuilder<'b, 'c, 'cz, 'z> {
-    base: &'c mut IRBuilderBase<'b, 'z>,
+    base: &'c mut IRBuilderBase<'b, 'cz>,
+    arena: &'z IRBuilderArena,
     unique_offset: u64,
     issued: ArenaVec<'z, PCodeData<'z>>,
-    delay_contexts: Map<AddressValue, &'c mut ParserContext<'b, 'cz>>,
+    delay_contexts: StackMap<AddressValue, &'c mut ParserContext<'b, 'cz>, MAX_DELAY_SLOTS>,
     walker: ParserWalker<'b, 'c, 'cz>,
 }
 
@@ -483,7 +459,7 @@ pub struct IRBuilder<'b, 'c> {
 */
 
 impl<'b, 'c, 'cz, 'z> Deref for IRBuilder<'b, 'c, 'cz, 'z> {
-    type Target = &'c mut IRBuilderBase<'b, 'z>;
+    type Target = &'c mut IRBuilderBase<'b, 'cz>;
 
     fn deref(&self) -> &Self::Target {
         &self.base
@@ -492,20 +468,19 @@ impl<'b, 'c, 'cz, 'z> Deref for IRBuilder<'b, 'c, 'cz, 'z> {
 
 impl<'b, 'c, 'cz, 'z> IRBuilder<'b, 'c, 'cz, 'z> {
     pub fn new(
-        base: &'c mut IRBuilderBase<'b, 'z>,
+        base: &'c mut IRBuilderBase<'b, 'cz>,
+        arena: &'z IRBuilderArena,
         walker: ParserWalker<'b, 'c, 'cz>,
-        delay_contexts: &'c mut Map<AddressValue, ParserContext<'b, 'cz>>,
+        delay_contexts: StackMap<AddressValue, &'c mut ParserContext<'b, 'cz>, MAX_DELAY_SLOTS>,
     ) -> Self {
         base.reinitialise();
         Self {
             unique_offset: (walker.address().offset() & base.unique_mask) >> 4,
-            issued: ArenaVec::with_capacity_in(16, &base.alloc),
+            issued: ArenaVec::with_capacity_in(16, arena),
             base,
+            arena,
             walker,
-            delay_contexts: delay_contexts
-                .iter_mut()
-                .map(|(k, v)| (k.clone(), v))
-                .collect(),
+            delay_contexts,
         }
     }
 
@@ -602,7 +577,7 @@ impl<'b, 'c, 'cz, 'z> IRBuilder<'b, 'c, 'cz, 'z> {
             self.set_unique_offset(address.offset());
 
             let context = unsafe { self.delay_contexts.remove(&address).unwrap_unchecked() };
-            let mut nwalker = ParserWalker::new(context);
+            let mut nwalker = ParserWalker::new(context, self.walker.translator());
             let length = nwalker.length();
 
             // swap out
@@ -703,7 +678,7 @@ impl<'b, 'c, 'cz, 'z> IRBuilder<'b, 'c, 'cz, 'z> {
 
     pub fn dump(&mut self, op: &'b OpTpl) -> Result<(), Error> {
         let input_count = op.input_count();
-        let mut pcode = PCodeData::new_in(&self.base.arena(), op.opcode(), input_count);
+        let mut pcode = PCodeData::new_in(self.arena, op.opcode(), input_count);
 
         for i in 0..input_count {
             let input = op.input(i);
@@ -713,7 +688,7 @@ impl<'b, 'c, 'cz, 'z> IRBuilder<'b, 'c, 'cz, 'z> {
                 let index = VarnodeData::new(self.const_space, spc.index() as u64, 0);
                 self.issued.push(PCodeData {
                     opcode: Opcode::Load,
-                    inputs: arena_vec![in self.base.alloc; index, ptr],
+                    inputs: arena_vec![in self.arena; index, ptr],
                     output: Some(varnode.clone()),
                 });
                 pcode.inputs.push(varnode);
@@ -737,7 +712,7 @@ impl<'b, 'c, 'cz, 'z> IRBuilder<'b, 'c, 'cz, 'z> {
                 let index = VarnodeData::new(self.const_space, spc.index() as u64, 0);
                 self.issued.push(PCodeData {
                     opcode: Opcode::Store,
-                    inputs: arena_vec![in self.base.alloc; index, ptr, outp],
+                    inputs: arena_vec![in self.arena; index, ptr, outp],
                     output: None,
                 })
             }
@@ -799,8 +774,8 @@ impl<'b, 'c, 'cz, 'z> IRBuilder<'b, 'c, 'cz, 'z> {
                     )));
                 }
                 Some(label) => {
-                    let res =
-                        label.wrapping_sub(rel.instruction as u64) & bits::calculate_mask(varnode.size());
+                    let res = label.wrapping_sub(rel.instruction as u64)
+                        & bits::calculate_mask(varnode.size());
                     varnode.offset = res;
                 }
             }
@@ -809,11 +784,11 @@ impl<'b, 'c, 'cz, 'z> IRBuilder<'b, 'c, 'cz, 'z> {
         Ok(())
     }
 
-    pub fn emit_raw(self, length: usize) -> PCodeRaw<'z> {
+    pub fn emit(self, length: usize) -> PCodeRaw<'z> {
         let mut slf = self;
         slf.walker.base_state();
 
-        let mut operations = ArenaVec::new_in(&slf.base.alloc);
+        let mut operations = ArenaVec::new_in(slf.arena);
         swap(&mut slf.issued, &mut operations);
 
         PCodeRaw {
@@ -821,72 +796,6 @@ impl<'b, 'c, 'cz, 'z> IRBuilder<'b, 'c, 'cz, 'z> {
             operations,
             delay_slots: slf.walker.delay_slot() as u8,
             length: length as u8,
-        }
-    }
-
-    pub fn emit_pcode(self, length: usize) -> PCode {
-        let mut slf = self;
-        slf.walker.base_state();
-
-        let address = slf.walker.address();
-        let delay_slots = slf.walker.delay_slot();
-
-        let manager = slf.manager;
-        let registers = slf.registers;
-        let user_ops = slf.user_ops;
-
-        let mut operations = SmallVec::with_capacity(slf.issued.len());
-
-        for op in slf.issued.drain(..) {
-            operations.push(pcode::PCodeOp::from_parts(
-                manager,
-                registers,
-                user_ops,
-                op.opcode,
-                op.inputs.into_iter(),
-                op.output,
-            ));
-        }
-
-        PCode {
-            operations,
-            address,
-            delay_slots,
-            length,
-        }
-    }
-
-    pub fn emit_ecode(self, length: usize) -> ECode {
-        let mut slf = self;
-        slf.walker.base_state();
-
-        let address = slf.walker.address();
-        let delay_slots = slf.walker.delay_slot();
-
-        let manager = slf.manager;
-        let float_formats = slf.float_formats;
-        let user_ops = slf.user_ops;
-
-        let mut operations = SmallVec::with_capacity(slf.issued.len());
-
-        for (i, op) in slf.issued.drain(..).enumerate() {
-            operations.push(ecode::Stmt::from_parts(
-                manager,
-                &float_formats,
-                user_ops,
-                &address,
-                i,
-                op.opcode,
-                op.inputs.into_iter(),
-                op.output,
-            ));
-        }
-
-        ECode {
-            operations,
-            address,
-            delay_slots,
-            length,
         }
     }
 }

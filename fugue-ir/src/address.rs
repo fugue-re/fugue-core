@@ -36,6 +36,24 @@ impl Address {
     }
 }
 
+impl AsRef<Address> for Address {
+    fn as_ref(&self) -> &Address {
+        self
+    }
+}
+
+impl AsRef<u64> for Address {
+    fn as_ref(&self) -> &u64 {
+        &self.0
+    }
+}
+
+impl Default for Address {
+    fn default() -> Self {
+        Self(0)
+    }
+}
+
 impl PartialEq<u8> for Address {
      fn eq(&self, other: &u8) -> bool {
          self.0 == *other as u64

@@ -20,7 +20,6 @@ pub mod translator;
 
 pub use address::{Address, AddressValue, IntoAddress};
 pub use disassembly::{IRBuilder, VarnodeData};
-pub use il::{PCode, PCodeFormatter};
 pub use language::LanguageDB;
 pub use space::{AddressSpace, AddressSpaceId};
 pub use space_manager::SpaceManager;

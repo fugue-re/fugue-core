@@ -9,7 +9,7 @@ use crate::Translator;
 pub struct VarnodeData {
     pub(crate) space: AddressSpaceId,
     pub(crate) offset: u64,
-    pub(crate) size: usize,
+    pub(crate) size: u32,
 }
 
 impl Default for VarnodeData {
@@ -41,7 +41,7 @@ impl<'a> fmt::Display for VarnodeDataFormatter<'a> {
         let space = self.translator.manager().unchecked_space_by_id(self.varnode.space);
         if space.is_register() {
             let name = self.translator.registers()
-                .get(self.varnode.offset, self.varnode.size)
+                .get(self.varnode.offset(), self.varnode.size())
                 .unwrap();
             write!(f, "Register(name={}, size={})", name, self.varnode.size)?;
             return Ok(())
@@ -73,7 +73,7 @@ impl VarnodeData {
         Self {
             space: space.id(),
             offset,
-            size,
+            size: size as _,
         }
     }
 
@@ -91,6 +91,10 @@ impl VarnodeData {
     }
 
     pub fn size(&self) -> usize {
-        self.size
+        self.size as _
+    }
+
+    pub fn bits(&self) -> u32 {
+        self.size * 8
     }
 }

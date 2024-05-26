@@ -721,12 +721,12 @@ impl Float {
         self.floor0_assign();
     }
 
-    pub fn trunc_to_bitvec(&self, bits: usize) -> BitVec {
+    pub fn trunc_to_bitvec(&self, bits: u32) -> BitVec {
         let slf = self.clone();
         slf.trunc_into_bitvec(bits)
     }
 
-    pub fn trunc_into_bitvec(self, bits: usize) -> BitVec {
+    pub fn trunc_into_bitvec(self, bits: u32) -> BitVec {
         if self.is_nan() {
             return BitVec::zero(bits)
         }
@@ -1004,7 +1004,7 @@ impl FloatFormatOpsInternal for FloatFormat {
 }
 
 pub trait FloatFormatOps {
-    fn into_bitvec(&self, fp: Float, bits: usize) -> BitVec;
+    fn into_bitvec(&self, fp: Float, bits: u32) -> BitVec;
     fn from_bitvec(&self, bv: &BitVec) -> Float;
 }
 
@@ -1081,7 +1081,7 @@ pub const fn float_format_from_size(bytes: usize) -> Result<FloatFormat, Error> 
 }
 
 impl FloatFormatOps for FloatFormat {
-    fn into_bitvec(&self, fp: Float, bits: usize) -> BitVec {
+    fn into_bitvec(&self, fp: Float, bits: u32) -> BitVec {
         let mut res = match fp.kind {
             FloatKind::QuietNaN | FloatKind::SignallingNaN => {
                 self.encode_nan(Sign::Positive)

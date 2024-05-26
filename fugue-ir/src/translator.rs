@@ -1,7 +1,8 @@
+use std::array;
 use std::borrow::Borrow;
-use std::convert::TryFrom;
 use std::fs::File;
 use std::io::Read;
+use std::mem;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -9,14 +10,15 @@ use ahash::AHashMap as Map;
 
 use fugue_arch::ArchitectureDef;
 use itertools::Itertools;
-
+use ouroboros::self_referencing;
+use stack_map::StackMap;
 use ustr::Ustr;
 
 use crate::address::AddressValue;
-
+use crate::compiler;
+use crate::convention::Convention;
 use crate::deserialise::parse::XmlExt;
 use crate::deserialise::Error as DeserialiseError;
-
 use crate::disassembly::lift::{FloatFormats, UserOpStr};
 use crate::disassembly::symbol::{FixedHandle, Symbol, SymbolScope, SymbolTable};
 use crate::disassembly::walker::InstructionFormatter;
@@ -27,20 +29,14 @@ use crate::disassembly::VarnodeData;
 use crate::disassembly::{
     IRBuilder, IRBuilderArena, IRBuilderBase, PCodeRaw, ParserContext, ParserState, ParserWalker,
 };
-
-use crate::il::ecode::ECode;
-use crate::il::instruction::{Instruction, InstructionFull};
-use crate::il::pcode::PCode;
-
 use crate::error::Error;
-
 use crate::float_format::FloatFormat;
-
-use crate::compiler;
-use crate::convention::Convention;
-
+use crate::il::instruction::{Instruction, InstructionFull};
 use crate::register::RegisterNames;
 use crate::space_manager::SpaceManager;
+use crate::Address;
+
+pub(crate) const MAX_DELAY_SLOTS: usize = 8;
 
 // Translator is used for parsing the processor spec XML and
 // lifting instructions
@@ -67,7 +63,159 @@ pub struct Translator {
     source_files: Map<String, usize>,
 }
 
+struct TranslationContextState<'a, 'az> {
+    translation_parser_insn_ctx: ParserContext<'a, 'az>, // for main instruction
+    translation_parser_delay_ctxs: [ParserContext<'a, 'az>; MAX_DELAY_SLOTS],
+    translation_builder_base: IRBuilderBase<'a, 'az>,
+}
+
+#[self_referencing]
+struct TranslationContextInner<'a> {
+    translator: &'a Translator,
+    translation_context_db: ContextDatabase,
+
+    translation_allocator: IRBuilderArena, // for translation temporaries
+
+    #[borrows(translation_allocator)]
+    #[covariant]
+    translation_context_state: TranslationContextState<'a, 'this>,
+}
+
+#[repr(transparent)]
+pub struct TranslationContext<'a>(TranslationContextInner<'a>);
+
+impl<'a> TranslationContext<'a> {
+    pub fn new(translator: &'a Translator) -> Self {
+        Self::new_with(translator, translator.context_database())
+    }
+
+    pub fn new_with(translator: &'a Translator, context_db: ContextDatabase) -> Self {
+        Self(TranslationContextInner::new(
+            translator,
+            context_db,
+            IRBuilderArena::with_capacity(1024),
+            |arena| TranslationContextState {
+                translation_parser_insn_ctx: ParserContext::empty(arena, translator.manager()),
+                translation_parser_delay_ctxs: array::from_fn(|_| {
+                    ParserContext::empty(arena, translator.manager())
+                }),
+                translation_builder_base: IRBuilderBase::empty(
+                    arena,
+                    translator.manager(),
+                    translator.unique_mask(),
+                ),
+            },
+        ))
+    }
+
+    pub fn irb(&self, size: usize) -> IRBuilderArena {
+        IRBuilderArena::with_capacity(size)
+    }
+
+    pub fn disassemble<'z>(
+        &mut self,
+        irb: &'z IRBuilderArena,
+        addr: impl Into<Address>,
+        bytes: impl AsRef<[u8]>,
+    ) -> Result<Instruction<'z>, Error> {
+        self.0.with_mut(|slf| {
+            let addr = addr.into();
+            let addr_val = slf.translator.address(addr.into());
+
+            let bytes = bytes.as_ref();
+
+            let insn = slf.translator.disassemble_with(
+                slf.translation_context_db,
+                &mut slf.translation_context_state.translation_parser_insn_ctx,
+                irb,
+                addr_val,
+                bytes,
+            )?;
+
+            if insn.length() > bytes.len() {
+                return Err(Error::Disassembly(DisassemblyError::InstructionResolution));
+            }
+
+            Ok(insn)
+        })
+    }
+
+    pub fn lift<'z>(
+        &mut self,
+        irb: &'z IRBuilderArena,
+        addr: impl Into<Address>,
+        bytes: impl AsRef<[u8]>,
+    ) -> Result<PCodeRaw<'z>, Error> {
+        self.0.with_mut(|slf| {
+            let addr = addr.into();
+            let addr_val = slf.translator.address(addr.into());
+
+            let bytes = bytes.as_ref();
+
+            let insn = slf.translator.lift_with(
+                slf.translation_context_db,
+                &mut slf.translation_context_state.translation_parser_insn_ctx,
+                &mut slf.translation_context_state.translation_parser_delay_ctxs,
+                &mut slf.translation_context_state.translation_builder_base,
+                irb,
+                addr_val,
+                bytes,
+            )?;
+
+            if insn.length() > bytes.len() {
+                return Err(Error::Disassembly(DisassemblyError::InstructionResolution));
+            }
+
+            Ok(insn)
+        })
+    }
+
+    pub fn translator(&self) -> &Translator {
+        self.0.borrow_translator()
+    }
+
+    pub fn context(&self) -> &ContextDatabase {
+        self.0.borrow_translation_context_db()
+    }
+
+    pub fn reset(&mut self) {
+        let translator = *self.0.borrow_translator();
+        let mut context_db = translator.context_database();
+
+        self.0.with_translation_context_db_mut(|old_context_db| {
+            mem::swap(old_context_db, &mut context_db);
+        });
+
+        *self = Self::new_with(translator, context_db);
+    }
+}
+
+impl<'a> Clone for TranslationContext<'a> {
+    fn clone(&self) -> Self {
+        let translator = *self.0.borrow_translator();
+        let context_db = self.0.borrow_translation_context_db().clone();
+
+        Self::new_with(translator, context_db)
+    }
+
+    fn clone_from(&mut self, source: &Self) {
+        // we only need to copy the context database
+        let sctx = source.0.borrow_translation_context_db();
+        self.0.with_translation_context_db_mut(|ctx| {
+            ctx.clone_from(sctx);
+        });
+    }
+}
+
 impl Translator {
+    pub fn context<'a>(&'a self) -> TranslationContext<'a> {
+        TranslationContext::new(self)
+    }
+
+    pub fn context_with<'a>(&'a self, db: ContextDatabase) -> TranslationContext<'a> {
+        TranslationContext::new_with(self, db)
+    }
+
     pub fn is_big_endian(&self) -> bool {
         self.big_endian
     }
@@ -271,7 +419,7 @@ impl Translator {
                 }
                 Some(Symbol::UserOp { index, name, .. }) => {
                     if user_ops.len() <= *index {
-                        user_ops.resize_with(index + 1, || Ustr::from(""));
+                        user_ops.resize_with(index + 1, Ustr::default);
                     }
                     user_ops[*index] = name.clone();
                 }
@@ -281,7 +429,7 @@ impl Translator {
 
         if let Some((pc_offset, pc_size)) = pc {
             self.program_counter.offset = pc_offset;
-            self.program_counter.size = pc_size;
+            self.program_counter.size = pc_size as _;
         } else {
             return Err(DeserialiseError::Invariant(
                 "program counter not defined as a register",
@@ -423,39 +571,13 @@ impl Translator {
     ) -> Result<Instruction<'z>, Error> {
         let arena = IRBuilderArena::with_capacity(4096);
         let mut ctxt = ParserContext::empty(&arena, self.manager());
-        self.disassemble_with(db, &mut ctxt, &arena, builder, address, bytes)
-    }
-
-    pub fn disassemble_cached_with<'a, 'az, 'z>(
-        &'a self,
-        db: &mut ContextDatabase,
-        context: &mut ParserContext<'a, 'az>,
-        arena: &'az IRBuilderArena,
-        builder: &'z IRBuilderArena,
-        cache: &mut Map<[u8; 2], Instruction<'z>>,
-        address: AddressValue,
-        bytes: &[u8],
-    ) -> Result<Instruction<'z>, Error> {
-        if bytes.len() >= 2 {
-            if let Some(insn) = cache.get(&bytes[..2]) {
-                return Ok(insn.clone());
-            }
-        }
-
-        match self.disassemble_with(db, context, arena, builder, address, bytes) {
-            Ok(insn) if insn.length() == 2 => {
-                cache.insert(<[u8; 2]>::try_from(&bytes[..2]).unwrap(), insn.clone());
-                Ok(insn)
-            }
-            r => r,
-        }
+        self.disassemble_with(db, &mut ctxt, builder, address, bytes)
     }
 
     pub fn disassemble_aux<'a, 'az, 'c, T, E, F>(
         &'a self,
         db: &mut ContextDatabase,
         context: &'c mut ParserContext<'a, 'az>,
-        arena: &'az IRBuilderArena,
         address: AddressValue,
         bytes: &[u8],
         mut f: F,
@@ -474,8 +596,8 @@ impl Translator {
             }
         }
 
-        context.reinitialise(arena, db, address.clone(), bytes);
-        let mut walker = ParserWalker::new(context);
+        context.reinitialise(db, address.clone(), bytes);
+        let mut walker = ParserWalker::new(context, self);
 
         Translator::resolve(&mut walker, self.root.id(), &self.symbol_table)?;
         Translator::resolve_handles(&mut walker, &self.manager, &self.symbol_table)?;
@@ -501,12 +623,11 @@ impl Translator {
         &'a self,
         db: &mut ContextDatabase,
         context: &mut ParserContext<'a, 'az>,
-        arena: &'az IRBuilderArena,
         builder: &'z IRBuilderArena,
         address: AddressValue,
         bytes: &[u8],
     ) -> Result<Instruction<'z>, Error> {
-        self.disassemble_aux(db, context, arena, address, bytes, |fmt, delay_slots, length| {
+        self.disassemble_aux(db, context, address, bytes, |fmt, delay_slots, length| {
             let mnemonic = fmt.mnemonic_str(builder);
             let operands = fmt.operands_str(builder);
 
@@ -524,12 +645,11 @@ impl Translator {
         &'a self,
         db: &mut ContextDatabase,
         context: &mut ParserContext<'a, 'az>,
-        arena: &'az IRBuilderArena,
         builder: &'z IRBuilderArena,
         address: AddressValue,
         bytes: &[u8],
     ) -> Result<InstructionFull<'a, 'z>, Error> {
-        self.disassemble_aux(db, context, arena, address, bytes, |fmt, delay_slots, length| {
+        self.disassemble_aux(db, context, address, bytes, |fmt, delay_slots, length| {
             let mnemonic = fmt.mnemonic_str(builder);
             let operands = fmt.operands_str(builder);
             let operand_data = fmt.operand_data(builder);
@@ -545,7 +665,7 @@ impl Translator {
         })
     }
 
-    pub fn lift_pcode_raw<'z>(
+    pub fn lift<'z>(
         &self,
         db: &mut ContextDatabase,
         builder: &'z IRBuilderArena,
@@ -554,16 +674,26 @@ impl Translator {
     ) -> Result<PCodeRaw<'z>, Error> {
         let arena = IRBuilderArena::with_capacity(1024);
         let mut context = ParserContext::empty(&arena, self.manager());
-        let mut base = builder.builder(self);
-        self.lift_pcode_raw_with(db, &mut context, &arena, &mut base, address, bytes)
+        let mut dcontexts = array::from_fn(|_| ParserContext::empty(&arena, self.manager()));
+        let mut base = IRBuilderBase::empty(&arena, self.manager(), self.unique_mask());
+        self.lift_with(
+            db,
+            &mut context,
+            &mut dcontexts,
+            &mut base,
+            builder,
+            address,
+            bytes,
+        )
     }
 
-    pub fn lift_pcode_raw_with<'a, 'az, 'z>(
+    pub fn lift_with<'a, 'az, 'z>(
         &'a self,
         db: &mut ContextDatabase,
         context: &mut ParserContext<'a, 'az>,
-        arena: &'az IRBuilderArena,
-        builder: &mut IRBuilderBase<'a, 'z>,
+        delay_contexts: &mut [ParserContext<'a, 'az>; MAX_DELAY_SLOTS],
+        builder: &mut IRBuilderBase<'a, 'az>,
+        builder_arena: &'z IRBuilderArena,
         address: AddressValue,
         bytes: &[u8],
     ) -> Result<PCodeRaw<'z>, Error> {
@@ -577,8 +707,8 @@ impl Translator {
         }
 
         // Main instruction
-        context.reinitialise(arena, db, address.clone(), bytes);
-        let mut walker = ParserWalker::new(context);
+        context.reinitialise(db, address, bytes);
+        let mut walker = ParserWalker::new(context, self);
 
         Translator::resolve(&mut walker, self.root.id(), &self.symbol_table)?;
         Translator::resolve_handles(&mut walker, &self.manager, &self.symbol_table)?;
@@ -589,18 +719,25 @@ impl Translator {
         let mut fall_offset = walker.length();
 
         let delay_slots = walker.delay_slot();
-        let mut delay_contexts = Map::default();
+
+        let mut delay_context_mapping = StackMap::<_, _, MAX_DELAY_SLOTS>::new();
 
         if delay_slots > 0 {
             let mut byte_count = 0;
-            loop {
+
+            // NOTE: this loop assumes we have enough mappings
+            for dcontext in delay_contexts.iter_mut() {
+                /*
                 let mut dcontext = ParserContext::new(
                     arena,
                     db,
                     address.clone() + fall_offset,
                     &bytes[fall_offset..],
                 );
-                let mut dwalker = ParserWalker::new(&mut dcontext);
+                */
+
+                dcontext.reinitialise(db, address + fall_offset, &bytes[fall_offset..]);
+                let mut dwalker = ParserWalker::new(dcontext, self);
 
                 Translator::resolve(&mut dwalker, self.root.id(), &self.symbol_table)?;
                 Translator::resolve_handles(&mut dwalker, &self.manager, &self.symbol_table)?;
@@ -610,7 +747,7 @@ impl Translator {
 
                 let length = dwalker.length();
 
-                delay_contexts.insert(address.clone() + fall_offset, dcontext);
+                delay_context_mapping.insert(address.clone() + fall_offset, dcontext);
 
                 fall_offset += length;
                 byte_count += length;
@@ -619,195 +756,23 @@ impl Translator {
                     break;
                 }
             }
+
             walker.set_next_address(address.clone() + fall_offset);
         }
 
         if let Some(ctor) = walker.constructor()? {
             let tmpl = ctor.unchecked_template();
-            let mut builder =
-                IRBuilder::new(builder, ParserWalker::new(context), &mut delay_contexts);
+            let mut builder = IRBuilder::new(
+                builder,
+                builder_arena,
+                ParserWalker::new(context, self),
+                delay_context_mapping,
+            );
             builder.build(tmpl, None, &self.symbol_table)?;
             builder.resolve_relatives()?;
-            Ok(builder.emit_raw(fall_offset))
+            Ok(builder.emit(fall_offset))
         } else {
-            Ok(PCodeRaw::nop_in(builder.arena(), address, walker.length()))
-        }
-    }
-
-    pub fn lift_pcode(
-        &self,
-        db: &mut ContextDatabase,
-        address: AddressValue,
-        bytes: &[u8],
-    ) -> Result<PCode, Error> {
-        let arena = IRBuilderArena::with_capacity(4096);
-        let mut context = ParserContext::empty(&arena, self.manager());
-        self.lift_pcode_with(db, &mut context, &arena, address, bytes)
-    }
-
-    pub fn lift_pcode_with<'a, 'az>(
-        &'a self,
-        db: &mut ContextDatabase,
-        context: &mut ParserContext<'a, 'az>,
-        arena: &'az IRBuilderArena,
-        address: AddressValue,
-        bytes: &[u8],
-    ) -> Result<PCode, Error> {
-        if self.alignment != 1 {
-            if address.offset() % self.alignment as u64 != 0 {
-                return Err(DisassemblyError::IncorrectAlignment {
-                    address: address.offset(),
-                    alignment: self.alignment,
-                })?;
-            }
-        }
-
-        // Main instruction
-        // Parse the pcode of the current instruction
-
-        context.reinitialise(arena, db, address.clone(), bytes);
-        let mut walker = ParserWalker::new(context);
-
-        Translator::resolve(&mut walker, self.root.id(), &self.symbol_table)?;
-        Translator::resolve_handles(&mut walker, &self.manager, &self.symbol_table)?;
-
-        walker.base_state();
-        walker.apply_commits(db, &self.manager, &self.symbol_table)?;
-
-        let mut fall_offset = walker.length();
-
-        let delay_slots = walker.delay_slot();
-        let mut delay_contexts = Map::default();
-
-        if delay_slots > 0 {
-            let mut byte_count = 0;
-            loop {
-                let mut dcontext = ParserContext::new(
-                    arena,
-                    db,
-                    address.clone() + fall_offset,
-                    &bytes[fall_offset..],
-                );
-                let mut dwalker = ParserWalker::new(&mut dcontext);
-
-                Translator::resolve(&mut dwalker, self.root.id(), &self.symbol_table)?;
-                Translator::resolve_handles(&mut dwalker, &self.manager, &self.symbol_table)?;
-
-                dwalker.base_state();
-                dwalker.apply_commits(db, &self.manager, &self.symbol_table)?;
-
-                let length = dwalker.length();
-
-                delay_contexts.insert(address.clone() + fall_offset, dcontext);
-
-                fall_offset += length;
-                byte_count += length;
-
-                if byte_count >= delay_slots {
-                    break;
-                }
-            }
-            walker.set_next_address(address.clone() + fall_offset);
-        }
-
-        if let Some(ctor) = walker.constructor()? {
-            let tmpl = ctor.unchecked_template();
-            let mut base = arena.builder(self);
-            let mut builder =
-                IRBuilder::new(&mut base, ParserWalker::new(context), &mut delay_contexts);
-            builder.build(tmpl, None, &self.symbol_table)?;
-            builder.resolve_relatives()?;
-            Ok(builder.emit_pcode(fall_offset))
-        } else {
-            Ok(PCode::nop(address, walker.length()))
-        }
-    }
-
-    pub fn lift_ecode(
-        &self,
-        db: &mut ContextDatabase,
-        address: AddressValue,
-        bytes: &[u8],
-    ) -> Result<ECode, Error> {
-        let arena = IRBuilderArena::with_capacity(1024);
-        let mut context = ParserContext::empty(&arena, self.manager());
-        self.lift_ecode_with(db, &mut context, &arena, address, bytes)
-    }
-
-    pub fn lift_ecode_with<'a, 'az>(
-        &'a self,
-        db: &mut ContextDatabase,
-        context: &mut ParserContext<'a, 'az>,
-        arena: &'az IRBuilderArena,
-        address: AddressValue,
-        bytes: &[u8],
-    ) -> Result<ECode, Error> {
-        if self.alignment != 1 {
-            if address.offset() % self.alignment as u64 != 0 {
-                return Err(DisassemblyError::IncorrectAlignment {
-                    address: address.offset(),
-                    alignment: self.alignment,
-                })?;
-            }
-        }
-
-        // Main instruction
-        // let mut context = ParserContext::new(db, address.clone(), bytes);
-        context.reinitialise(arena, db, address.clone(), bytes);
-        let mut walker = ParserWalker::new(context);
-
-        Translator::resolve(&mut walker, self.root.id(), &self.symbol_table)?;
-        Translator::resolve_handles(&mut walker, &self.manager, &self.symbol_table)?;
-
-        walker.base_state();
-        walker.apply_commits(db, &self.manager, &self.symbol_table)?;
-
-        let mut fall_offset = walker.length();
-
-        let delay_slots = walker.delay_slot();
-        let mut delay_contexts = Map::default();
-
-        if delay_slots > 0 {
-            let mut byte_count = 0;
-            loop {
-                let mut dcontext = ParserContext::new(
-                    arena,
-                    db,
-                    address.clone() + fall_offset,
-                    &bytes[fall_offset..],
-                );
-                let mut dwalker = ParserWalker::new(&mut dcontext);
-
-                Translator::resolve(&mut dwalker, self.root.id(), &self.symbol_table)?;
-                Translator::resolve_handles(&mut dwalker, &self.manager, &self.symbol_table)?;
-
-                dwalker.base_state();
-                dwalker.apply_commits(db, &self.manager, &self.symbol_table)?;
-
-                let length = dwalker.length();
-
-                delay_contexts.insert(address.clone() + fall_offset, dcontext);
-
-                fall_offset += length;
-                byte_count += length;
-
-                if byte_count >= delay_slots {
-                    break;
-                }
-            }
-            walker.set_next_address(address.clone() + fall_offset);
-        }
-
-        if let Some(ctor) = walker.constructor()? {
-            let tmpl = ctor.unchecked_template();
-            let mut base = arena.builder(self);
-            let mut builder =
-                IRBuilder::new(&mut base, ParserWalker::new(context), &mut delay_contexts);
-            builder.build(tmpl, None, &self.symbol_table)?;
-            builder.resolve_relatives()?;
-            Ok(builder.emit_ecode(fall_offset))
-        } else {
-            Ok(ECode::nop(address, walker.length()))
+            Ok(PCodeRaw::nop_in(builder_arena, address, walker.length()))
         }
     }
 
@@ -951,9 +916,34 @@ mod test {
         let bytes = [0x20, 0xf8, 0x48, 0x4f];
 
         let mut db = translator.context_database();
+        let irb = IRBuilderArena::with_capacity(4096);
 
         let addr = translator.address(0x10cbe0u64);
-        let _insn = translator.lift_pcode(&mut db, addr, &bytes)?;
+        let _insn = translator.lift(&mut db, &irb, addr, &bytes)?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_tctx() -> Result<(), Error> {
+        let mut translator = Translator::from_file(
+            "pc",
+            &ArchitectureDef::new("AARCH64", Endian::Little, 64, "v8A"),
+            &Map::default(),
+            "./data/processors/AARCH64/AARCH64.sla",
+        )?;
+
+        translator.set_variable_default("ShowPAC", 0);
+        translator.set_variable_default("PAC_clobber", 0);
+        translator.set_variable_default("ShowBTI", 0);
+        translator.set_variable_default("ShowMemTag", 0);
+
+        let bytes = [0x20, 0xf8, 0x48, 0x4f];
+        let mut trans = translator.context();
+
+        let irb = trans.irb(4096);
+
+        trans.lift(&irb, 0x1000u32, &bytes)?;
 
         Ok(())
     }
@@ -1005,7 +995,7 @@ mod test {
         let addr = translator.address(0x0u64);
         let mut offset = 0;
         while offset < bytes.len() {
-            let insn = translator.lift_pcode_raw(&mut db, &irb, addr + offset, &bytes[offset..])?;
+            let insn = translator.lift(&mut db, &irb, addr + offset, &bytes[offset..])?;
             println!("{}", insn.display(&translator));
             offset += insn.length();
         }
@@ -1014,7 +1004,7 @@ mod test {
         let addr = translator.address(0xb000u64);
         let mut offset = 0;
         while offset < bytes.len() {
-            let insn = translator.lift_pcode_raw(&mut db, &irb, addr + offset, &bytes[offset..])?;
+            let insn = translator.lift(&mut db, &irb, addr + offset, &bytes[offset..])?;
             println!("{}", insn.display(&translator));
             offset += insn.length();
         }
@@ -1040,7 +1030,7 @@ mod test {
         let addr = translator.address(0xd92u64);
         let mut offset = 0;
         while offset < bytes.len() {
-            let insn = translator.lift_pcode_raw(&mut db, &irb, addr + offset, &bytes[offset..])?;
+            let insn = translator.lift(&mut db, &irb, addr + offset, &bytes[offset..])?;
             println!("{}", insn.display(&translator));
             offset += insn.length();
         }

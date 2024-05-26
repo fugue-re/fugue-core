@@ -1,6 +1,4 @@
 use fugue_bv::BitVec;
-
-use fugue_bytes::Endian;
 use fugue_ir::disassembly::{Opcode, PCodeData};
 use fugue_ir::{Address, AddressSpace, Translator, VarnodeData};
 
@@ -8,6 +6,8 @@ use thiserror::Error;
 
 use crate::ir::Location;
 use crate::lifter::Lifter;
+
+pub mod dummy;
 
 pub mod fixed_state;
 use self::fixed_state::FixedState;
@@ -60,92 +60,9 @@ pub trait EvaluatorContext {
     fn write_vnd(&mut self, var: &VarnodeData, val: &BitVec) -> Result<(), EvaluatorError>;
 }
 
-/// A dummy context to provide the Evaluator for testing purposes
-/// 
-/// implements 3 persistent varnode address/memory spaces, each of which has a 
-/// single associated contiguous block of memory
-pub struct DummyContext {
-    base: Address,
-    endian: Endian,
-    memory: FixedState,
-    registers: FixedState,
-    temporaries: FixedState,
-}
-
-impl DummyContext {
-
-    /// instantiates a new dummy context
-    pub fn new(lifter: &Lifter, base: impl Into<Address>, size: usize) -> Self {
-        let t = lifter.translator();
-
-        Self {
-            base: base.into(),
-            endian: if t.is_big_endian() {
-                Endian::Big
-            } else {
-                Endian::Little
-            },
-            memory: FixedState::new(size),
-            registers: FixedState::new(t.register_space_size()),
-            temporaries: FixedState::new(t.unique_space_size()),
-        }
-    }
-
-    /// utility function to translate an absolute address to be relative to the context base address
-    fn translate(&self, addr: u64) -> Result<usize, EvaluatorError> {
-        let addr = addr
-            .checked_sub(self.base.into())
-            .ok_or(EvaluatorError::state_with(
-                "address translation out-of-bounds",
-            ))?;
-
-        Ok(addr as usize)
-    }
-}
-
-impl EvaluatorContext for DummyContext {
-    fn read_vnd(&mut self, var: &VarnodeData) -> Result<BitVec, EvaluatorError> {
-        let spc = var.space();
-        if spc.is_constant() {
-            Ok(BitVec::from_u64(var.offset(), var.size() * 8))
-        } else if spc.is_register() {
-            self.registers
-                .read_val_with(var.offset() as usize, var.size(), self.endian)
-                .map_err(EvaluatorError::state)
-        } else if spc.is_unique() {
-            self.temporaries
-                .read_val_with(var.offset() as usize, var.size(), self.endian)
-                .map_err(EvaluatorError::state)
-        } else {
-            let addr = self.translate(var.offset())?;
-            self.memory
-                .read_val_with(addr, var.size(), self.endian)
-                .map_err(EvaluatorError::state)
-        }
-    }
-
-    fn write_vnd(&mut self, var: &VarnodeData, val: &BitVec) -> Result<(), EvaluatorError> {
-        let spc = var.space();
-        if spc.is_register() {
-            self.registers
-                .write_val_with(var.offset() as usize, val, self.endian)
-                .map_err(EvaluatorError::state)
-        } else if spc.is_unique() {
-            self.temporaries
-                .write_val_with(var.offset() as usize, val, self.endian)
-                .map_err(EvaluatorError::state)
-        } else if spc.is_default() {
-            let addr = self.translate(var.offset())?;
-            self.memory
-                .write_val_with(addr, val, self.endian)
-                .map_err(EvaluatorError::state)
-        } else {
-            panic!("cannot write to constant Varnode")
-        }
-    }
-}
-
-pub struct Evaluator<'a>
+pub struct Evaluator<'a, 'b, C>
+where
+    C: EvaluatorContext,
 {
     default_space: &'a AddressSpace,
     #[allow(unused)]
@@ -181,10 +98,11 @@ impl<'a> Evaluator<'a> {
 
     pub fn step(
         &mut self,
-        loc: Location,
+        loc: impl Into<Location>,
         operation: &PCodeData,
         context: &mut impl EvaluatorContext,
     ) -> Result<EvaluatorTarget, EvaluatorError> {
+        let loc = loc.into();
         match operation.opcode {
             Opcode::Copy => {
                 let val = context.read_vnd(&operation.inputs[0])?;
@@ -369,10 +287,10 @@ impl<'a> Evaluator<'a> {
         let src = context.read_vnd(&operation.inputs[0])?;
         let src_size = src.bits();
 
-        let off = operation.inputs[1].offset() as usize * 8;
+        let off = operation.inputs[1].offset() as u32 * 8;
 
         let dst = operation.output.as_ref().unwrap();
-        let dst_size = dst.size() * 8;
+        let dst_size = dst.bits();
 
         let trun_size = src_size.saturating_sub(off);
         let trun = if dst_size > trun_size {
@@ -417,7 +335,7 @@ impl<'a> Evaluator<'a> {
         context: &mut impl EvaluatorContext,
     ) -> Result<(), EvaluatorError>
     where
-        F: Fn(BitVec, usize) -> BitVec,
+        F: Fn(BitVec, u32) -> BitVec,
         G: FnOnce(BitVec, BitVec) -> Result<BitVec, EvaluatorError>,
     {
         let lhs = context.read_vnd(&operation.inputs[0])?;
@@ -427,7 +345,7 @@ impl<'a> Evaluator<'a> {
         let siz = lhs.bits().max(rhs.bits());
         let val = op(cast(lhs, siz), cast(rhs, siz))?;
 
-        self.assign(dst, val.cast(dst.size() * 8), context)
+        self.assign(dst, val.cast(dst.bits()), context)
     }
 
     fn lift_signed_int1<F>(&mut self, operation: &PCodeData, op: F, context: &mut impl EvaluatorContext) -> Result<(), EvaluatorError>
@@ -460,7 +378,7 @@ impl<'a> Evaluator<'a> {
 
         let val = op(cast(rhs))?;
 
-        self.assign(dst, val.cast(dst.size() * 8), context)
+        self.assign(dst, val.cast(dst.bits()), context)
     }
 
     fn lift_bool2<F>(&mut self, operation: &PCodeData, op: F, context: &mut impl EvaluatorContext) -> Result<(), EvaluatorError>
@@ -473,7 +391,7 @@ impl<'a> Evaluator<'a> {
 
         let val = bool2bv(op(!lhs.is_zero(), !rhs.is_zero())?);
 
-        self.assign(dst, val.cast(dst.size() * 8), context)
+        self.assign(dst, val.cast(dst.bits()), context)
     }
 
     fn lift_bool1<F>(&mut self, operation: &PCodeData, op: F, context: &mut impl EvaluatorContext) -> Result<(), EvaluatorError>
@@ -485,7 +403,7 @@ impl<'a> Evaluator<'a> {
 
         let val = bool2bv(op(!rhs.is_zero())?);
 
-        self.assign(dst, val.cast(dst.size() * 8), context)
+        self.assign(dst, val.cast(dst.bits()), context)
     }
 
     fn read_bool(&mut self, var: &VarnodeData, context: &mut impl EvaluatorContext) -> Result<bool, EvaluatorError> {
@@ -503,12 +421,12 @@ impl<'a> Evaluator<'a> {
     }
 
     pub fn write_mem(&mut self, addr: Address, val: &BitVec, context: &mut impl EvaluatorContext) -> Result<(), EvaluatorError> {
-        let mem = VarnodeData::new(self.default_space, addr.offset(), val.bits() / 8);
+        let mem = VarnodeData::new(self.default_space, addr.offset(), val.bytes());
         context.write_vnd(&mem, val)
     }
 
     pub fn assign(&mut self, var: &VarnodeData, val: BitVec, context: &mut impl EvaluatorContext) -> Result<(), EvaluatorError> {
-        context.write_vnd(var, &val.cast(var.size() * 8))
+        context.write_vnd(var, &val.cast(var.bits()))
     }
 
     pub fn read_reg<S: AsRef<str>>(&mut self, name: S, context: &mut impl EvaluatorContext) -> Result<BitVec, EvaluatorError> {

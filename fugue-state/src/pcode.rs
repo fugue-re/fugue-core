@@ -4,8 +4,7 @@ use std::sync::Arc;
 use fugue_bytes::{ByteCast, Order};
 
 use fugue_ir::convention::Convention;
-use fugue_ir::il::pcode::Operand;
-use fugue_ir::{Address, AddressSpace, Translator};
+use fugue_ir::{Address, AddressSpace, Translator, VarnodeData};
 
 use thiserror::Error;
 
@@ -13,8 +12,8 @@ use crate::paged::{self, PagedState};
 use crate::register::{self, RegisterState};
 use crate::unique::{self, UniqueState};
 
-use crate::traits::{State, StateOps, StateValue};
 use crate::traits::{FromStateValues, IntoStateValues};
+use crate::traits::{State, StateOps, StateValue};
 
 pub const POINTER_8_SIZE: usize = 1;
 pub const POINTER_16_SIZE: usize = 2;
@@ -102,87 +101,99 @@ impl<T: StateValue, O: Order> PCodeState<T, O> {
         &mut self.temporaries
     }
 
-    pub fn with_operand_values<U, F>(&self, operand: &Operand, f: F) -> Result<U, Error>
-    where F: FnOnce(&[T]) -> U {
-        match operand {
-            Operand::Address { value, size } => {
-                self.memory()
-                    .view_values(value.offset(), *size)
-                    .map_err(Error::Memory)
-                    .map(f)
-            },
-            Operand::Constant { value, size, .. } => {
-                // max size of value
-                let mut values: [T; 8] = Default::default();
+    pub fn with_operand_values<U, F>(&self, operand: &VarnodeData, f: F) -> Result<U, Error>
+    where
+        F: FnOnce(&[T]) -> U,
+    {
+        let value = operand.offset();
+        let size = operand.size();
 
-                if O::ENDIAN.is_big() {
-                    for (d, s) in values[..*size].iter_mut().zip(&value.to_be_bytes()[8-*size..]) {
-                        *d = T::from_byte(*s);
-                    }
-                } else {
-                    for (d, s) in values[..*size].iter_mut().zip(&value.to_le_bytes()[..*size]) {
-                        *d = T::from_byte(*s);
-                    }
+        let space = operand.space();
+
+        if space.is_constant() {
+            // max size of value
+            let mut values: [T; 8] = Default::default();
+
+            if O::ENDIAN.is_big() {
+                for (d, s) in values[..size]
+                    .iter_mut()
+                    .zip(&value.to_be_bytes()[8 - size..])
+                {
+                    *d = T::from_byte(*s);
                 }
+            } else {
+                for (d, s) in values[..size].iter_mut().zip(&value.to_le_bytes()[..size]) {
+                    *d = T::from_byte(*s);
+                }
+            }
 
-                Ok(f(&values[..*size]))
-            },
-            Operand::Register { offset, size, .. } => {
-                self.registers()
-                    .view_values(*offset, *size)
-                    .map_err(Error::Register)
-                    .map(f)
-            },
-            Operand::Variable { offset, size, .. } => {
-                self.temporaries()
-                    .view_values(*offset, *size)
-                    .map_err(Error::Temporary)
-                    .map(f)
-            },
+            Ok(f(&values[..size]))
+        } else if space.is_register() {
+            self.registers()
+                .view_values(value, size)
+                .map_err(Error::Register)
+                .map(f)
+        } else if space.is_unique() {
+            self.temporaries()
+                .view_values(value, size)
+                .map_err(Error::Temporary)
+                .map(f)
+        } else {
+            self.memory()
+                .view_values(value, size)
+                .map_err(Error::Memory)
+                .map(f)
         }
     }
 
-    pub fn with_operand_values_mut<U, F>(&mut self, operand: &Operand, f: F) -> Result<U, Error>
-    where F: FnOnce(&mut [T]) -> U {
-        match operand {
-            Operand::Address { value, size } => {
-                self.memory_mut()
-                    .view_values_mut(value.offset(), *size)
-                    .map_err(Error::Memory)
-                    .map(f)
-            },
-            Operand::Register { offset, size, .. } => {
-                self.registers_mut()
-                    .view_values_mut(*offset, *size)
-                    .map_err(Error::Register)
-                    .map(f)
-            },
-            Operand::Variable { offset, size, .. } => {
-                self.temporaries_mut()
-                    .view_values_mut(*offset, *size)
-                    .map_err(Error::Temporary)
-                    .map(f)
-            },
-            Operand::Constant { .. } => {
-                panic!("cannot mutate Operand::Constant");
-            },
+    pub fn with_operand_values_mut<U, F>(&mut self, operand: &VarnodeData, f: F) -> Result<U, Error>
+    where
+        F: FnOnce(&mut [T]) -> U,
+    {
+        let value = operand.offset();
+        let size = operand.size();
+
+        let space = operand.space();
+
+        if space.is_constant() {
+            panic!("cannot mutate constant operand");
+        } else if space.is_register() {
+            self.registers_mut()
+                .view_values_mut(value, size)
+                .map_err(Error::Register)
+                .map(f)
+        } else if space.is_unique() {
+            self.temporaries_mut()
+                .view_values_mut(value, size)
+                .map_err(Error::Temporary)
+                .map(f)
+        } else {
+            self.memory_mut()
+                .view_values_mut(value, size)
+                .map_err(Error::Memory)
+                .map(f)
         }
     }
 
-    pub fn get_operand<V: FromStateValues<T>>(&self, operand: &Operand) -> Result<V, Error> {
+    pub fn get_operand<V: FromStateValues<T>>(&self, operand: &VarnodeData) -> Result<V, Error> {
         let res = self.with_operand_values(operand, |values| V::from_values::<O>(values));
         res
     }
 
-    pub fn set_operand<V: IntoStateValues<T>>(&mut self, operand: &Operand, value: V) -> Result<(), Error> {
+    pub fn set_operand<V: IntoStateValues<T>>(
+        &mut self,
+        operand: &VarnodeData,
+        value: V,
+    ) -> Result<(), Error> {
         self.with_operand_values_mut(operand, |values| value.into_values::<O>(values))
     }
 
     #[inline(always)]
     pub fn view_values_from<A>(&self, address: A) -> Result<&[T], Error>
-    where A: Into<Address> {
-        self.memory.view_values_from(address)
-            .map_err(Error::Memory)
+    where
+        A: Into<Address>,
+    {
+        self.memory.view_values_from(address).map_err(Error::Memory)
     }
 }
 
@@ -196,15 +207,16 @@ impl<O: Order> PCodeState<u8, O> {
     }
 
     pub fn get_pointer(&self, address: Address) -> Result<Address, Error> {
-        let opnd = Operand::Address {
-            value: address,
-            size: self.memory_space_ref().address_size(),
-        };
+        let opnd = VarnodeData::new(
+            self.memory_space_ref(),
+            address.offset(),
+            self.memory_space_ref().address_size(),
+        );
         self.get_address(&opnd)
     }
 
     // get value at address
-    pub fn get_address(&self, operand: &Operand) -> Result<Address, Error> {
+    pub fn get_address(&self, operand: &VarnodeData) -> Result<Address, Error> {
         let mut buf = [0u8; MAX_POINTER_SIZE];
         let size = operand.size();
 
@@ -229,25 +241,30 @@ impl<O: Order> PCodeState<u8, O> {
                 u8::from_bytes::<O>(values) as u64
             })
         } else {
-            return Err(Error::UnsupportedAddressSize(size))
+            return Err(Error::UnsupportedAddressSize(size));
         }?;
 
         Ok(Address::new(self.memory.address_space_ref(), address))
     }
 
     pub fn set_program_counter_value<A>(&mut self, value: A) -> Result<(), Error>
-    where A: Into<Address> {
+    where
+        A: Into<Address>,
+    {
         self.set_address(&self.registers.program_counter(), value)
     }
 
     pub fn set_stack_pointer_value<A>(&mut self, value: A) -> Result<(), Error>
-    where A: Into<Address> {
+    where
+        A: Into<Address>,
+    {
         self.set_address(&self.registers.stack_pointer(), value)
     }
 
-    pub fn set_address<A>(&mut self, operand: &Operand, value: A) -> Result<(), Error>
-    where A: Into<Address> {
-
+    pub fn set_address<A>(&mut self, operand: &VarnodeData, value: A) -> Result<(), Error>
+    where
+        A: Into<Address>,
+    {
         let size = operand.size();
         let address = value.into();
 
@@ -268,7 +285,7 @@ impl<O: Order> PCodeState<u8, O> {
                 u8::from(address).into_bytes::<O>(values)
             })
         } else {
-            return Err(Error::UnsupportedAddressSize(size))
+            return Err(Error::UnsupportedAddressSize(size));
         }?;
 
         Ok(())
@@ -300,37 +317,56 @@ impl<V: StateValue, O: Order> StateOps for PCodeState<V, O> {
 
     #[inline(always)]
     fn copy_values<F, T>(&mut self, from: F, to: T, size: usize) -> Result<(), Self::Error>
-    where F: Into<Address>,
-          T: Into<Address> {
-        self.memory.copy_values(from, to, size)
+    where
+        F: Into<Address>,
+        T: Into<Address>,
+    {
+        self.memory
+            .copy_values(from, to, size)
             .map_err(Error::Memory)
     }
 
     #[inline(always)]
     fn get_values<A>(&self, address: A, values: &mut [Self::Value]) -> Result<(), Self::Error>
-    where A: Into<Address> {
-        self.memory.get_values(address, values)
+    where
+        A: Into<Address>,
+    {
+        self.memory
+            .get_values(address, values)
             .map_err(Error::Memory)
     }
 
     #[inline(always)]
     fn view_values<A>(&self, address: A, size: usize) -> Result<&[Self::Value], Self::Error>
-    where A: Into<Address> {
-        self.memory.view_values(address, size)
+    where
+        A: Into<Address>,
+    {
+        self.memory
+            .view_values(address, size)
             .map_err(Error::Memory)
     }
 
     #[inline(always)]
-    fn view_values_mut<A>(&mut self, address: A, size: usize) -> Result<&mut [Self::Value], Self::Error>
-    where A: Into<Address> {
-        self.memory.view_values_mut(address, size)
+    fn view_values_mut<A>(
+        &mut self,
+        address: A,
+        size: usize,
+    ) -> Result<&mut [Self::Value], Self::Error>
+    where
+        A: Into<Address>,
+    {
+        self.memory
+            .view_values_mut(address, size)
             .map_err(Error::Memory)
     }
 
     #[inline(always)]
     fn set_values<A>(&mut self, address: A, values: &[Self::Value]) -> Result<(), Self::Error>
-    where A: Into<Address> {
-        self.memory.set_values(address, values)
+    where
+        A: Into<Address>,
+    {
+        self.memory
+            .set_values(address, values)
             .map_err(Error::Memory)
     }
 
