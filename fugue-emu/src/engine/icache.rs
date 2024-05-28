@@ -1,9 +1,8 @@
-//! icache module
+//! instruction cache module
 //! 
 //! implements translation block caching
 
 use std::collections::BTreeMap;
-use thiserror::Error;
 
 use super::{
     EngineError,
@@ -25,7 +24,7 @@ use crate::context::manager::ContextManager;
 /// 
 /// todo: implement actual caching behavior
 pub(crate) struct ICache<'a> {
-    irb: IRBuilderArena,
+    pub(crate) irb: IRBuilderArena,
     pcode: BTreeMap<Address, PCode<'a>>,
 }
 
@@ -42,16 +41,16 @@ impl<'a> ICache<'a> {
         &mut self,
         lifter: &Lifter,
         location: &Location,
-        context: &mut ContextManager<'b>,
-        engine_type: EngineType,
+        context: &ContextManager<'b>,
+        engine_type: &EngineType,
     ) -> Result<PCode, EngineError> {
         match engine_type {
             EngineType::Concrete => { // concrete fetch behavior
                 let insn_bytes = context
-                    .read_bytes(location.address, 4usize)
+                    .read_mem(location.address, 4usize)
                     .map_err(EngineError::fetch)?;
                 let mut lifter = lifter.clone();
-                lifter.lift(&mut self.irb, location.address, &insn_bytes)
+                lifter.lift(&mut self.irb, location.address, insn_bytes)
                     .map_err(EngineError::fetch)
             },
         }

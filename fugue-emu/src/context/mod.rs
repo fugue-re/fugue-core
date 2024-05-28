@@ -1,10 +1,15 @@
 pub mod concrete;
 pub mod manager;
+pub mod memory_map;
 
 use thiserror::Error;
 
 use fugue_ir::Address;
 use fugue_core::eval::{EvaluatorContext, EvaluatorError};
+
+use crate::emu::EmulationType;
+
+pub type ContextType = EmulationType;
 
 // ContextError
 #[derive(Debug, Error)]
@@ -21,6 +26,8 @@ pub enum ContextError {
     UnalignedSize(usize, usize),
     #[error("unexpected error {0}")]
     Unexpected(anyhow::Error),
+    #[error("Fetch Error: {0}")]
+    Fetch(anyhow::Error),
 }
 
 impl From<ContextError> for EvaluatorError {
@@ -74,20 +81,22 @@ impl ContextError {
     }
 }
 
-pub enum ContextType {
-    Concrete,
-}
-
 pub trait MappedContext: EvaluatorContext {
     /// return the context base address
     fn base(&self) -> Address;
     /// return the context size
     fn size(&self) -> usize;
-    /// returns a vector of bytes
-    fn read_bytes(
+    /// returns a slice of bytes
+    fn read_bytes_slice(
         &self, 
         address: Address,
         size: usize
+    ) -> Result<&[u8], ContextError>;
+    /// returns a vector of bytes
+    fn read_bytes(
+        &self,
+        address: Address,
+        size: usize,
     ) -> Result<Vec<u8>, ContextError>;
     /// write bytes to context
     fn write_bytes(

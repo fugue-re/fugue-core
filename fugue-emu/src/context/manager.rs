@@ -2,10 +2,6 @@
 #![allow(unused_imports)]
 
 use std::fmt;
-// todo: reimplement without multikeymap
-// multikeymap uses 2 hashmaps, we only really need one and a vector
-// which might give us performance improvement.
-use multi_key_map::MultiKeyMap;
 
 use fugue_bv::BitVec;
 use fugue_bytes::Endian;
@@ -20,6 +16,11 @@ use fugue_core::{
         EvaluatorError,
         EvaluatorContext,
     },
+    ir::{
+        // Insn,
+        PCode,
+        Location,
+    },
 };
 
 use crate::context::{
@@ -29,6 +30,7 @@ use crate::context::{
 };
 
 use super::concrete::ConcreteMemory;
+use super::memory_map::MemoryMap;
 
 /// A context manager
 /// 
@@ -40,7 +42,7 @@ use super::concrete::ConcreteMemory;
 /// the user.
 pub struct ContextManager<'a> {
     // primary data
-    memory_map: MultiKeyMap<Address, Box<dyn MappedContext>>,
+    memory_map: MemoryMap,
     regs: FixedState,
     tmps: FixedState,
     endian: Endian,
@@ -58,15 +60,17 @@ impl<'a> ContextManager<'a> {
     pub fn new(
         // lang: &'a Language,
         lifter: Lifter<'a>,
+        irb_size: Option<usize>,
     ) -> Self {
         // let lifter = lang.lifter();
         let t = lifter.translator();
+        let irb = lifter.irb(irb_size.unwrap_or(0x1000usize));
         let endian = if t.is_big_endian() { 
             Endian::Big 
         } else { 
             Endian::Little 
         };
-        let memory_map = MultiKeyMap::new();
+        let memory_map = MemoryMap::new();
         Self {
             memory_map: memory_map,
             regs: FixedState::new(t.register_space_size()),
@@ -96,18 +100,6 @@ impl<'a> ContextManager<'a> {
             return Err(ContextError::UnalignedSize(size, 0x1000usize))
         }
 
-        // check for collision with existing mapped contexts
-        // performs better with few, large mapped contexts
-        for context in self.memory_map.values() {
-            let context_lbound = context.base();
-            let context_ubound = context.base() + context.size();
-            // check for context overlap
-            if base_address < context_ubound 
-                    && base_address + size > context_lbound {
-                return Err(ContextError::MapConflict(base_address, context_lbound))
-            }
-        }
-
         let context = match context_type {
             Some(ContextType::Concrete) | None => {
                 ConcreteMemory::new(Address::from(base_address), self.endian, size)
@@ -116,64 +108,35 @@ impl<'a> ContextManager<'a> {
         };
 
         // add memory to memory map
-        self.memory_map.insert(base_address, Box::new(context));
-        let mut addr_alias = base_address + 0x1000u64;
-        while addr_alias < base_address + size {
-            // must create aliases for 0x1000-aligned addresses
-            // context manager relies on contiguous 0x1000-aligned keys for 
-            // mapped regions, so we should panic if we fail to create one. 
-            if let Err(alias) = self.memory_map.alias(&base_address, addr_alias) {
-                panic!("failed to create address alias: {:?}", alias);
-            }
-            addr_alias += 0x1000u64;
-        }
-
+        self.memory_map.map_context(Box::new(context))?;
         Ok(self)
     }
 
-    /// utility for mutably borrowing memory structs
-    #[inline]
-    pub fn get_mut_context_at(
-        &mut self, 
-        address: impl Into<Address>
-    ) -> Result<&mut Box<dyn MappedContext>, ContextError> {
-        let addr = u64::from(address.into());
-        let align = Address::from(addr & !0xFFFu64);
-        self.memory_map.get_mut(&align)
-            .ok_or(ContextError::Unmapped(addr.into()))
-    }
-
-    /// utility for immmutably borrowing memory structs
-    #[inline]
-    pub fn get_context_at(
-        &self,
-        address: impl Into<Address>
-    ) -> Result<&Box<dyn MappedContext>, ContextError> {
-        let addr = u64::from(address.into());
-        let align = Address::from(addr & !0xFFFu64);
-        self.memory_map.get(&align)
-            .ok_or(ContextError::Unmapped(addr.into()))
-    }
-
-    /// returns a vector of bytes
-    pub fn read_bytes(
+    /// returns a slice of bytes starting from the given address
+    pub fn read_mem_slice(
         &self, 
         address: Address,
         size: usize
-    ) -> Result<Vec<u8>, ContextError> {
-        let context = self
-            .get_context_at(address)
-            .map_err(ContextError::state)?;
-        context.read_bytes(address, size)
+    ) -> Result<&[u8], ContextError> {
+        self.memory_map.read_bytes_slice(address, size)
     }
 
-    /// write bytes to context
-    pub fn write_bytes(
+    /// return a vector of bytes read from given address
+    pub fn read_mem(
+        &self,
+        address: Address,
+        size: usize,
+    ) -> Result<Vec<u8>, ContextError> {
+        self.memory_map.read_bytes(address, size)
+    }
+
+    /// write bytes to context at given address
+    pub fn write_mem(
         &mut self,
         address: Address,
         values: &[u8],
     ) -> Result<(), ContextError> {
-        let context = self
+        let context = self.memory_map
             .get_mut_context_at(address)
             .map_err(ContextError::state)?;
         context.write_bytes(address, values)
@@ -229,7 +192,7 @@ impl<'a> EvaluatorContext for ContextManager<'a> {
                 .map_err(EvaluatorError::state)
         } else if spc.is_default() {
             let addr = var.offset();
-            let context = self
+            let context = self.memory_map
                 .get_mut_context_at(addr)?;
             context.read_vnd(&var)
         } else {
@@ -255,7 +218,7 @@ impl<'a> EvaluatorContext for ContextManager<'a> {
                 .map_err(EvaluatorError::state)
         } else if spc.is_default() {
             let addr = var.offset();
-            let context = self
+            let context = self.memory_map
                 .get_mut_context_at(addr)?;
             context.write_vnd(&var, val)
         } else {

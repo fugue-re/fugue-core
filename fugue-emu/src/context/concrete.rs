@@ -101,15 +101,25 @@ impl MappedContext for ConcreteMemory {
     }
 
     /// read bytes from memory
+    /// returns a slice of bytes
+    fn read_bytes_slice(
+        &self, 
+        address: Address, 
+        size: usize
+    ) -> Result<&[u8], ContextError> {
+        let offset = self.translate(u64::from(address))?;
+        self.memory.view_bytes(offset, size)
+            .map_err(ContextError::state)
+    }
+
+    /// read bytes from memory
     /// returns a vector of bytes
     fn read_bytes(
         &self, 
         address: Address, 
         size: usize
     ) -> Result<Vec<u8>, ContextError> {
-        let offset = self.translate(u64::from(address))?;
-        self.memory.view_bytes(offset, size)
-            .map_err(ContextError::state)
+        self.read_bytes_slice(address, size)
             .map(Vec::from)
     }
 

@@ -30,9 +30,12 @@ use fugue_ir::{
 use crate::context::manager::ContextManager;
 use crate::emu::{
     EmulationError,
+    EmulationType,
     Clocked,
 };
 use icache::ICache;
+
+pub type EngineType = EmulationType;
 
 // EngineError
 #[derive(Debug, Error)]
@@ -57,12 +60,6 @@ impl EngineError {
     {
         Self::Fetch(anyhow::Error::new(e))
     }
-}
-
-/// implemented engine types
-#[derive(Copy, Clone)]
-pub enum EngineType {
-    Concrete,
 }
 
 #[derive(Copy, Clone)]
@@ -174,7 +171,7 @@ impl<'a> Clocked<'a> for Engine<'a> {
         // fetch and lift
         let pc_loc = self.pc.get_pc_loc(context);
         let pcode = self.icache
-            .fetch(&self.lifter,&pc_loc, context, self.engine_type)?;
+            .fetch(&self.lifter, &pc_loc, context, &self.engine_type)?;
         let insn_length = pcode.length;
 
         // evaluate lifted pcode

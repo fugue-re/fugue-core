@@ -2,29 +2,17 @@
 //! 
 //! should act as the execution manager and tie together 
 //! evaluator, context, and hooks
-#![allow(unused_imports)]
+// #![allow(unused_imports)]
 use thiserror::Error;
 
-use fugue_bv::BitVec;
-use fugue_bytes::Endian;
-use fugue_ir::{
-    Address,
-    AddressSpace,
-    Translator,
-    VarnodeData,
-};
-use fugue_core::{
-    ir::Location,
-    lifter::Lifter,
-    eval::{
-        fixed_state::FixedState,
-        EvaluatorError,
-        EvaluatorContext,
-    },
-};
+use fugue_core::eval::EvaluatorError;
 
 use crate::context;
 use crate::engine;
+
+pub enum EmulationType {
+    Concrete,
+}
 
 // EngineError
 #[derive(Debug, Error)]

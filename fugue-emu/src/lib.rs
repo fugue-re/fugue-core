@@ -56,7 +56,7 @@ mod tests {
         // give language builder a context_lifter to make accesses easier
         let context_lifter = lang.lifter();
         #[allow(unused)]
-        let context_manager = ContextManager::new(context_lifter);
+        let context_manager = ContextManager::new(context_lifter, None);
     }
 
     #[test]
@@ -156,7 +156,7 @@ mod tests {
         // give language builder a context_lifter to make accesses easier
         let context_lifter = lang.lifter();
 
-        let mut context_manager = ContextManager::new(context_lifter);
+        let mut context_manager = ContextManager::new(context_lifter, None);
         
         // test mapping mapping in parts
         context_manager.map_memory(0x0u32, 0x4000, None)
@@ -183,7 +183,7 @@ mod tests {
         // give language builder a context_lifter to make accesses easier
         let context_lifter = lang.lifter();
 
-        let mut context_manager = ContextManager::new(context_lifter);
+        let mut context_manager = ContextManager::new(context_lifter, None);
         
         // test mapping mapping in parts
         context_manager.map_memory(0x0u32, 0x4000, None)
@@ -207,9 +207,7 @@ mod tests {
         );
         let bytes = &[0xef, 0xbe, 0xad, 0xde];
         context_manager
-            .get_mut_context_at(0x800u64)
-            .expect("failed to get context at 0x800")
-            .write_bytes(Address::from(0x800u64), bytes)
+            .write_mem(Address::from(0x800u64), bytes)
             .expect("failed to write bytes to memory");
         let read_val = context_manager
             .read_vnd(&vnd)
@@ -223,9 +221,7 @@ mod tests {
             .write_vnd(&vnd, &write_val)
             .expect("failed to write varnode");
         let read_bytes = context_manager
-            .get_mut_context_at(0x800u64)
-            .expect("failed to get context at 0x800")
-            .read_bytes(Address::from(0x800u64), 4usize)
+            .read_mem(Address::from(0x800u64), 4usize)
             .expect("failed to read bytes from memory");
 
         assert_eq!(write_val, BitVec::from_le_bytes(&read_bytes));
@@ -241,7 +237,7 @@ mod tests {
         // give language builder a context_lifter to make accesses easier
         let context_lifter = lang.lifter();
 
-        let mut context_manager = ContextManager::new(context_lifter);
+        let mut context_manager = ContextManager::new(context_lifter, None);
 
         let bytes = &[0xde, 0xc0, 0xad, 0xde];
         let write_val = BitVec::from_le_bytes(bytes);
@@ -266,7 +262,7 @@ mod tests {
         let context_lifter = lang.lifter();
 
         #[allow(unused)]
-        let mut context_manager = ContextManager::new(context_lifter);
+        let mut context_manager = ContextManager::new(context_lifter, None);
 
         #[allow(unused)]
         let mut engine = Engine::new(
@@ -289,7 +285,7 @@ mod tests {
         let context_lifter = lang.lifter();
 
         // map concrete context memory
-        let mut context_manager = ContextManager::new(context_lifter);
+        let mut context_manager = ContextManager::new(context_lifter, None);
         context_manager.map_memory(
             0x0u64,
             0x1000usize,
@@ -308,7 +304,7 @@ mod tests {
         ];
 
         context_manager
-            .write_bytes(Address::from(0x400u64), insn_bytes)
+            .write_mem(Address::from(0x400u64), insn_bytes)
             .expect("failed to write bytes");
 
         engine.pc.set_pc(0x400u64, &mut context_manager)
@@ -321,9 +317,9 @@ mod tests {
         let pcode = engine.icache
             .fetch(
                 &engine.lifter,
-                &pc_loc, 
-                &mut context_manager, 
-                engine.engine_type
+                &pc_loc,
+                &context_manager,
+                &EngineType::Concrete,
             )
             .expect("failed to fetch instruction");
 
@@ -344,7 +340,7 @@ mod tests {
         let context_lifter = lang.lifter();
 
         // map concrete context memory
-        let mut context_manager = ContextManager::new(context_lifter);
+        let mut context_manager = ContextManager::new(context_lifter, None);
         context_manager.map_memory(
             0x0u64,
             0x1000usize,
@@ -368,7 +364,7 @@ mod tests {
         ];
 
         context_manager
-            .write_bytes(Address::from(0u64), insn_bytes)
+            .write_mem(Address::from(0u64), insn_bytes)
             .expect("failed to write bytes");
 
         // check pc defaults to 0
@@ -442,7 +438,7 @@ mod tests {
 
         // map concrete context memory
         let mem_size = 0x1000usize;
-        let mut context_manager = ContextManager::new(context_lifter);
+        let mut context_manager = ContextManager::new(context_lifter, None);
         context_manager.map_memory(
             0x0u64,
             mem_size,
@@ -458,7 +454,7 @@ mod tests {
 
         // load program
         context_manager
-            .write_bytes(Address::from(0u64), program_mem)
+            .write_mem(Address::from(0u64), program_mem)
             .expect("failed to write bytes");
 
         // initialize r0, sp, and lr
