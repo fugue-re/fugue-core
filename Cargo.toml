@@ -5,6 +5,7 @@ members = [
   "fugue-bytes",
   "fugue-bv",
   "fugue-core",
+  "fugue-db",
   "fugue-fp",
   "fugue-ir",
   "fugue-state",
