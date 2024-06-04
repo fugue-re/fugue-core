@@ -3,9 +3,9 @@
 //! contains evaluator, registers, instruction fetch and cache
 
 pub mod icache;
-// pub(crate) mod fetcher;
-// pub mod tblock;
-// pub mod tgraph;
+pub(crate) mod fetcher;
+pub mod tblock;
+pub mod tgraph;
 
 use thiserror::Error;
 
