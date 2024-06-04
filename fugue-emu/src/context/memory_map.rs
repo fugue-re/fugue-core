@@ -99,8 +99,7 @@ impl MemoryMap {
         size: usize
     ) -> Result<&[u8], ContextError> {
         let context = self
-            .get_context_at(address)
-            .map_err(ContextError::state)?;
+            .get_context_at(address)?;
         context.read_bytes_slice(address, size)
     }
 

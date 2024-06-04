@@ -15,3 +15,5 @@ fugue-ir = { version = "0.3", path = "../fugue-ir" }
 multi_key_map = { version = "0.3.0" }
 anyhow = "1"
 thiserror = "1"
+nohash-hasher = "0.2.0"
+petgraph = "0.6.5"

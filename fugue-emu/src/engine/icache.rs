@@ -1,12 +1,17 @@
 //! instruction cache module
 //! 
 //! implements translation block caching
-
-use std::collections::BTreeMap;
+// it's a bad idea to have this own an irb because that leads to 
+// self-referential structs, so i probably want refactor this so
+// that a reference to a lift irb gets passed to the engine at 
+// instantiation. that way things can just rely on long-lived-ish
+// references to the irb and we don't have to worry about self-refs
+// or weird borrows/lifetime issues.
 
 use super::{
     EngineError,
     EngineType,
+
 };
 use fugue_core::{
     lifter::Lifter,
@@ -19,6 +24,8 @@ use fugue_core::{
 use fugue_ir::Address;
 use fugue_ir::disassembly::IRBuilderArena;
 use crate::context::manager::ContextManager;
+
+use std::collections::BTreeMap;
 
 /// cache for lifted instructions
 /// 

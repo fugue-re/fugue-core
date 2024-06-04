@@ -6,7 +6,7 @@ use std::fmt;
 use fugue_bv::BitVec;
 use fugue_bytes::Endian;
 use fugue_ir::{
-    translator, Address, VarnodeData
+    Translator, Address, VarnodeData
 };
 use fugue_core::{
     language::Language,
@@ -48,7 +48,7 @@ pub struct ContextManager<'a> {
     endian: Endian,
     
     // other useful things to have
-    lifter: Lifter<'a>,
+    translator: &'a Translator,
 }
 
 impl<'a> ContextManager<'a> {
@@ -57,14 +57,14 @@ impl<'a> ContextManager<'a> {
     /// note that the context manager needs its own lifter, it is not a borrow!
     /// this is to make explicit that the lifter created for the context manager
     /// cannot be used for anything else.
-    pub fn new(
+    pub fn new<'z>(
         // lang: &'a Language,
-        lifter: Lifter<'a>,
-        irb_size: Option<usize>,
-    ) -> Self {
+        lifter: &'a Lifter<'z>,
+    ) -> Self 
+        where 'z : 'a
+    {
         // let lifter = lang.lifter();
         let t = lifter.translator();
-        let irb = lifter.irb(irb_size.unwrap_or(0x1000usize));
         let endian = if t.is_big_endian() { 
             Endian::Big 
         } else { 
@@ -76,7 +76,7 @@ impl<'a> ContextManager<'a> {
             regs: FixedState::new(t.register_space_size()),
             tmps: FixedState::new(t.unique_space_size()),
             endian: endian,
-            lifter: lifter,
+            translator: t,
         }
     }
     
@@ -147,8 +147,7 @@ impl<'a> ContextManager<'a> {
     where
         S: AsRef<str>
     {
-        let translator = self.lifter.translator();
-        if let Some(reg) = translator.register_by_name(name) {
+        if let Some(reg) = self.translator.register_by_name(name) {
             self.regs
                 .read_val_with(reg.offset() as usize, reg.size(), self.endian)
                 .map_err(ContextError::state)
@@ -162,8 +161,7 @@ impl<'a> ContextManager<'a> {
     where
         S: AsRef<str>
     {
-        let translator = self.lifter.translator();
-        if let Some(reg) = translator.register_by_name(name) {
+        if let Some(reg) = self.translator.register_by_name(name) {
             self.regs
                 .write_val_with(reg.offset() as usize, val, self.endian)
                 .map_err(ContextError::state)
@@ -229,7 +227,6 @@ impl<'a> EvaluatorContext for ContextManager<'a> {
 
 impl<'a> fmt::Debug for ContextManager<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let t = self.lifter.translator();
-        write!(f, "ContextManager[{}]", t.architecture())
+        write!(f, "ContextManager[{}]", self.translator.architecture())
     }
 }

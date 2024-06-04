@@ -56,13 +56,13 @@ mod tests {
         // give language builder a context_lifter to make accesses easier
         let context_lifter = lang.lifter();
         #[allow(unused)]
-        let context_manager = ContextManager::new(context_lifter, None);
+        let context_manager = ContextManager::new(&context_lifter);
     }
 
     #[test]
     fn test_memory_concrete_read_write() {
         let mut memory = ConcreteMemory::new(
-            0x0u32, 
+            0x0u32,
             Endian::Little,
             0x1000,
         );
@@ -156,7 +156,7 @@ mod tests {
         // give language builder a context_lifter to make accesses easier
         let context_lifter = lang.lifter();
 
-        let mut context_manager = ContextManager::new(context_lifter, None);
+        let mut context_manager = ContextManager::new(&context_lifter);
         
         // test mapping mapping in parts
         context_manager.map_memory(0x0u32, 0x4000, None)
@@ -183,7 +183,7 @@ mod tests {
         // give language builder a context_lifter to make accesses easier
         let context_lifter = lang.lifter();
 
-        let mut context_manager = ContextManager::new(context_lifter, None);
+        let mut context_manager = ContextManager::new(&context_lifter);
         
         // test mapping mapping in parts
         context_manager.map_memory(0x0u32, 0x4000, None)
@@ -237,7 +237,7 @@ mod tests {
         // give language builder a context_lifter to make accesses easier
         let context_lifter = lang.lifter();
 
-        let mut context_manager = ContextManager::new(context_lifter, None);
+        let mut context_manager = ContextManager::new(&context_lifter);
 
         let bytes = &[0xde, 0xc0, 0xad, 0xde];
         let write_val = BitVec::from_le_bytes(bytes);
@@ -262,7 +262,7 @@ mod tests {
         let context_lifter = lang.lifter();
 
         #[allow(unused)]
-        let mut context_manager = ContextManager::new(context_lifter, None);
+        let mut context_manager = ContextManager::new(&context_lifter);
 
         #[allow(unused)]
         let mut engine = Engine::new(
@@ -285,7 +285,7 @@ mod tests {
         let context_lifter = lang.lifter();
 
         // map concrete context memory
-        let mut context_manager = ContextManager::new(context_lifter, None);
+        let mut context_manager = ContextManager::new(&context_lifter);
         context_manager.map_memory(
             0x0u64,
             0x1000usize,
@@ -340,7 +340,7 @@ mod tests {
         let context_lifter = lang.lifter();
 
         // map concrete context memory
-        let mut context_manager = ContextManager::new(context_lifter, None);
+        let mut context_manager = ContextManager::new(&context_lifter);
         context_manager.map_memory(
             0x0u64,
             0x1000usize,
@@ -438,7 +438,7 @@ mod tests {
 
         // map concrete context memory
         let mem_size = 0x1000usize;
-        let mut context_manager = ContextManager::new(context_lifter, None);
+        let mut context_manager = ContextManager::new(&context_lifter);
         context_manager.map_memory(
             0x0u64,
             mem_size,
