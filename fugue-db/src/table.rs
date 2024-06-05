@@ -362,11 +362,13 @@ mod test {
             let mut writer = pt.typed_writer::<(String, String, Vec<u8>)>()?;
 
             for k in 0..10_000_000u64 {
-                writer.set(&k, &(
+                println!("{:?} ± {:?} ± {:x?}",
+                // writer.set(&k, &(
                     format!("{k:x}_one"),
                     format!("{k:x}_two"),
                     vec![0u8; 16],
-                ))?;
+                //))?;
+                );
             }
 
             writer.commit()?;

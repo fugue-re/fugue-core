@@ -1,0 +1,16 @@
+[package]
+name = "fugue-db"
+version = "0.3.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1"
+arrayvec = "0.7"
+fugue-bytes = { path = "../fugue-bytes", version = "0.3" }
+fugue-ir = { path = "../fugue-ir", version = "0.3" }
+heed = { version = "0.20", features = ["read-txn-no-tls"] }
+rkyv = "0.7"
+rkyv-with = "0.1"
+tempfile = "3"
+thiserror = "1"
+uuid = "1"
