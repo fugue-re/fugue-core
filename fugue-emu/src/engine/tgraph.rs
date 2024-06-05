@@ -44,7 +44,6 @@ impl<'a> TranslationGraph<'a> {
 
     /// add a translation block to the graph (without edges)
     /// note: adding an empty translation block will cause panic
-    #[inline]
     pub fn add_block<'z>(&mut self, block: TranslationBlock<'z>) -> ()
         where 'z : 'a
     {
@@ -55,15 +54,18 @@ impl<'a> TranslationGraph<'a> {
 
     /// get a shared reference to a translation block in the graph
     /// if it exists
-    #[inline]
     pub fn get_block(&self, address: impl AsRef<u64>) -> Option<&Arc<TranslationBlock<'_>>> {
         let idx = self.idx_map.get(&address.as_ref())?;
         self.graph.node_weight(*idx)
     }
 
+    /// check if the graph contains this a block associated with the address
+    pub fn contains_block(&self, address: impl AsRef<u64>) -> bool {
+        self.idx_map.contains_key(address.as_ref())
+    }
+
     /// create an edge between two translation blocks in the graph
     /// panic if the either block does not already exist
-    #[inline]
     pub fn add_edge(
         &mut self,
         predecessor_base: impl AsRef<u64>,
