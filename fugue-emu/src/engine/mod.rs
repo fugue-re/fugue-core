@@ -2,7 +2,7 @@
 //! 
 //! contains evaluator, registers, instruction fetch and cache
 
-pub mod icache;
+pub mod tcache;
 pub(crate) mod fetcher;
 pub mod tblock;
 pub mod tgraph;
@@ -26,9 +26,7 @@ use fugue_core::{
 };
 use fugue_bv::BitVec;
 use fugue_ir::{
-    Address,
-    VarnodeData,
-    Translator,
+    disassembly::IRBuilderArena, Address, Translator, VarnodeData
 };
 use crate::context::manager::ContextManager;
 use crate::emu::{
@@ -36,7 +34,7 @@ use crate::emu::{
     EmulationType,
     Clocked,
 };
-use icache::ICache;
+use tcache::ICache;
 
 pub type EngineType = EmulationType;
 
@@ -118,6 +116,7 @@ pub struct Engine<'a>
     pub engine_type: EngineType,
     pub pc: ProgramCounter,
 
+    // pub(crate) irb: &'a mut IRBuilderArena,
     pub(crate) icache: ICache<'a>, // instruction cache
 }
 
@@ -126,12 +125,14 @@ impl<'a> Engine<'a> {
     /// 
     /// note: lifter continues to be borrowed by evaluator
     pub fn new(
-        translator: &'a Translator,
+        lifter: &Lifter,
         engine_type: EngineType,
         irb_size: Option<usize>,
+        // irb: &'a mut IRBuilderArena,
     ) -> Self {
+        let translator = lifter.translator();
         let program_counter_vnd = translator.program_counter();
-
+        let irb = lifter.irb(irb_size.unwrap_or(1024));
         let evaluator = match engine_type {
             EngineType::Concrete => Evaluator::new(translator),
         };
@@ -140,7 +141,7 @@ impl<'a> Engine<'a> {
             evaluator: evaluator,
             engine_type: engine_type,
             pc: ProgramCounter::new(program_counter_vnd),
-            icache: ICache::new(Lifter::new(&translator).irb(irb_size.unwrap_or(1024))),
+            icache: ICache::new_with(irb),
         }
     }
 
@@ -161,20 +162,23 @@ impl<'a> Engine<'a> {
     }
 }
 
-impl<'a> Clocked<'a> for Engine<'a> {
+impl<'a> Clocked for Engine<'a> {
     /// in a single simulation step we should do the following:
     /// - [ ] check for pending interrupts and do context switch if necessary
     /// - [ ] instruction fetch and lift
     ///     - [ ] cache lifted instructions
     /// - [ ] execute instruction pcode
     /// - [ ] update program counter if necessary
-    fn step<'b>(&mut self, context: &mut ContextManager<'b>) -> Result<(), EmulationError> {
+    fn step(&mut self, context: &mut ContextManager<'_>) -> Result<(), EmulationError> {
         // todo: implement interrupts
-
+        
         // fetch and lift
         let pc_loc = self.pc.get_pc_loc(context);
-        let pcode = self.icache
-            .fetch(&self.lifter, &pc_loc, context, &self.engine_type)?;
+        let pcode = self.icache.fetch(
+            &mut self.lifter,
+            &pc_loc,
+            context,
+            &self.engine_type)?;
         let insn_length = pcode.length;
 
         // evaluate lifted pcode

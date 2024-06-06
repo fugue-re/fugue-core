@@ -260,6 +260,7 @@ mod tests {
 
         let engine_lifter = lang.lifter();
         let context_lifter = lang.lifter();
+        let mut irb = engine_lifter.irb(1024);
 
         #[allow(unused)]
         let mut context_manager = ContextManager::new(&context_lifter);
@@ -268,7 +269,7 @@ mod tests {
         let mut engine = Engine::new(
             engine_lifter.translator(), 
             EngineType::Concrete,
-            None,
+            &mut irb,
         );
     }
 
@@ -283,6 +284,7 @@ mod tests {
         // initalize lifters for contex and engine
         let engine_lifter = lang.lifter();
         let context_lifter = lang.lifter();
+        let mut irb = engine_lifter.irb(1024);
 
         // map concrete context memory
         let mut context_manager = ContextManager::new(&context_lifter);
@@ -296,7 +298,7 @@ mod tests {
         let mut engine = Engine::new(
             engine_lifter.translator(), 
             EngineType::Concrete,
-            None,
+            &mut irb,
         );
 
         let insn_bytes: &[u8] = &[
@@ -316,7 +318,8 @@ mod tests {
 
         let pcode = engine.icache
             .fetch(
-                &engine.lifter,
+                engine.irb,
+                &mut engine.lifter,
                 &pc_loc,
                 &context_manager,
                 &EngineType::Concrete,
@@ -338,6 +341,7 @@ mod tests {
         // initalize lifters for contex and engine
         let engine_lifter = lang.lifter();
         let context_lifter = lang.lifter();
+        let mut irb = engine_lifter.irb(1024);
 
         // map concrete context memory
         let mut context_manager = ContextManager::new(&context_lifter);
@@ -351,7 +355,7 @@ mod tests {
         let mut engine = Engine::new(
             engine_lifter.translator(), 
             EngineType::Concrete,
-            None,
+            &mut irb,
         );
 
         let insn_bytes: &[u8] = &[
@@ -435,6 +439,7 @@ mod tests {
         // initalize lifters for contex and engine
         let engine_lifter = lang.lifter();
         let context_lifter = lang.lifter();
+        let mut irb = engine_lifter.irb(1024);
 
         // map concrete context memory
         let mem_size = 0x1000usize;
@@ -449,7 +454,7 @@ mod tests {
         let mut engine = Engine::new(
             engine_lifter.translator(), 
             EngineType::Concrete,
-            None,
+            &mut irb,
         );
 
         // load program

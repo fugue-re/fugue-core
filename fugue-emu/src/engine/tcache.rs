@@ -7,7 +7,8 @@
 // instantiation. that way things can just rely on long-lived-ish
 // references to the irb and we don't have to worry about self-refs
 // or weird borrows/lifetime issues.
-
+use std::sync::Arc;
+use nohash_hasher::IntMap;
 use super::{
     EngineError,
     EngineType,
@@ -24,41 +25,47 @@ use fugue_core::{
 use fugue_ir::Address;
 use fugue_ir::disassembly::IRBuilderArena;
 use crate::context::manager::ContextManager;
+use super::tgraph::TranslationGraph;
 
-use std::collections::BTreeMap;
+// use std::collections::BTreeMap;
 
 /// cache for lifted instructions
 /// 
 /// todo: implement actual caching behavior
-pub(crate) struct ICache<'a> {
-    pub(crate) irb: IRBuilderArena,
-    pcode: BTreeMap<Address, PCode<'a>>,
+pub(crate) struct ICache<'a>
+{
+    irb: IRBuilderArena,
+    pub(crate) tgraph: TranslationGraph<'a>,
+    pcode_map: IntMap<u64, PCode<'a>>,
 }
 
 impl<'a> ICache<'a> {
-    pub fn new(irb: IRBuilderArena) -> Self {
+    pub fn new_with(irb: IRBuilderArena) -> Self {
         Self {
-            irb: irb,
-            pcode: BTreeMap::new(),
+            irb,
+            tgraph: TranslationGraph::new(),
+            pcode_map: IntMap::default(),
         }
     }
 
     /// fetch and lift instruction at location
     pub(crate) fn fetch<'b>(
         &mut self,
-        lifter: &Lifter,
+        // irb: &'a mut IRBuilderArena,
+        lifter: &mut Lifter,
         location: &Location,
         context: &ContextManager<'b>,
         engine_type: &EngineType,
-    ) -> Result<PCode, EngineError> {
+    ) -> Result<&PCode, EngineError> {
         match engine_type {
             EngineType::Concrete => { // concrete fetch behavior
                 let insn_bytes = context
                     .read_mem(location.address, 4usize)
                     .map_err(EngineError::fetch)?;
-                let mut lifter = lifter.clone();
-                lifter.lift(&mut self.irb, location.address, insn_bytes)
-                    .map_err(EngineError::fetch)
+                let pcode = lifter.lift(&mut self.irb, location.address, insn_bytes)
+                    .map_err(EngineError::fetch)?;
+                self.pcode_map.insert(location.address.offset(), pcode);
+                Ok(self.pcode_map.get(&location.address.offset()).unwrap())
             },
         }
     }

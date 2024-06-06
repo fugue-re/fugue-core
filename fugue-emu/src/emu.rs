@@ -49,10 +49,10 @@ impl From<EvaluatorError> for EmulationError {
 /// at each step of the emulation clock, independent of the engine.
 /// this gives the user flexibility in dictating how clocked components
 /// (aside from the emulation engine) should behave
-pub trait Clocked<'a> {
+pub trait Clocked {
     /// defines actions the object takes in a single step of the simulation clock
     /// these are resolved in order that the objects were registered.
-    fn step(
+    fn step<'a>(
         &mut self, 
         context: &mut context::manager::ContextManager<'a>
     ) -> Result<(), EmulationError>;
