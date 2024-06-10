@@ -25,20 +25,20 @@ use crate::context::manager::ContextManager;
 #[derive(Debug, thiserror::Error)]
 pub enum TranslationError {
     #[error("Disassembly Error: {0}")]
-    Disassembly(disassembly_error::Error),
+    Disassembly(String),
     #[error("Context Error: {0}")]
-    Context(context::ContextError),
+    Context(String),
 }
 
 impl From<context::ContextError> for TranslationError {
     fn from(err: context::ContextError) -> Self {
-        TranslationError::Context(err)
+        TranslationError::Context(format!("{}", err))
     }
 }
 
 impl From<disassembly_error::Error> for TranslationError {
     fn from(err: disassembly_error::Error) -> Self {
-        TranslationError::Disassembly(err)
+        TranslationError::Disassembly(format!("{}", err))
     }
 }
 
@@ -47,9 +47,13 @@ impl From<ir_error::Error>  for TranslationError {
         let ir_error::Error::Disassembly(err) = err else {
             panic!("could not convert ir error to disassembly error!")
         };
-        TranslationError::Disassembly(err)
+        TranslationError::Disassembly(format!("{}", err))
     }
 }
+
+// enum TranslationResult<'a> {
+//     Translated(TranslatedInsn),
+// }
 
 /// translation block
 /// holds a list of lift results
@@ -84,7 +88,7 @@ impl<'a> TranslationBlock<'a> {
             addrs.push(address);
             let read_result = context.read_mem_slice(address, 4);
             if let Err(err) = read_result {
-                insns.insert(address.offset(), Err(TranslationError::Context(err)));
+                insns.insert(address.offset(), Err(TranslationError::from(err)));
                 break;
             };
             let bytes = read_result.unwrap();
@@ -129,7 +133,7 @@ impl<'a> TranslationBlock<'a> {
     pub fn get_translated_insn(
         &self,
         address: &Address,
-    ) -> Option<&'a Result<Arc<TranslatedInsn>, TranslationError>> {
+    ) -> Option<&Result<Arc<TranslatedInsn<'a>>, TranslationError>> {
         self.insns.get(&address.offset())
     }
 

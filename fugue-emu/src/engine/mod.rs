@@ -1,12 +1,16 @@
 //! the cpu module
 //! 
 //! contains evaluator, registers, instruction fetch and cache
+use std::sync::Arc;
 
-pub mod tcache;
-pub(crate) mod fetcher;
+// pub mod icache;
+// pub(crate) mod fetcher;
 pub mod tblock;
 pub mod tgraph;
 
+// use fetcher::Fetcher;
+use tblock::{TranslatedInsn, TranslationBlock, TranslationError};
+use tgraph::TranslationGraph;
 use thiserror::Error;
 
 #[allow(unused_imports)]
@@ -34,7 +38,7 @@ use crate::emu::{
     EmulationType,
     Clocked,
 };
-use tcache::ICache;
+// use icache::ICache;
 
 pub type EngineType = EmulationType;
 
@@ -109,30 +113,32 @@ impl ProgramCounter {
 /// a concrete emulation engine
 /// 
 /// manages instruction fetches and execution
-pub struct Engine<'a> 
+pub struct Engine<'a>
 {
     pub lifter: Lifter<'a>,
     pub evaluator: Evaluator<'a>,
     pub engine_type: EngineType,
     pub pc: ProgramCounter,
 
-    // pub(crate) irb: &'a mut IRBuilderArena,
-    pub(crate) icache: ICache<'a>, // instruction cache
+    // pub(crate) icache: ICache<'a>, // instruction cache
+    pub tgraph: TranslationGraph<'a>,
+    pub(crate) current_base: Option<Address>,
+    // pub(crate) fetcher: Fetcher<'a>,
+    // pub irb: &'a mut IRBuilderArena,
 }
 
 impl<'a> Engine<'a> {
     /// instantiate a new concrete emulation engine
     /// 
     /// note: lifter continues to be borrowed by evaluator
-    pub fn new(
-        lifter: &Lifter,
+    pub fn new<'z: 'a>(
+        lifter: &'z Lifter<'z>,
         engine_type: EngineType,
-        irb_size: Option<usize>,
-        // irb: &'a mut IRBuilderArena,
+        tgraph: TranslationGraph<'z>,
+        // irb_size: Option<usize>,
     ) -> Self {
         let translator = lifter.translator();
         let program_counter_vnd = translator.program_counter();
-        let irb = lifter.irb(irb_size.unwrap_or(1024));
         let evaluator = match engine_type {
             EngineType::Concrete => Evaluator::new(translator),
         };
@@ -141,7 +147,10 @@ impl<'a> Engine<'a> {
             evaluator: evaluator,
             engine_type: engine_type,
             pc: ProgramCounter::new(program_counter_vnd),
-            icache: ICache::new_with(irb),
+            // icache: ICache::new(Lifter::new(&translator).irb(irb_size.unwrap_or(1024))),
+            tgraph,
+            current_base: None,
+            // fetcher: Fetcher::new(),
         }
     }
 
@@ -154,6 +163,11 @@ impl<'a> Engine<'a> {
     pub fn engine_type(&self) -> &EngineType {
         &self.engine_type
     }
+
+    // /// get shared translation graph reference
+    // pub fn tgraph(&self) -> &TranslationGraph<'a> {
+    //     &self.tgraph
+    // }
 
     /// execute single pcode instruction and return new current location
     pub fn substep(&mut self) -> Result<(EvaluatorTarget, Location), EmulationError> {
@@ -174,17 +188,18 @@ impl<'a> Clocked for Engine<'a> {
         
         // fetch and lift
         let pc_loc = self.pc.get_pc_loc(context);
-        let pcode = self.icache.fetch(
-            &mut self.lifter,
-            &pc_loc,
-            context,
-            &self.engine_type)?;
-        let insn_length = pcode.length;
+        let fetch_result = self.tgraph.fetch(&mut self.lifter, pc_loc.address, context);
+        if fetch_result.is_err() {
+            let err = fetch_result.as_ref().unwrap_err();
+            return Err(EmulationError::from(EngineError::fetch(err.clone())))
+        }
+        let translated_insn = fetch_result.as_ref().unwrap();
+        let insn_length = translated_insn.pcode.length;
 
         // evaluate lifted pcode
         // right now assumes everything but last is fall-through
         let mut next_pc_addr = pc_loc.address + (insn_length as usize);
-        for (_i, op) in pcode.operations().iter().enumerate() {
+        for (_i, op) in translated_insn.pcode.operations().iter().enumerate() {
             let target = self.evaluator
                 .step(pc_loc, op, context)?;
             match target {

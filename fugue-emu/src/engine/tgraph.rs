@@ -6,6 +6,7 @@
 //! uses petgraph::Graph for now, but petgraph::CSR may be more
 //! efficient given the sparse nature of CFGs
 use std::sync::Arc;
+use fugue_ir::disassembly::IRBuilderArena;
 use nohash_hasher::IntMap;
 
 use petgraph::stable_graph::StableGraph;
@@ -20,10 +21,12 @@ use petgraph::graph::{
 // };
 
 use fugue_ir::Address;
+use fugue_core::lifter::Lifter;
 use crate::context::manager::ContextManager;
 use super::tblock::{
     TranslationBlock,
     TranslationError,
+    TranslatedInsn,
 };
 
 /// translation graph
@@ -32,13 +35,17 @@ use super::tblock::{
 pub struct TranslationGraph<'a> {
     idx_map: IntMap<u64, NodeIndex>,
     graph: StableGraph<Arc<TranslationBlock<'a>>, ()>,
+    current_base: Option<Address>,
+    irb: &'a mut IRBuilderArena,
 }
 
 impl<'a> TranslationGraph<'a> {
-    pub fn new() -> Self {
+    pub fn new_with<'z: 'a>(irb: &'z mut IRBuilderArena) -> Self {
         Self {
             idx_map: IntMap::default(),
             graph: StableGraph::new(),
+            current_base: None,
+            irb,
         }
     }
 
@@ -54,7 +61,7 @@ impl<'a> TranslationGraph<'a> {
 
     /// get a shared reference to a translation block in the graph
     /// if it exists
-    pub fn get_block(&self, address: impl AsRef<u64>) -> Option<&Arc<TranslationBlock<'_>>> {
+    pub fn get_block(&self, address: impl AsRef<u64>) -> Option<&Arc<TranslationBlock<'a>>> {
         let idx = self.idx_map.get(&address.as_ref())?;
         self.graph.node_weight(*idx)
     }
@@ -76,6 +83,43 @@ impl<'a> TranslationGraph<'a> {
         let pred_idx = self.idx_map.get(pred_u64).unwrap();
         let succ_idx = self.idx_map.get(succ_u64).unwrap();
         self.graph.add_edge(*pred_idx, *succ_idx, ());
+    }
+
+    /// fetch an instruction
+    pub fn fetch(
+        &'a mut self,
+        lifter: &mut Lifter,
+        address: impl AsRef<Address>,
+        context: &ContextManager,
+    ) -> &Result<Arc<TranslatedInsn>, TranslationError> {
+        let address = address.as_ref();
+        if let Some(base) = self.current_base {
+            // if let Some(result) = Self::try_fetch_from_block(&self.tgraph, &base, address) {
+            //     return result
+            // }
+            if self.contains_block(address) {
+                let block = self.get_block(base).unwrap();
+                if block.contains_address(address) {
+                    // need the reborrow so that lifetimes are different and can be dropped
+                    // see https://stackoverflow.com/questions/53034769/
+                    // maybe could drop this and make it unsafe.
+                    let block = self.get_block(base).unwrap();
+                    return block.get_translated_insn(address).unwrap();
+                }
+            }
+        }
+        // no current block or address is not in current block
+        // need to fetch a new block and add it as a node to the graph
+        // we will NOT add an edge to the graph here. that should be done
+        // at a higher level to enable greater observability/control of analysis
+        let tblock = TranslationBlock::new_with(lifter, self.irb, *address, context);
+        self.current_base.replace(*address);
+        let idx = self.graph.add_node(Arc::new(tblock));
+        self.idx_map.insert(address.offset(), idx);
+        let base = self.current_base.as_ref().unwrap();
+        // Self::try_fetch_from_block(&self.tgraph, base, address).unwrap()
+        let block = self.get_block(base).unwrap();
+        block.get_translated_insn(base).unwrap()
     }
 }
 
@@ -100,7 +144,7 @@ mod tests {
 
         let mut lifter = lang.lifter();
         let context_lifter = lang.lifter();
-        let irb = context_lifter.irb(1024);
+        let mut irb = context_lifter.irb(1024);
 
         // map concrete context memory
         let mem_size = 0x1000usize;
@@ -148,7 +192,7 @@ mod tests {
             .expect("Fetch Failed!");
         assert!(&insn.bytes[..] == &[0x06, 0xe0]);
 
-        let mut tgraph = TranslationGraph::new();
+        let mut tgraph = TranslationGraph::new_with(&mut irb);
         tgraph.add_block(block);
 
         let block = tgraph.get_block(&Address::from(0u32))
