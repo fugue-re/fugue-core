@@ -9,9 +9,6 @@ use fugue_ir::{Address, Translator};
 
 use thiserror::Error;
 
-use crate::arch::aarch64::AArch64InsnLifter;
-use crate::arch::arm::ARMInsnLifter;
-use crate::arch::x86::X86InsnLifter;
 use crate::ir::{Insn, PCode};
 
 #[derive(Debug, Error)]
@@ -117,18 +114,6 @@ impl<'a> Lifter<'a> {
             delay_slots: delay_slots as u8,
             length: length as u8,
         })
-    }
-
-    pub fn lifter_for_arch(&self) -> Box<dyn InsnLifter> {
-        let arch = self.translator().architecture();
-
-        match (arch.processor(), arch.bits()) {
-            ("AARCH64", 64) => AArch64InsnLifter::new().boxed(),
-            ("ARM", 32) => ARMInsnLifter::new().boxed(),
-            ("x86", 64) => X86InsnLifter::new_64().boxed(),
-            ("x86", 32) => X86InsnLifter::new_32().boxed(),
-            _ => DefaultInsnLifter::new().boxed(),
-        }
     }
 
     pub fn translator(&self) -> &Translator {

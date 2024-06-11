@@ -2,6 +2,7 @@ use std::collections::VecDeque;
 
 use fugue_ir::Address;
 
+use crate::lifter::{InsnLifter, Lifter};
 use crate::project::{Project, ProjectRawView};
 
 pub struct ICFGBuilder<'a, R>
@@ -9,6 +10,7 @@ where
     R: ProjectRawView,
 {
     project: &'a mut Project<R>,
+    fast_lifter: Box<dyn InsnLifter>,
     candidates: VecDeque<Address>,
 }
 
@@ -18,8 +20,9 @@ where
 {
     pub fn new(project: &'a mut Project<R>) -> Self {
         Self {
-            project,
+            fast_lifter: project.language().lifter_for_arch(),
             candidates: VecDeque::new(),
+            project,
         }
     }
 
