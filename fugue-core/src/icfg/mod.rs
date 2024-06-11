@@ -1,3 +1,37 @@
+use std::collections::VecDeque;
+
+use fugue_ir::Address;
+
+use crate::project::{Project, ProjectRawView};
+
+pub struct ICFGBuilder<'a, R>
+where
+    R: ProjectRawView,
+{
+    project: &'a mut Project<R>,
+    candidates: VecDeque<Address>,
+}
+
+impl<'a, R> ICFGBuilder<'a, R>
+where
+    R: ProjectRawView,
+{
+    pub fn new(project: &'a mut Project<R>) -> Self {
+        Self {
+            project,
+            candidates: VecDeque::new(),
+        }
+    }
+
+    pub fn add_candidate(&mut self, candidate: impl Into<Address>) {
+        self.candidates.push_back(candidate.into());
+    }
+
+    pub fn add_candidates(&mut self, candidates: impl IntoIterator<Item = Address>) {
+        self.candidates.extend(candidates);
+    }
+}
+
 #[cfg(test)]
 mod test {
     use std::cell::{Cell, RefCell};

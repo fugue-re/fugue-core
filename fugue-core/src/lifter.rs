@@ -8,7 +8,47 @@ use fugue_ir::il::instruction::Instruction;
 use fugue_ir::translator::TranslationContext;
 use fugue_ir::{Address, Translator};
 
+use thiserror::Error;
+
 use crate::ir::{Insn, PCode};
+
+#[derive(Debug, Error)]
+pub enum LifterError {
+    #[error(transparent)]
+    Decode(anyhow::Error),
+    #[error(transparent)]
+    Lift(anyhow::Error),
+}
+
+impl LifterError {
+    pub fn decode<E>(e: E) -> Self
+    where
+        E: std::error::Error + Send + Sync + 'static,
+    {
+        Self::Decode(e.into())
+    }
+
+    pub fn decode_with<M>(m: M) -> Self
+    where
+        M: std::fmt::Debug + std::fmt::Display + Send + Sync + 'static,
+    {
+        Self::Decode(anyhow::Error::msg(m))
+    }
+
+    pub fn lift<E>(e: E) -> Self
+    where
+        E: std::error::Error + Send + Sync + 'static,
+    {
+        Self::Lift(e.into())
+    }
+
+    pub fn lift_with<M>(m: M) -> Self
+    where
+        M: std::fmt::Debug + std::fmt::Display + Send + Sync + 'static,
+    {
+        Self::Lift(anyhow::Error::msg(m))
+    }
+}
 
 #[derive(Clone)]
 #[repr(transparent)]
@@ -137,17 +177,16 @@ bitflags::bitflags! {
     }
 }
 
-pub struct LiftedInsn<'a, 'b, T: 'a = ()> {
+pub struct LiftedInsn<'a, 'b> {
     pub address: Address,
     pub bytes: &'b [u8],
     pub properties: Cell<LiftedInsnProperties>,
     pub operations: RefCell<Option<ArenaVec<'a, PCodeData<'a>>>>,
     pub delay_slots: u8,
     pub length: u8,
-    pub data: T,
 }
 
-impl<'a, 'b, T: 'a> LiftedInsn<'a, 'b, T> {
+impl<'a, 'b> LiftedInsn<'a, 'b> {
     pub fn address(&self) -> Address {
         self.address
     }
@@ -158,14 +197,6 @@ impl<'a, 'b, T: 'a> LiftedInsn<'a, 'b, T> {
 
     pub fn bytes(&self) -> &[u8] {
         &self.bytes[..self.len()]
-    }
-
-    pub fn data(&self) -> &T {
-        &self.data
-    }
-
-    pub fn data_mut(&mut self) -> &mut T {
-        &mut self.data
     }
 
     pub fn len(&self) -> usize {
@@ -209,16 +240,14 @@ impl<'a, 'b, T: 'a> LiftedInsn<'a, 'b, T> {
     }
 }
 
-pub trait InsnLifter<'a, T: 'a = ()> {
-    type Error;
-
+pub trait InsnLifter<'a> {
     fn properties<'b>(
         &mut self,
         lifter: &mut Lifter,
         irb: &'a IRBuilderArena,
         address: Address,
         bytes: &'b [u8],
-    ) -> Result<LiftedInsn<'a, 'b, T>, Self::Error>;
+    ) -> Result<LiftedInsn<'a, 'b>, LifterError>;
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -231,21 +260,19 @@ impl DefaultInsnLifter {
 }
 
 impl<'a> InsnLifter<'a> for DefaultInsnLifter {
-    type Error = Error;
-
     fn properties<'b>(
         &mut self,
         lifter: &mut Lifter,
         irb: &'a IRBuilderArena,
         address: Address,
         bytes: &'b [u8],
-    ) -> Result<LiftedInsn<'a, 'b>, Self::Error> {
+    ) -> Result<LiftedInsn<'a, 'b>, LifterError> {
         let PCode {
             address,
             operations,
             delay_slots,
             length,
-        } = lifter.lift(irb, address, bytes)?;
+        } = lifter.lift(irb, address, bytes).map_err(LifterError::lift)?;
 
         Ok(LiftedInsn {
             address,
@@ -254,7 +281,6 @@ impl<'a> InsnLifter<'a> for DefaultInsnLifter {
             properties: Cell::new(LiftedInsnProperties::default()),
             delay_slots,
             length,
-            data: (),
         })
     }
 }

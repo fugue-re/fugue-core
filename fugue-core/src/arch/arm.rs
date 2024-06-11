@@ -3,8 +3,6 @@ use std::cell::{Cell, RefCell};
 use fugue_ir::disassembly::IRBuilderArena;
 use fugue_ir::Address;
 
-use thiserror::Error;
-
 use yaxpeax_arch::*;
 use yaxpeax_arm::armv7::{Opcode, Operand, Reg};
 
@@ -13,18 +11,10 @@ pub use yaxpeax_arm::armv7::{
 };
 
 use crate::ir::PCode;
-use crate::lifter::{InsnLifter, LiftedInsn, LiftedInsnProperties, Lifter};
+use crate::lifter::{InsnLifter, LiftedInsn, LiftedInsnProperties, Lifter, LifterError};
 
 pub struct ARMInsnLifter {
     decoder: ARMInstDecoder,
-}
-
-#[derive(Debug, Error)]
-pub enum ARMLifterError {
-    #[error(transparent)]
-    Decoder(#[from] ARMDecoderError),
-    #[error(transparent)]
-    Lifter(#[from] fugue_ir::error::Error),
 }
 
 impl ARMInsnLifter {
@@ -34,6 +24,10 @@ impl ARMInsnLifter {
 
     pub fn new_with(decoder: ARMInstDecoder) -> Self {
         Self { decoder }
+    }
+
+    pub fn boxed<'a>(self) -> Box<dyn InsnLifter<'a>> {
+        Box::new(self)
     }
 }
 
@@ -53,18 +47,19 @@ fn should_lift(insn: &ARMInstruction) -> bool {
     }
 }
 
-impl<'a> InsnLifter<'a, ARMInstruction> for ARMInsnLifter {
-    type Error = ARMLifterError;
-
+impl<'a> InsnLifter<'a> for ARMInsnLifter {
     fn properties<'b>(
         &mut self,
         lifter: &mut Lifter,
         irb: &'a IRBuilderArena,
         address: Address,
         bytes: &'b [u8],
-    ) -> Result<LiftedInsn<'a, 'b, ARMInstruction>, Self::Error> {
+    ) -> Result<LiftedInsn<'a, 'b>, LifterError> {
         let mut reader = yaxpeax_arch::U8Reader::new(bytes);
-        let insn = self.decoder.decode(&mut reader)?;
+        let insn = self
+            .decoder
+            .decode(&mut reader)
+            .map_err(LifterError::decode)?;
         let size = insn.len().to_const() as u8;
 
         if should_lift(&insn) {
@@ -73,7 +68,9 @@ impl<'a> InsnLifter<'a, ARMInstruction> for ARMInsnLifter {
                 operations,
                 delay_slots,
                 length,
-            } = lifter.lift(irb, address, bytes)?;
+            } = lifter
+                .lift(irb, address, bytes)
+                .map_err(LifterError::lift)?;
 
             Ok(LiftedInsn {
                 address,
@@ -82,7 +79,6 @@ impl<'a> InsnLifter<'a, ARMInstruction> for ARMInsnLifter {
                 operations: RefCell::new(Some(operations)),
                 delay_slots,
                 length,
-                data: insn,
             })
         } else {
             Ok(LiftedInsn {
@@ -92,7 +88,6 @@ impl<'a> InsnLifter<'a, ARMInstruction> for ARMInsnLifter {
                 operations: RefCell::new(None),
                 delay_slots: 0,
                 length: size,
-                data: insn,
             })
         }
     }

@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::fmt::{Debug, Display};
+use std::marker::PhantomData;
 use std::ops::Range;
 
 use anyhow::anyhow;
@@ -10,6 +11,8 @@ use heed::types::U64;
 use iset::IntervalMap;
 use thiserror::Error;
 
+use crate::language::{Language, LanguageBuilder};
+use crate::lifter::Lifter;
 use crate::loader::Loadable;
 use crate::util::table::{MmapTable, MmapTableReader};
 
@@ -47,7 +50,11 @@ pub struct LoadedSegment<'a> {
 }
 
 impl<'a> LoadedSegment<'a> {
-    pub fn new(name: impl Into<Cow<'a, str>>, addr: impl Into<Address>, data: impl Into<Cow<'a, [u8]>>) -> Self {
+    pub fn new(
+        name: impl Into<Cow<'a, str>>,
+        addr: impl Into<Address>,
+        data: impl Into<Cow<'a, [u8]>>,
+    ) -> Self {
         let data = data.into();
         let size = data.len();
 
@@ -59,7 +66,11 @@ impl<'a> LoadedSegment<'a> {
         }
     }
 
-    pub fn new_uninit(name: impl Into<Cow<'a, str>>, addr: impl Into<Address>, size: usize) -> Self {
+    pub fn new_uninit(
+        name: impl Into<Cow<'a, str>>,
+        addr: impl Into<Address>,
+        size: usize,
+    ) -> Self {
         Self {
             name: name.into(),
             addr: addr.into(),
@@ -90,13 +101,14 @@ impl<'a> LoadedSegment<'a> {
     }
 
     pub fn range(&self) -> Range<Address> {
-        self.addr..self.addr+self.size
+        self.addr..self.addr + self.size
     }
 }
 
 impl<'a> ProjectRawViewReader<'a> for ProjectRawViewMmapedReader<'a> {
     fn view_bytes(&self, address: impl Into<Address>) -> Result<&[u8], ProjectRawViewError> {
         let address = address.into();
+
         // find the interval that contains this address
         let Ok(index) = self.segments.binary_search_by(|segm| {
             let iv = segm.range();
@@ -163,7 +175,7 @@ impl ProjectRawView for ProjectRawViewMmaped {
 
         for i in 1..segments.len() {
             let ri = segments[i].range();
-            let rj = segments[i-1].range();
+            let rj = segments[i - 1].range();
 
             if ri.start < rj.end {
                 return Err(ProjectRawViewError::OverlappingRanges);
@@ -227,7 +239,10 @@ impl ProjectRawView for ProjectRawViewInMemory {
                     return Err(ProjectRawViewError::OverlappingRanges);
                 }
 
-                mapping.insert(addr..last_addr, LoadedSegment::new("LOAD", addr, data.into_owned()));
+                mapping.insert(
+                    addr..last_addr,
+                    LoadedSegment::new("LOAD", addr, data.into_owned()),
+                );
 
                 Ok(mapping)
             })?;
@@ -286,13 +301,25 @@ pub struct Project<R>
 where
     R: ProjectRawView,
 {
+    entry: Option<Address>,
+    language: Language,
     mapping: R,
+}
+
+pub struct ProjectBuilder<R>
+where
+    R: ProjectRawView,
+{
+    language_builder: LanguageBuilder,
+    _mapping: PhantomData<R>,
 }
 
 #[derive(Debug, Error)]
 pub enum ProjectError {
     #[error("cannot load project: {0}")]
     Load(anyhow::Error),
+    #[error("cannot initialise language: {0}")]
+    Language(anyhow::Error),
 }
 
 impl ProjectError {
@@ -302,19 +329,50 @@ impl ProjectError {
     {
         Self::Load(e.into())
     }
+
+    pub fn language<E>(e: E) -> Self
+    where
+        E: std::error::Error + Send + Sync + 'static,
+    {
+        Self::Language(e.into())
+    }
+}
+
+impl<R> ProjectBuilder<R>
+where
+    R: ProjectRawView,
+{
+    pub fn new(language_builder: LanguageBuilder) -> Self {
+        Self {
+            language_builder,
+            _mapping: PhantomData,
+        }
+    }
+
+    pub fn build<'a, L>(&self, loadable: &L) -> Result<Project<R>, ProjectError>
+    where
+        L: Loadable<'a>,
+    {
+        Ok(Project {
+            entry: loadable.entry(),
+            language: loadable
+                .language(&self.language_builder)
+                .map_err(ProjectError::language)?,
+            mapping: R::new(loadable).map_err(ProjectError::load)?,
+        })
+    }
 }
 
 impl<R> Project<R>
 where
     R: ProjectRawView,
 {
-    pub fn new<'a, L>(loadable: &L) -> Result<Self, ProjectError>
-    where
-        L: Loadable<'a>,
-    {
-        Ok(Self {
-            mapping: R::new(loadable).map_err(ProjectError::load)?,
-        })
+    pub fn language(&self) -> &Language {
+        &self.language
+    }
+
+    pub fn lifter(&self) -> Lifter {
+        self.language.lifter()
     }
 
     pub fn raw(&self) -> &R {
@@ -336,9 +394,15 @@ mod test {
         let input = BytesOrMapping::from_file("tests/ls.elf")?;
         let object = Object::new(input)?;
 
+        let language_builder = LanguageBuilder::new("data")?;
+
+        let project_builder1 =
+            ProjectBuilder::<ProjectRawViewInMemory>::new(language_builder.clone());
+        let project_builder2 = ProjectBuilder::<ProjectRawViewMmaped>::new(language_builder);
+
         // Create the project from the mapping object
-        let project1 = Project::<ProjectRawViewMmaped>::new(&object)?;
-        let project2 = Project::<ProjectRawViewInMemory>::new(&object)?;
+        let project1 = project_builder1.build(&object)?;
+        let project2 = project_builder2.build(&object)?;
 
         // Let's test a read from a known address...
         let reader1 = project1.raw().reader()?;
