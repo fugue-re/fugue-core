@@ -1,8 +1,7 @@
 use std::cell::{Cell, Ref, RefCell};
 
 use fugue_ir::disassembly::lift::ArenaVec;
-use fugue_ir::disassembly::PCodeRaw;
-use fugue_ir::disassembly::{ContextDatabase, IRBuilderArena, PCodeData};
+use fugue_ir::disassembly::{ContextDatabase, IRBuilderArena, PCodeData, PCodeRaw};
 use fugue_ir::error::Error;
 use fugue_ir::il::instruction::Instruction;
 use fugue_ir::translator::TranslationContext;
@@ -10,6 +9,9 @@ use fugue_ir::{Address, Translator};
 
 use thiserror::Error;
 
+use crate::arch::aarch64::AArch64InsnLifter;
+use crate::arch::arm::ARMInsnLifter;
+use crate::arch::x86::X86InsnLifter;
 use crate::ir::{Insn, PCode};
 
 #[derive(Debug, Error)]
@@ -117,6 +119,18 @@ impl<'a> Lifter<'a> {
         })
     }
 
+    pub fn lifter_for_arch(&self) -> Box<dyn InsnLifter> {
+        let arch = self.translator().architecture();
+
+        match (arch.processor(), arch.bits()) {
+            ("AARCH64", 64) => AArch64InsnLifter::new().boxed(),
+            ("ARM", 32) => ARMInsnLifter::new().boxed(),
+            ("x86", 64) => X86InsnLifter::new_64().boxed(),
+            ("x86", 32) => X86InsnLifter::new_32().boxed(),
+            _ => DefaultInsnLifter::new().boxed(),
+        }
+    }
+
     pub fn translator(&self) -> &Translator {
         self.0.translator()
     }
@@ -177,16 +191,16 @@ bitflags::bitflags! {
     }
 }
 
-pub struct LiftedInsn<'a, 'b> {
+pub struct LiftedInsn<'input, 'lifter> {
     pub address: Address,
-    pub bytes: &'b [u8],
+    pub bytes: &'input [u8],
     pub properties: Cell<LiftedInsnProperties>,
-    pub operations: RefCell<Option<ArenaVec<'a, PCodeData<'a>>>>,
+    pub operations: RefCell<Option<ArenaVec<'lifter, PCodeData<'lifter>>>>,
     pub delay_slots: u8,
     pub length: u8,
 }
 
-impl<'a, 'b> LiftedInsn<'a, 'b> {
+impl<'input, 'lifter> LiftedInsn<'input, 'lifter> {
     pub fn address(&self) -> Address {
         self.address
     }
@@ -206,8 +220,8 @@ impl<'a, 'b> LiftedInsn<'a, 'b> {
     pub fn pcode(
         &self,
         lifter: &mut Lifter,
-        irb: &'a IRBuilderArena,
-    ) -> Result<Ref<ArenaVec<'a, PCodeData<'a>>>, Error> {
+        irb: &'lifter IRBuilderArena,
+    ) -> Result<Ref<ArenaVec<'lifter, PCodeData<'lifter>>>, Error> {
         if let Some(operations) = self.try_pcode() {
             return Ok(operations);
         }
@@ -218,15 +232,15 @@ impl<'a, 'b> LiftedInsn<'a, 'b> {
         self.pcode(lifter, irb)
     }
 
-    pub fn try_pcode(&self) -> Option<Ref<ArenaVec<'a, PCodeData<'a>>>> {
+    pub fn try_pcode(&self) -> Option<Ref<ArenaVec<'lifter, PCodeData<'lifter>>>> {
         Ref::filter_map(self.operations.borrow(), |v| v.as_ref()).ok()
     }
 
     pub fn into_pcode(
         self,
         lifter: &mut Lifter,
-        irb: &'a IRBuilderArena,
-    ) -> Result<PCode<'a>, Error> {
+        irb: &'lifter IRBuilderArena,
+    ) -> Result<PCode<'lifter>, Error> {
         if let Some(operations) = self.operations.into_inner() {
             return Ok(PCode {
                 address: self.address,
@@ -240,14 +254,14 @@ impl<'a, 'b> LiftedInsn<'a, 'b> {
     }
 }
 
-pub trait InsnLifter<'a> {
-    fn properties<'b>(
+pub trait InsnLifter {
+    fn properties<'input, 'lifter>(
         &mut self,
         lifter: &mut Lifter,
-        irb: &'a IRBuilderArena,
+        irb: &'lifter IRBuilderArena,
         address: Address,
-        bytes: &'b [u8],
-    ) -> Result<LiftedInsn<'a, 'b>, LifterError>;
+        bytes: &'input [u8],
+    ) -> Result<LiftedInsn<'input, 'lifter>, LifterError>;
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -257,22 +271,28 @@ impl DefaultInsnLifter {
     pub fn new() -> Self {
         Self::default()
     }
+
+    pub fn boxed(self) -> Box<dyn InsnLifter> {
+        Box::new(self)
+    }
 }
 
-impl<'a> InsnLifter<'a> for DefaultInsnLifter {
-    fn properties<'b>(
+impl InsnLifter for DefaultInsnLifter {
+    fn properties<'input, 'lifter>(
         &mut self,
         lifter: &mut Lifter,
-        irb: &'a IRBuilderArena,
+        irb: &'lifter IRBuilderArena,
         address: Address,
-        bytes: &'b [u8],
-    ) -> Result<LiftedInsn<'a, 'b>, LifterError> {
+        bytes: &'input [u8],
+    ) -> Result<LiftedInsn<'input, 'lifter>, LifterError> {
         let PCode {
             address,
             operations,
             delay_slots,
             length,
-        } = lifter.lift(irb, address, bytes).map_err(LifterError::lift)?;
+        } = lifter
+            .lift(irb, address, bytes)
+            .map_err(LifterError::lift)?;
 
         Ok(LiftedInsn {
             address,

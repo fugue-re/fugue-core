@@ -103,16 +103,20 @@ where
         Self::new_with(D::Decoder::default())
     }
 
+    pub fn new_with(decoder: D::Decoder) -> Self {
+        Self { decoder }
+    }
+}
+
+impl X86InsnLifter<x86_32> {
     pub fn new_32() -> X86InsnLifter<x86_32> {
         X86InsnLifter::new_with(X86_32InstDecoder::default())
     }
+}
 
+impl X86InsnLifter<x86_64> {
     pub fn new_64() -> X86InsnLifter<x86_64> {
         X86InsnLifter::new_with(X86_64InstDecoder::default())
-    }
-
-    pub fn new_with(decoder: D::Decoder) -> Self {
-        Self { decoder }
     }
 }
 
@@ -124,26 +128,26 @@ where
     <<D::Address as AddressBase>::Diff as TryInto<u8>>::Error:
         std::error::Error + Send + Sync + 'static,
 {
-    pub fn boxed<'a>(self) -> Box<dyn InsnLifter<'a>> {
+    pub fn boxed(self) -> Box<dyn InsnLifter> {
         Box::new(self)
     }
 }
 
-impl<'a, D> InsnLifter<'a> for X86InsnLifter<D>
+impl<D> InsnLifter for X86InsnLifter<D>
 where
     D: X86Arch,
-    for<'b> U8Reader<'b>: Reader<D::Address, D::Word>,
+    for<'input> U8Reader<'input>: Reader<D::Address, D::Word>,
     <D::Address as AddressBase>::Diff: TryInto<u8>,
     <<D::Address as AddressBase>::Diff as TryInto<u8>>::Error:
         std::error::Error + Send + Sync + 'static,
 {
-    fn properties<'b>(
+    fn properties<'input, 'lifter>(
         &mut self,
         lifter: &mut Lifter,
-        irb: &'a IRBuilderArena,
+        irb: &'lifter IRBuilderArena,
         address: Address,
-        bytes: &'b [u8],
-    ) -> Result<LiftedInsn<'a, 'b>, LifterError> {
+        bytes: &'input [u8],
+    ) -> Result<LiftedInsn<'input, 'lifter>, LifterError> {
         let mut reader = yaxpeax_arch::U8Reader::new(bytes);
 
         let insn = self

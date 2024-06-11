@@ -40,10 +40,7 @@ mod test {
     use fugue_ir::Address;
 
     use yaxpeax_arch::*;
-
-    use yaxpeax_arm::armv7::DecodeError as ARMDecoderError;
     use yaxpeax_arm::armv7::InstDecoder as ARMInstDecoder;
-    use yaxpeax_arm::armv7::Instruction as ARMInstruction;
 
     use crate::language::LanguageBuilder;
     use crate::lifter::*;
@@ -76,18 +73,16 @@ mod test {
             }
         }
 
-        impl<'a> InsnLifter<'a, ARMInstruction> for ARMInsnLifter {
-            type Error = ARMDecoderError;
-
-            fn properties<'b>(
+        impl InsnLifter for ARMInsnLifter {
+            fn properties<'a, 'b>(
                 &mut self,
                 _lifter: &mut Lifter,
-                _irb: &'a IRBuilderArena,
+                _irb: &'b IRBuilderArena,
                 address: Address,
-                bytes: &'b [u8],
-            ) -> Result<LiftedInsn<'a, 'b, ARMInstruction>, Self::Error> {
+                bytes: &'a [u8],
+            ) -> Result<LiftedInsn<'a, 'b>, LifterError> {
                 let mut reader = yaxpeax_arch::U8Reader::new(bytes);
-                let insn = self.0.decode(&mut reader)?;
+                let insn = self.0.decode(&mut reader).map_err(LifterError::decode)?;
                 let size = insn.len().to_const() as u8;
 
                 Ok(LiftedInsn {
@@ -97,7 +92,6 @@ mod test {
                     operations: RefCell::new(None),
                     delay_slots: 0,
                     length: size,
-                    data: insn,
                 })
             }
         }
@@ -106,9 +100,6 @@ mod test {
 
         while off < memory.len() {
             let lifted = plifter.properties(&mut lifter, &irb, address + off, &memory[off..])?;
-
-            println!("--- insn @ {} ---", lifted.address());
-            println!("{}", lifted.data());
 
             println!("--- pcode @ {} ---", lifted.address());
             for (i, op) in lifted.pcode(&mut lifter, &irb)?.iter().enumerate() {

@@ -27,7 +27,7 @@ impl AArch64InsnLifter {
         Self { decoder }
     }
 
-    pub fn boxed<'a>(self) -> Box<dyn InsnLifter<'a>> {
+    pub fn boxed(self) -> Box<dyn InsnLifter> {
         Box::new(self)
     }
 }
@@ -39,14 +39,14 @@ fn should_lift(insn: &AArch64Instruction) -> bool {
     }
 }
 
-impl<'a> InsnLifter<'a> for AArch64InsnLifter {
-    fn properties<'b>(
+impl InsnLifter for AArch64InsnLifter {
+    fn properties<'input, 'lifter>(
         &mut self,
         lifter: &mut Lifter,
-        irb: &'a IRBuilderArena,
+        irb: &'lifter IRBuilderArena,
         address: Address,
-        bytes: &'b [u8],
-    ) -> Result<LiftedInsn<'a, 'b>, LifterError> {
+        bytes: &'input [u8],
+    ) -> Result<LiftedInsn<'input, 'lifter>, LifterError> {
         let mut reader = yaxpeax_arch::U8Reader::new(bytes);
         let insn = self
             .decoder

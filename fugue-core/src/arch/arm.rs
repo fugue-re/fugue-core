@@ -26,7 +26,7 @@ impl ARMInsnLifter {
         Self { decoder }
     }
 
-    pub fn boxed<'a>(self) -> Box<dyn InsnLifter<'a>> {
+    pub fn boxed(self) -> Box<dyn InsnLifter> {
         Box::new(self)
     }
 }
@@ -47,14 +47,14 @@ fn should_lift(insn: &ARMInstruction) -> bool {
     }
 }
 
-impl<'a> InsnLifter<'a> for ARMInsnLifter {
-    fn properties<'b>(
+impl InsnLifter for ARMInsnLifter {
+    fn properties<'input, 'lifter>(
         &mut self,
         lifter: &mut Lifter,
-        irb: &'a IRBuilderArena,
+        irb: &'lifter IRBuilderArena,
         address: Address,
-        bytes: &'b [u8],
-    ) -> Result<LiftedInsn<'a, 'b>, LifterError> {
+        bytes: &'input [u8],
+    ) -> Result<LiftedInsn<'input, 'lifter>, LifterError> {
         let mut reader = yaxpeax_arch::U8Reader::new(bytes);
         let insn = self
             .decoder
