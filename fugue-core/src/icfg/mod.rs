@@ -35,6 +35,26 @@ where
     }
 }
 
+pub struct FunctionBuilder<'a, 'b, R> where R: ProjectRawView {
+    builder: &'a mut ICFGBuilder<'b, R>,
+}
+
+impl<'a, 'b, R> FunctionBuilder<'a, 'b, R> where R: ProjectRawView {
+    pub fn new(builder: &'a mut ICFGBuilder<'b, R>) -> Self {
+        Self { builder }
+    }
+
+    pub fn explore(&mut self, from: impl Into<Address>) { // -> Function
+        let entry = from.into();
+        todo!("explore from {entry}")
+    }
+
+    pub fn reset(&mut self) {
+        // self.blocks.clear();
+        // self.insns.clear();
+    }
+}
+
 #[cfg(test)]
 mod test {
     use std::cell::{Cell, RefCell};

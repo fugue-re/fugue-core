@@ -29,6 +29,7 @@ pub trait ProjectRawView: Sized {
 }
 
 pub trait ProjectRawViewReader<'a> {
+    fn find_region(&self, point: impl Into<Address>) -> Result<LoadedSegment, ProjectRawViewError>;
     fn view_bytes(&self, address: impl Into<Address>) -> Result<&[u8], ProjectRawViewError>;
 }
 
@@ -88,6 +89,15 @@ impl<'a> LoadedSegment<'a> {
         }
     }
 
+    pub fn borrowed_with<'b>(&'b self, data: &'b [u8]) -> LoadedSegment<'b> {
+        LoadedSegment {
+            name: Cow::Borrowed(self.name()),
+            addr: self.addr,
+            size: self.size,
+            data: Cow::Borrowed(data),
+        }
+    }
+
     pub fn address(&self) -> Address {
         self.addr
     }
@@ -105,9 +115,12 @@ impl<'a> LoadedSegment<'a> {
     }
 }
 
-impl<'a> ProjectRawViewReader<'a> for ProjectRawViewMmapedReader<'a> {
-    fn view_bytes(&self, address: impl Into<Address>) -> Result<&[u8], ProjectRawViewError> {
-        let address = address.into();
+impl<'a> ProjectRawViewMmapedReader<'a> {
+    fn find_segment(
+        &self,
+        point: impl Into<Address>,
+    ) -> Result<&LoadedSegment<'a>, ProjectRawViewError> {
+        let address = point.into();
 
         // find the interval that contains this address
         let Ok(index) = self.segments.binary_search_by(|segm| {
@@ -126,18 +139,41 @@ impl<'a> ProjectRawViewReader<'a> for ProjectRawViewMmapedReader<'a> {
             ));
         };
 
-        let segm = &self.segments[index].range();
+        Ok(&self.segments[index])
+    }
+}
+
+impl<'a> ProjectRawViewReader<'a> for ProjectRawViewMmapedReader<'a> {
+    fn view_bytes(&self, address: impl Into<Address>) -> Result<&[u8], ProjectRawViewError> {
+        let address = address.into();
+
+        let segm = self.find_segment(address)?;
         let data = self
             .backing
-            .get(segm.start)
+            .get(segm.address())
             .map_err(ProjectRawViewError::backing)?
             .ok_or_else(|| {
                 ProjectRawViewError::read_with(address, "interval not present in backing")
             })?;
 
-        let offset = usize::from(address - segm.start);
+        let offset = usize::from(address - segm.address());
 
         Ok(&data[offset..])
+    }
+
+    fn find_region(&self, point: impl Into<Address>) -> Result<LoadedSegment, ProjectRawViewError> {
+        let address = point.into();
+
+        let segm = self.find_segment(address)?;
+        let data = self
+            .backing
+            .get(segm.address())
+            .map_err(ProjectRawViewError::backing)?
+            .ok_or_else(|| {
+                ProjectRawViewError::read_with(address, "interval not present in backing")
+            })?;
+
+        Ok(segm.borrowed_with(data))
     }
 }
 
@@ -207,16 +243,28 @@ pub struct ProjectRawViewInMemoryReader<'a> {
     backing: &'a IntervalMap<Address, LoadedSegment<'static>>,
 }
 
+impl<'a> ProjectRawViewInMemoryReader<'a> {
+    fn find_segment(&self, address: impl Into<Address>) -> Option<&LoadedSegment<'a>> {
+        let address = address.into();
+        self.backing.overlap(address).map(|(_, segm)| segm).next()
+    }
+}
+
 impl<'a> ProjectRawViewReader<'a> for ProjectRawViewInMemoryReader<'a> {
     fn view_bytes(&self, address: impl Into<Address>) -> Result<&[u8], ProjectRawViewError> {
         let address = address.into();
-        self.backing
-            .overlap(address)
-            .next()
-            .map(|(range, segm)| {
-                let offset = usize::from(address - range.start);
+        self.find_segment(address)
+            .map(|segm| {
+                let offset = usize::from(address - segm.address());
                 &segm.data()[offset..]
             })
+            .ok_or_else(|| ProjectRawViewError::read_with(address, "address not mapped"))
+    }
+
+    fn find_region(&self, point: impl Into<Address>) -> Result<LoadedSegment, ProjectRawViewError> {
+        let address = point.into();
+        self.find_segment(address)
+            .map(LoadedSegment::borrowed)
             .ok_or_else(|| ProjectRawViewError::read_with(address, "address not mapped"))
     }
 }
