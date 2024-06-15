@@ -1,0 +1,18 @@
+[package]
+name = "fugue-emu"
+version = "0.3.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+fugue-core = { version = "0.3", path = "../fugue-core" }
+fugue-arch = { version = "0.3", path = "../fugue-arch" }
+fugue-bv = { version = "0.3", path = "../fugue-bv" }
+fugue-bytes = { version = "0.3", path = "../fugue-bytes" }
+fugue-ir = { version = "0.3", path = "../fugue-ir" }
+# multi_key_map = { version = "0.3.0" }
+anyhow = "1"
+thiserror = "1"
+nohash-hasher = "0.2.0"
+petgraph = "0.6.5"
