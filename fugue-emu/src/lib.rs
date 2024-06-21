@@ -4,6 +4,7 @@
 
 pub mod emu;
 pub mod context;
+pub mod peripheral;
 pub mod eval;
 
 

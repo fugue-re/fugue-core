@@ -2,8 +2,9 @@
 
 use thiserror::Error;
 
-use fugue_ir::Address;
+use fugue_ir::{ Address, disassembly::VarnodeData };
 
+use crate::peripheral;
 
 #[derive(Clone, Debug, Error)]
 pub enum Error {
@@ -19,6 +20,14 @@ pub enum Error {
     UnalignedSize(usize, usize),
     #[error("unexpected error: {0}")]
     Unexpected(String),
+    #[error("address {0} out of bounds")]
+    OutOfBounds(Address),
+    #[error("invalid register name {0}")]
+    InvalidRegisterName(String),
+    #[error("invalid varnode {0:?}")]
+    InvalidVarnode(VarnodeData),
+    #[error("peripheral error: {0}")]
+    Peripheral(String),
     #[error("{0}")]
     State(String),
 }
@@ -27,5 +36,12 @@ pub enum Error {
 impl From<fugue_ir::error::Error> for Error {
     fn from(value: fugue_ir::error::Error) -> Self {
         Self::Lift(format!("{:?}", value))
+    }
+}
+
+// enable coercion from peripheral errors
+impl From<peripheral::Error> for Error {
+    fn from(value: peripheral::Error) -> Self {
+        Self::Peripheral(format!("{:?}", value))
     }
 }

@@ -30,4 +30,12 @@ impl Error {
     {
         Self::Runtime(anyhow::Error::new(err))
     }
+
+    /// create a runtime error form a static message
+    pub fn runtime_with<M>(msg: M) -> Self
+    where
+        M: std::fmt::Display + std::fmt::Debug + Send + Sync + 'static,
+    {
+        Self::Runtime(anyhow::Error::msg(msg))
+    }
 }

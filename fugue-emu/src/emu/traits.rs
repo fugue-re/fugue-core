@@ -17,9 +17,9 @@ use crate::emu;
 /// 
 /// it should define a virtual time resolution to increment at each step
 /// of the emulation (see Renode's time framework)
-pub trait Emulation {
-    type E: Evaluator;
-    type C: Context;
+pub trait Emulation<'irb> {
+    type E: Evaluator<'irb>;
+    type C: Context<'irb>;
 
     /// run the simulation until halt condition detected
     fn run(
@@ -40,9 +40,11 @@ pub trait Clocked {
     /// the step method is invoked at each emulation clock cycle
     /// an emulation clock cycle is defined by the execution of 
     /// a single architectural instruction
-    fn step(&mut self) -> Result<(), impl std::error::Error>;
+    fn step(&mut self) -> Result<(), emu::Error> {
+        Ok(())
+    }
 }
 
-pub trait EmulationHook<E: Evaluator> {
+pub trait EmulationHook<'irb, E: Evaluator<'irb>> {
 
 }
