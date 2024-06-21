@@ -4,6 +4,7 @@
 
 
 use fugue_core::eval::EvaluatorContext;
+use fugue_ir::disassembly::lift::IRBuilderArena;
 
 use crate::eval::traits::Evaluator;
 use crate::context::traits::Context;
@@ -11,21 +12,13 @@ use crate::emu;
 
 /// emulation trait
 /// 
-/// the emulation should not take ownership fo the evaluator or context
-/// the struct defined for the emulator should only really hold variables
-/// relevent to the overall emulation state
-/// 
 /// it should define a virtual time resolution to increment at each step
 /// of the emulation (see Renode's time framework)
-pub trait Emulation<'irb> {
-    type E: Evaluator<'irb>;
-    type C: Context<'irb>;
+pub trait Emulation {
 
     /// run the simulation until halt condition detected
     fn run(
         &mut self,
-        evaluator: &mut Self::E,
-        context: &mut Self::C,
     ) -> Result<(), emu::Error>;
 }
 

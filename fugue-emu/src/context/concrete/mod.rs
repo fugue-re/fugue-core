@@ -21,6 +21,7 @@ use fugue_ir::{
 use fugue_bv::BitVec;
 use fugue_bytes::Endian;
 use fugue_core::lifter::Lifter;
+use fugue_core::language::Language;
 use fugue_core::ir::{ Location, PCode };
 
 use crate::context;
@@ -31,8 +32,6 @@ use crate::eval::traits::{ EvaluatorContext, observer::BlockObserver };
 
 pub mod state;
 pub use state::*;
-
-pub const ALIGNMENT_SIZE: u64 = 0x1000u64;
 
 /// concrete context
 /// 
@@ -47,67 +46,62 @@ pub struct ConcreteContext<'irb> {
     // meta
     pc: VarnodeData,
     endian: Endian,
+    lang: Language,
     translation_cache: Arc<RwLock<IntMap< u64, LiftResult<'irb> >>>,
 }
 
 impl<'irb> ConcreteContext<'irb> {
 
     /// creates a new concrete context
-    pub fn new_with(translator: &Translator) -> Self {
+    pub fn new_with(lang: Language) -> Self {
         Self {
-            memory_map: ConcreteMemoryMap::new(),
-            regs: ConcreteRegisters::new_with(translator),
-            tmps: ConcreteTemps::new_with(translator),
+            memory_map: ConcreteMemoryMap::new_with(lang.translator()),
+            regs: ConcreteRegisters::new_with(lang.translator()),
+            tmps: ConcreteTemps::new_with(lang.translator()),
 
-            pc: translator.program_counter().clone(),
-            endian: if translator.is_big_endian() { Endian::Big } else { Endian::Little },
+            pc: lang.translator().program_counter().clone(),
+            endian: if lang.translator().is_big_endian() { Endian::Big } else { Endian::Little },
+            lang,
             translation_cache: Arc::new(RwLock::new(IntMap::default())),
+        }
+    }
+}
+
+impl<'irb> VarnodeContext<BitVec> for ConcreteContext<'irb> {
+    fn read_vnd(&self, var: &VarnodeData) -> Result<BitVec, context::Error> {
+        let spc = var.space();
+        if spc.is_constant() {
+            Ok(BitVec::from_u64(var.offset(), var.bits()))
+        } else if spc.is_register() {
+            self.regs.read_vnd(var)
+        } else if spc.is_unique() {
+            self.tmps.read_vnd(var)
+        } else if spc.is_default() {
+            self.memory_map.read_vnd(var)
+        } else {
+            Err(context::Error::InvalidVarnode(var.clone()))
+        }
+    }
+
+    fn write_vnd(&mut self, var: &VarnodeData, val: &BitVec) -> Result<(), context::Error> {
+        let spc = var.space();
+        if spc.is_constant() {
+            panic!("cannot write to constant Varnode!");
+        } else if spc.is_register() {
+            self.regs.write_vnd(var, val)
+        } else if spc.is_unique() {
+            self.tmps.write_vnd(var, val)
+        } else if spc.is_default() {
+            self.memory_map.write_vnd(var, val)
+        } else {
+            Err(context::Error::InvalidVarnode(var.clone()))
         }
     }
 }
 
 /// the EvaluatorContext implementation for ConcreteContext will use the BitVec
 /// as the associated Data type
-impl<'irb> EvaluatorContext<'irb> for ConcreteContext<'irb> {
-    type Data = BitVec;
-
-    fn read_vnd(&self, var: &VarnodeData) -> Result<Self::Data, eval::Error> {
-        let spc = var.space();
-        if spc.is_constant() {
-            Ok(BitVec::from_u64(var.offset(), var.bits()))
-        } else if spc.is_register() {
-            self.regs.read_vnd(var)
-                .map_err(eval::Error::from)
-        } else if spc.is_unique() {
-            self.tmps.read_vnd(var)
-                .map_err(eval::Error::from)
-        } else if spc.is_default() {
-            let address = Address::from(var.offset());
-            self.memory_map.read_mem(&address, var.size(), self.endian)
-                .map_err(eval::Error::from)
-        } else {
-            Err(eval::Error::Context(context::Error::InvalidVarnode(var.clone())))
-        }
-    }
-
-    fn write_vnd(&mut self, var: &VarnodeData, val: &Self::Data) -> Result<(), eval::Error> {
-        let spc = var.space();
-        if spc.is_constant() {
-            Err(eval::Error::runtime_with("cannot write to constant Varnode!"))
-        } else if spc.is_register() {
-            self.regs.write_vnd(var, val)
-                .map_err(eval::Error::from)
-        } else if spc.is_unique() {
-            self.tmps.write_vnd(var, val)
-                .map_err(eval::Error::from)
-        } else if spc.is_default() {
-            let address = Address::from(var.offset());
-            self.memory_map.write_mem(&address, val, self.endian)
-                .map_err(eval::Error::from)
-        } else {
-            Err(eval::Error::Context(context::Error::InvalidVarnode(var.clone())))
-        }
-    }
+impl<'irb> EvaluatorContext<'irb, BitVec> for ConcreteContext<'irb> {
 
     fn lift_block(
         &mut self,
@@ -207,7 +201,23 @@ impl<'irb> EvaluatorContext<'irb> for ConcreteContext<'irb> {
 
 }
 
-impl <'irb> Context<'irb> for ConcreteContext<'irb> {
+impl<'irb> MemoryMapContext<BitVec> for ConcreteContext<'irb> {
+
+    fn map_mem(
+        &mut self,
+        base: impl Into<Address>,
+        size: usize,
+    ) -> Result<(), context::Error> {
+        self.memory_map.map_mem(base, size)
+    }
+
+    fn map_mmio(
+        &mut self,
+        base: impl Into<Address>,
+        peripheral: Box<dyn crate::peripheral::traits::MappedPeripheralState>,
+    ) -> Result<(), context::Error> {
+        self.memory_map.map_mmio(base, peripheral)
+    }
 
     fn read_bytes(&self, address: impl AsRef<Address>, size: usize) -> Result<&[u8], context::Error> {
         self.memory_map.read_bytes(address.as_ref(), size)
@@ -217,19 +227,22 @@ impl <'irb> Context<'irb> for ConcreteContext<'irb> {
         self.memory_map.write_bytes(address.as_ref(), bytes)
     }
 
-    fn read_mem(&self, address: impl AsRef<Address>, size: usize) -> Result<Self::Data, context::Error> {
-        self.memory_map.read_mem(address.as_ref(), size, self.endian)
+    fn read_mem(&self, address: impl AsRef<Address>, size: usize) -> Result<BitVec, context::Error> {
+        self.memory_map.read_mem(address.as_ref(), size)
     }
 
-    fn write_mem(&mut self, address: impl AsRef<Address>, data: &Self::Data) -> Result<(), context::Error> {
-        self.memory_map.write_mem(address.as_ref(), data, self.endian)
+    fn write_mem(&mut self, address: impl AsRef<Address>, data: &BitVec) -> Result<(), context::Error> {
+        self.memory_map.write_mem(address.as_ref(), data)
     }
+}
 
-    fn read_reg(&self, name: impl AsRef<str>) -> Result<Self::Data, context::Error> {
+impl <'irb> RegisterContext<BitVec> for ConcreteContext<'irb> {
+
+    fn read_reg(&self, name: &str) -> Result<BitVec, context::Error> {
         self.regs.read_reg(name.as_ref())
     }
 
-    fn write_reg(&mut self, name: impl AsRef<str>, data: &Self::Data) -> Result<(), context::Error> {
+    fn write_reg(&mut self, name: &str, data: &BitVec) -> Result<(), context::Error> {
         self.regs.write_reg(name.as_ref(), data)
     }
 }
@@ -240,10 +253,18 @@ impl <'irb> Context<'irb> for ConcreteContext<'irb> {
 
 #[cfg(test)]
 mod tests {
+    use fugue_core::language::LanguageBuilder;
     use super::*;
     
     #[test]
     fn test_concrete_context_init() {
+        let lang_builder = LanguageBuilder::new("../data/processors")
+            .expect("language builder not instantiated");
+        let lang = lang_builder.build("ARM:LE:32:Cortex", "default")
+            .expect("language failed to build");
+
+        let context = ConcreteContext::new_with(lang);
+
 
     }
 

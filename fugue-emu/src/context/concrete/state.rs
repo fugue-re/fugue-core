@@ -18,11 +18,14 @@ use fugue_bytes::Endian;
 use fugue_core::eval::fixed_state::{ FixedState, FixedStateError };
 
 use crate::context;
-use crate::context::traits::{MappedContext, RegisterContext, UniqueContext};
+use crate::context::traits::{
+    VarnodeContext,
+    MemoryMapContext,
+    MappedContext,
+    RegisterContext,
+    UniqueContext,
+};
 use crate::peripheral::traits::MappedPeripheralState;
-use crate::eval::traits::EvaluatorContext;
-
-use super::ALIGNMENT_SIZE;
 
 
 
@@ -50,26 +53,9 @@ impl ConcreteRegisters {
     }
 }
 
-impl RegisterContext for ConcreteRegisters {
-    type Data=BitVec;
+impl VarnodeContext<BitVec> for ConcreteRegisters {
 
-    fn read_reg(&self, name: &str) -> Result<Self::Data, context::Error> {
-        let (_, offset, size) = self.reg_names
-            .get_by_name(name)
-            .ok_or(context::Error::InvalidRegisterName(String::from(name)))?;
-        self.inner.read_val_with(offset as usize, size, self.endian)
-            .map_err(context::Error::from)
-    }
-
-    fn write_reg(&mut self, name: &str, data: &Self::Data) -> Result<(), context::Error> {
-        let (_, offset, size) = self.reg_names
-            .get_by_name(name)
-            .ok_or(context::Error::InvalidRegisterName(String::from(name)))?;
-        self.inner.write_val_with(offset as usize, data, self.endian)
-            .map_err(context::Error::from)
-    }
-
-    fn read_vnd(&self, var: &VarnodeData) -> Result<Self::Data, context::Error> {
+    fn read_vnd(&self, var: &VarnodeData) -> Result<BitVec, context::Error> {
         if var.space() != self.spaceid {
             return Err(context::Error::Unexpected(
                 format!{"register space id mismatch: {:?} expected {:?}", var.space(), self.spaceid}))
@@ -78,12 +64,31 @@ impl RegisterContext for ConcreteRegisters {
             .map_err(context::Error::from)
     }
 
-    fn write_vnd(&mut self, var: &VarnodeData, val: &Self::Data) -> Result<(), context::Error> {
+    fn write_vnd(&mut self, var: &VarnodeData, val: &BitVec) -> Result<(), context::Error> {
         if var.space() != self.spaceid {
             return Err(context::Error::Unexpected(
                 format!{"register space id mismatch: {:?} expected {:?}", var.space(), self.spaceid}))
         }
         self.inner.write_val_with(var.offset() as usize, val, self.endian)
+            .map_err(context::Error::from)
+    }
+}
+
+impl RegisterContext<BitVec> for ConcreteRegisters {
+
+    fn read_reg(&self, name: &str) -> Result<BitVec, context::Error> {
+        let (_, offset, size) = self.reg_names
+            .get_by_name(name)
+            .ok_or(context::Error::InvalidRegisterName(String::from(name)))?;
+        self.inner.read_val_with(offset as usize, size, self.endian)
+            .map_err(context::Error::from)
+    }
+
+    fn write_reg(&mut self, name: &str, data: &BitVec) -> Result<(), context::Error> {
+        let (_, offset, size) = self.reg_names
+            .get_by_name(name)
+            .ok_or(context::Error::InvalidRegisterName(String::from(name)))?;
+        self.inner.write_val_with(offset as usize, data, self.endian)
             .map_err(context::Error::from)
     }
 }
@@ -110,10 +115,9 @@ impl ConcreteTemps {
     }
 }
 
-impl UniqueContext for ConcreteTemps {
-    type Data = BitVec;
+impl VarnodeContext<BitVec> for ConcreteTemps {
 
-    fn read_vnd(&self, var: &VarnodeData) -> Result<Self::Data, context::Error> {
+    fn read_vnd(&self, var: &VarnodeData) -> Result<BitVec, context::Error> {
         if var.space() != self.spaceid {
             return Err(context::Error::Unexpected(
                 format!{"unique space id mismatch: {:?} expected {:?}", var.space(), self.spaceid}))
@@ -122,7 +126,7 @@ impl UniqueContext for ConcreteTemps {
             .map_err(context::Error::from)
     }
 
-    fn write_vnd(&mut self, var: &VarnodeData, val: &Self::Data) -> Result<(), context::Error> {
+    fn write_vnd(&mut self, var: &VarnodeData, val: &BitVec) -> Result<(), context::Error> {
         if var.space() != self.spaceid {
             return Err(context::Error::Unexpected(
                 format!{"unique space id mismatch: {:?} expected {:?}", var.space(), self.spaceid}))
@@ -131,6 +135,8 @@ impl UniqueContext for ConcreteTemps {
             .map_err(context::Error::from)
     }
 }
+
+impl UniqueContext<BitVec> for ConcreteTemps { }
 
 /// an index type to distinguish between mapped memory
 /// versus mapped peripherals
@@ -147,6 +153,7 @@ enum MapIx {
 /// all of which should implement the MappedContext trait for BitVec
 #[derive(Clone)]
 pub struct ConcreteMemoryMap {
+    endian: Endian,
     map: IntMap<u64, MapIx>,
     segments: IntervalMap<Address, MapIx>,
     mem: Vec<ConcreteState>,
@@ -156,8 +163,13 @@ pub struct ConcreteMemoryMap {
 impl ConcreteMemoryMap {
 
     /// creates a new empty ConcreteMemoryMap
-    pub fn new() -> Self {
+    pub fn new_with(translator: &Translator) -> Self {
         Self {
+            endian: if translator.is_big_endian() {
+                Endian::Big
+            } else {
+                Endian::Little
+            },
             map: IntMap::default(),
             segments: IntervalMap::new(),
             mem: Vec::new(),
@@ -165,8 +177,54 @@ impl ConcreteMemoryMap {
         }
     }
 
-    /// add a new context that implements the mapped context trait to the memory map
-    pub fn map_mem(
+    /// utility for getting exclusive reference to a mapped context
+    pub fn get_mut_context_at(
+        &mut self,
+        address: impl AsRef<Address>,
+    ) -> Result<&mut dyn MappedContext<BitVec>, context::Error> {
+        let addr = address.as_ref();
+        let align = addr.offset() & !0xFFFu64;
+        let idx = self.map.get(&align)
+            .ok_or(context::Error::Unmapped(addr.clone()))?;
+        match idx {
+            MapIx::MEM(i) => Ok(self.mem.get_mut(*i).unwrap()),
+            MapIx::MMIO(i) => Ok(self.mmio.get_mut(*i).unwrap()),
+        }
+    }
+
+    /// utility for getting shared reference to a mapped context
+    pub fn get_context_at(
+        &self,
+        address: impl AsRef<Address>,
+    ) -> Result<& dyn MappedContext<BitVec>, context::Error> {
+        let addr = address.as_ref();
+        let align = addr.offset() & !0xFFFu64;
+        let idx = self.map.get(&align)
+            .ok_or(context::Error::Unmapped(addr.clone()))?;
+        match idx {
+            MapIx::MEM(i) => Ok(self.mem.get(*i).unwrap()),
+            MapIx::MMIO(i) => Ok(self.mmio.get(*i).unwrap()),
+        }
+    }
+
+}
+
+impl VarnodeContext<BitVec> for ConcreteMemoryMap {
+
+    fn read_vnd(&self, var: &VarnodeData) -> Result<BitVec, context::Error> {
+        let address = Address::from(var.offset());
+        self.read_mem(&address, var.size())
+    }
+
+    fn write_vnd(&mut self, var: &VarnodeData, val: &BitVec) -> Result<(), context::Error> {
+        let address = Address::from(var.offset());
+        self.write_mem(&address, val)
+    }
+}
+
+impl MemoryMapContext<BitVec> for ConcreteMemoryMap {
+
+    fn map_mem(
         &mut self,
         base: impl Into<Address>,
         size: usize,
@@ -187,21 +245,21 @@ impl ConcreteMemoryMap {
         let idx = MapIx::MEM(self.mem.len() - 1);
         self.segments.insert(range, idx);
         self.map.insert(base_address.offset(), idx);
-        let mut addr_alias = base_address + ALIGNMENT_SIZE;
+        let mut addr_alias = base_address + Self::ALIGNMENT_SIZE;
         while addr_alias < base_address + size {
             // create aliases for all 0x1000-aligned addresses
             // mapped regions must have contiguous 0x1000-aligned keys
             self.map.insert(addr_alias.offset(), idx);
-            addr_alias += ALIGNMENT_SIZE;
+            addr_alias += Self::ALIGNMENT_SIZE;
         }
 
         Ok(())
     }
 
-    pub fn map_mmio(
+    fn map_mmio(
         &mut self,
         base: impl Into<Address>,
-        peripheral: MappedConcretePeripheral,
+        peripheral: Box<dyn MappedPeripheralState>,
     ) -> Result<(), context::Error> {
         let base_address = base.into();
         let size = peripheral.size();
@@ -213,79 +271,54 @@ impl ConcreteMemoryMap {
         }
 
         // add peripheral to memory map
-        self.mmio.push(peripheral);
+        self.mmio.push(MappedConcretePeripheral(peripheral));
         let idx = MapIx::MMIO(self.mmio.len() - 1);
         self.segments.insert(range, idx);
         self.map.insert(base_address.offset(), idx);
-        let mut addr_alias = base_address + ALIGNMENT_SIZE;
+        let mut addr_alias = base_address + Self::ALIGNMENT_SIZE;
         while addr_alias < base_address + size {
             // create aliases for all 0x1000-aligned addresses
             // mapped regions must have contiguous 0x1000-aligned keys
             self.map.insert(addr_alias.offset(), idx);
-            addr_alias += ALIGNMENT_SIZE;
+            addr_alias += Self::ALIGNMENT_SIZE;
         }
 
         Ok(())
     }
 
-    /// utility for getting exclusive reference to a mapped context
-    pub fn get_mut_context_at(
-        &mut self,
-        address: impl Into<Address>,
-    ) -> Result<&mut dyn MappedContext<Data=BitVec>, context::Error> {
-        let addr = address.into();
-        let align = addr.offset() & !0xFFFu64;
-        let idx = self.map.get(&align)
-            .ok_or(context::Error::Unmapped(addr))?;
-        match idx {
-            MapIx::MEM(i) => Ok(self.mem.get_mut(*i).unwrap()),
-            MapIx::MMIO(i) => Ok(self.mmio.get_mut(*i).unwrap()),
-        }
-    }
-
-    /// utility for getting shared reference to a mapped context
-    pub fn get_context_at(
-        &self,
-        address: impl Into<Address>,
-    ) -> Result<& dyn MappedContext<Data=BitVec>, context::Error> {
-        let addr = address.into();
-        let align = addr.offset() & !0xFFFu64;
-        let idx = self.map.get(&align)
-            .ok_or(context::Error::Unmapped(addr))?;
-        match idx {
-            MapIx::MEM(i) => Ok(self.mem.get(*i).unwrap()),
-            MapIx::MMIO(i) => Ok(self.mmio.get(*i).unwrap()),
-        }
-    }
-
     /// read a slice of bytes from memory at specified address
-    pub fn read_bytes(
+    fn read_bytes(
         &self,
-        address: &Address,
+        address: impl AsRef<Address>,
         size: usize
     ) -> Result<&[u8], context::Error> {
-        let context = self.get_context_at(address.clone())?;
+        let address = address.as_ref();
+        let context = self.get_context_at(address)?;
         context.read_bytes(address, size)
     }
 
     /// write bytes to memory at specified address
-    pub fn write_bytes(&mut self, address: &Address, bytes: &[u8]) -> Result<(), context::Error> {
-        let context = self.get_mut_context_at(address.clone())?;
+    fn write_bytes(&mut self, address: impl AsRef<Address>, bytes: &[u8]) -> Result<(), context::Error> {
+        let address = address.as_ref();
+        let context = self.get_mut_context_at(address)?;
         context.write_bytes(address, bytes)
     }
 
     /// read data from memory at specified address
-    pub fn read_mem(&self, address: &Address, size: usize, endian: Endian) -> Result<BitVec, context::Error> {
-        let context = self.get_context_at(address.clone())?;
+    fn read_mem(&self, address: impl AsRef<Address>, size: usize) -> Result<BitVec, context::Error> {
+        let address = address.as_ref();
+        let endian = self.endian.clone();
+        let context = self.get_context_at(address)?;
         context.read_mem(address, size, endian)
     }
 
     /// write data to memory at specified address
-    pub fn write_mem(&mut self, address: &Address, data: &BitVec, endian: Endian) -> Result<(), context::Error> {
-        let context = self.get_mut_context_at(address.clone())?;
+    fn write_mem(&mut self, address: impl AsRef<Address>, data: &BitVec) -> Result<(), context::Error> {
+        let address = address.as_ref();
+        let endian  = self.endian.clone();
+        let context = self.get_mut_context_at(address)?;
         context.write_mem(address, data, endian)
     }
-
 }
 
 /// concrete mapped context
@@ -317,8 +350,7 @@ impl ConcreteState {
     }
 }
 
-impl MappedContext for ConcreteState {
-    type Data = BitVec;
+impl MappedContext<BitVec> for ConcreteState {
 
     fn base(&self) -> Address {
         self.base.clone()
@@ -338,12 +370,12 @@ impl MappedContext for ConcreteState {
             .map_err(context::Error::from)
     }
 
-    fn read_mem(&self, address: &Address, size: usize, endian: fugue_bytes::Endian) -> Result<Self::Data, context::Error> {
+    fn read_mem(&self, address: &Address, size: usize, endian: fugue_bytes::Endian) -> Result<BitVec, context::Error> {
         self.inner.read_val_with(self.offset(address)? as usize, size, endian)
             .map_err(context::Error::from)
     }
 
-    fn write_mem(&mut self, address: &Address, data: &Self::Data, endian: fugue_bytes::Endian) -> Result<(), context::Error> {
+    fn write_mem(&mut self, address: &Address, data: &BitVec, endian: fugue_bytes::Endian) -> Result<(), context::Error> {
         self.inner.write_val_with(self.offset(address)? as usize, data, endian)
             .map_err(context::Error::from)
     }
@@ -359,36 +391,36 @@ impl From<FixedStateError> for context::Error {
 /// 
 /// since peripheral state has the same data type for the concrete
 /// evaluator already, we can just wrap it in a box
-type MappedConcretePeripheral = Box<dyn MappedPeripheralState>;
+#[derive(Clone)]
+pub struct MappedConcretePeripheral(Box<dyn MappedPeripheralState>);
 
-impl MappedContext for MappedConcretePeripheral {
-    type Data = BitVec;
+impl MappedContext<BitVec> for MappedConcretePeripheral {
 
     fn base(&self) -> Address {
-        MappedPeripheralState::base(self.as_ref())
+        MappedPeripheralState::base(self.0.as_ref())
     }
 
     fn size(&self) -> usize {
-        MappedPeripheralState::size(self.as_ref())
+        MappedPeripheralState::size(self.0.as_ref())
     }
 
     fn read_bytes(&self, address: &Address, size: usize) -> Result<&[u8], context::Error> {
-        MappedPeripheralState::read_bytes(self.as_ref(), address, size)
+        MappedPeripheralState::read_bytes(self.0.as_ref(), address, size)
             .map_err(context::Error::from)
     }
 
-    fn read_mem(&self, address: &Address, size: usize, endian: Endian) -> Result<Self::Data, context::Error> {
-        MappedPeripheralState::read_mem(self.as_ref(), address, size, endian)
+    fn read_mem(&self, address: &Address, size: usize, endian: Endian) -> Result<BitVec, context::Error> {
+        MappedPeripheralState::read_mem(self.0.as_ref(), address, size, endian)
             .map_err(context::Error::from)
     }
 
     fn write_bytes(&mut self, address: &Address, bytes: &[u8]) -> Result<(), context::Error> {
-        MappedPeripheralState::write_bytes(self.as_mut(), address, bytes)
+        MappedPeripheralState::write_bytes(self.0.as_mut(), address, bytes)
             .map_err(context::Error::from)
     }
 
-    fn write_mem(&mut self, address: &Address, data: &Self::Data, endian: Endian) -> Result<(), context::Error> {
-        MappedPeripheralState::write_mem(self.as_mut(), address, data, endian)
+    fn write_mem(&mut self, address: &Address, data: &BitVec, endian: Endian) -> Result<(), context::Error> {
+        MappedPeripheralState::write_mem(self.0.as_mut(), address, data, endian)
             .map_err(context::Error::from)
     }
 }

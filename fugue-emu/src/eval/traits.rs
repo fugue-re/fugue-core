@@ -33,19 +33,17 @@ use fugue_ir::{
     disassembly::lift::IRBuilderArena,
 };
 
+use crate::context::traits::VarnodeContext;
 use crate::context::types::TranslationBlock;
 use crate::eval;
 
-pub trait EvaluatorContext<'irb> {
-    /// evaluator datatype
-    /// BitVec for concrete evaluator, can be modified for taint evaluator
-    type Data;
-
-    /// read data at the location of the specified varnode
-    fn read_vnd(&self, var: &VarnodeData) -> Result<Self::Data, eval::Error>;
-
-    /// write data to the location of the specified varnode
-    fn write_vnd(&mut self, var: &VarnodeData, val: &Self::Data) -> Result<(), eval::Error>;
+/// evaluator context trait
+/// 
+/// any context that an evaluator operates on must implement this trait
+/// at minimum and share the evaluator's datatype (D generic)
+///
+/// D is BitVec for concrete evaluator, can be modified for taint evaluator
+pub trait EvaluatorContext<'irb, Data>: VarnodeContext<Data> {
 
     /// lift a translation block at the given address
     /// 
@@ -106,7 +104,8 @@ pub trait EvaluatorContext<'irb> {
 /// at this point, a step is assumed to always execute a full architectural instruction
 /// while a substep should execute a single pcode operation
 pub trait Evaluator<'irb> {
-    type Context: EvaluatorContext<'irb>;
+    type Data;
+    type Context: EvaluatorContext<'irb, Self::Data>;
 
     /// perform a single architectural step on the given context
     /// 

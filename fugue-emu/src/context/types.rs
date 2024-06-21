@@ -9,6 +9,9 @@ use fugue_core::ir::PCode;
 
 use crate::context;
 
+/// the default memory block alignment size
+pub const DEFAULT_ALIGNMENT_SIZE: u64 = 0x1000u64;
+
 /// a wrapper for lifter results
 pub type LiftResult<'irb> = Result<Arc<PCode<'irb>>, context::Error>;
 
