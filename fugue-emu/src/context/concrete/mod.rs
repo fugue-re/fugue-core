@@ -65,6 +65,11 @@ impl<'irb> ConcreteContext<'irb> {
             translation_cache: Arc::new(RwLock::new(IntMap::default())),
         }
     }
+
+    /// get shared reference to the context's language
+    pub fn language(&self) -> &Language {
+        &self.lang
+    }
 }
 
 impl<'irb> VarnodeContext<BitVec> for ConcreteContext<'irb> {
@@ -189,7 +194,7 @@ impl<'irb> EvaluatorContext<'irb, BitVec> for ConcreteContext<'irb> {
         let address = address.into();
         let lift_result = self.translation_cache.read()
             .get(&address.offset())
-            .unwrap()
+            .ok_or(eval::Error::Fetch(format!("instruction @ {:#x} not in translation cache", address.offset())))?
             .clone();
 
         lift_result.map_err(eval::Error::from)
@@ -254,17 +259,164 @@ impl <'irb> RegisterContext<BitVec> for ConcreteContext<'irb> {
 #[cfg(test)]
 mod tests {
     use fugue_core::language::LanguageBuilder;
+    use crate::peripheral::traits::MappedPeripheralState;
+    use crate::peripheral::generic::dummy::DummyPeripheral;
     use super::*;
-    
+
+    // a program that computes (((3 ** 2) ** 2) ** 2)
+    // compiled with xpack arm-none-eabi-gcc arm64 11.3.1 20220712
+    // arm-none-eabi-gcc main.c -mcpu=cortex-m4 -mthumb -nostdlib
+    static TEST_PROGRAM: &[u8] = &[
+        // 0000 <main>:
+        0x80, 0xb5,             // 00: push     {r7, lr}
+        0x82, 0xb0,             // 02: sub      sp, #8
+        0x00, 0xaf,             // 04: add      r7, sp, #0
+        0x03, 0x23,             // 06: movs     r3, #3
+        0x7b, 0x60,             // 08: str      r3, [r7, #4]
+        0x00, 0x23,             // 0a: movs     r3, #0
+        0x3b, 0x60,             // 0c: str      r3, [r7, #0]
+        0x06, 0xe0,             // 0e: b.n      1e <main+0x1e>
+        0x78, 0x68,             // 10: ldr      r0, [r7, #4]
+        0x00, 0xf0, 0x0c, 0xf8, // 12: bl       2e <square>
+        0x78, 0x60,             // 16: str      r0, [r7, #4]
+        0x3b, 0x68,             // 18: ldr      r3, [r7, #0]
+        0x01, 0x33,             // 1a: adds     r3, #1
+        0x3b, 0x60,             // 1c: str      r3, [r7, #0]
+        0x3b, 0x68,             // 1e: ldr      r3, [r7, #0]
+        0x02, 0x2b,             // 20: cmp      r3, #2
+        0xf5, 0xdd,             // 22: ble.n    10 <main+0x10>
+        0x7b, 0x68,             // 24: ldr      r3, [r7, #4]
+        0x18, 0x46,             // 26: mov      r0, r3
+        0x08, 0x37,             // 28: adds     r7, #8
+        0xbd, 0x46,             // 2a: mov      sp, r7
+        0x80, 0xbd,             // 2c: pop      {r7, pc}
+        // 002e <square>:
+        0x80, 0xb4,             // 2e: push     {r7}
+        0x83, 0xb0,             // 30: sub      sp, #12
+        0x00, 0xaf,             // 32: add      r7, sp, #0
+        0x78, 0x60,             // 34: str      r0, [r7, #4]
+        0x7b, 0x68,             // 36: ldr      r3, [r7, #4]
+        0x03, 0xfb, 0x03, 0xf3, // 38: mul.w    r3, r3, r3
+        0x18, 0x46,             // 3c: mov      r0, r3
+        0x0c, 0x37,             // 3e: adds     r7, #12
+        0xbd, 0x46,             // 40: mov      sp, r7
+        0x80, 0xbc,             // 42: pop      {r7}
+        0x70, 0x47,             // 44: bx       lr
+    ];
+
+    /// test basic functionality of context operations
     #[test]
-    fn test_concrete_context_init() {
+    fn test_context_operations() {
+        // test initialization
         let lang_builder = LanguageBuilder::new("../data/processors")
             .expect("language builder not instantiated");
         let lang = lang_builder.build("ARM:LE:32:Cortex", "default")
             .expect("language failed to build");
+        let mut lifter = lang.lifter();
+        let mut irb = lifter.irb(1024);
+        let mut context = ConcreteContext::new_with(lang.clone());
 
-        let context = ConcreteContext::new_with(lang);
+        assert_eq!(
+            context.language().convention().name(),
+            "default"
+        );
+        assert_eq!(
+            context.language().translator().architecture(),
+            &fugue_arch::ArchitectureDef::new("ARM", Endian::Little, 32usize, "Cortex")
+        );
 
+        // test map_mem()
+        let mem_base = Address::from(0x0u64);
+        let aligned_size = 0x2000usize;
+        let unaligned_size = 0x500usize;
+
+        context.map_mem(mem_base, aligned_size)
+            .expect("map_mem() failed:");
+        context.map_mem(mem_base + aligned_size as u64, unaligned_size)
+            .expect_err("map_mem() should have failed with UnalignedSize");
+        context.map_mem(mem_base + 0x1000u64, aligned_size)
+            .expect_err("map_mem() should have failed with MapConflict");
+        context.map_mem(mem_base + 0x500u64, aligned_size)
+            .expect_err("map_mem() should have failed with UnalignedAddress");
+
+        // test map mmio
+        let peripheral_state = DummyPeripheral::new_with(Address::from(0x8000u64), 0x1000usize);
+        context.map_mmio(peripheral_state.base(), Box::new(peripheral_state))
+            .expect("map_mmio() failed:");
+
+        // test read/write bytes
+        context.write_bytes(mem_base, TEST_PROGRAM)
+        .expect("write_bytes() failed to write program into memory");
+        let bytes = context.read_bytes(Address::from(0x0u64), TEST_PROGRAM.len())
+            .expect("read_bytes() failed to read program from memory");
+        assert_eq!(bytes, TEST_PROGRAM, "read/write bytes mismatch");
+
+        context.write_bytes(Address::from(0x5000u64), TEST_PROGRAM)
+            .expect_err("write_bytes() should have failed with Unmapped");
+        context.read_bytes(Address::from(0x5000u64), 0x1000usize)
+            .expect_err("read_bytes() should have failed with Unmapped");
+
+        // test read/write bitvectors
+        let addr = Address::from(TEST_PROGRAM.len() as u64);
+        let loop_insn = [0xfe, 0xe7];
+        let loop_insn_bv = BitVec::from_le_bytes(&loop_insn);
+        context.write_mem(&addr, &loop_insn_bv)
+            .expect("write_mem() failed to write BitVec");
+        let bv = context.read_mem(&addr, 2)
+            .expect("read_mem() failed to read memory");
+        assert_eq!(loop_insn_bv, bv, "read/write bitvec mismatch");
+
+        context.write_mem(Address::from(0x5000u64), &loop_insn_bv)
+            .expect_err("write_mem() should have failed with Unmapped");
+        context.read_mem(Address::from(0x5000u64), 2)
+            .expect_err("read_mem() should have failed with Unmapped");
+
+        // test read/write registers
+        let stop_address = TEST_PROGRAM.len() as u64;
+        let r0_val = BitVec::from(5).unsigned_cast(32);
+        let sp_val = BitVec::from(aligned_size).unsigned_cast(32);
+        let lr_val = BitVec::from(stop_address).unsigned_cast(32);
+        context.write_reg("r0", &r0_val)
+            .expect("write_reg() failed to write r0");
+        context.write_reg("sp", &sp_val)
+            .expect("write_reg() failed to write sp");
+        context.write_reg("lr", &lr_val)
+            .expect("write_reg() failed to write lr");
+
+        assert_eq!(
+            r0_val, context.read_reg("r0").expect("read_reg() failed to read r0"),
+            "read/write r0 value mismatch"
+        );
+        assert_eq!(
+            sp_val, context.read_reg("sp").expect("read_reg() failed to read sp"),
+            "read/write sp value mismatch"
+        );
+        assert_eq!(
+            lr_val, context.read_reg("lr").expect("read_reg() failed to read lr"),
+            "read/write lr value mismatch"
+        );
+
+        context.write_reg("rax", &r0_val)
+            .expect_err("write_reg() should have failed with InvalidRegisterName");
+        context.read_reg("rax")
+            .expect_err("read_reg() should have failed with InvalidRegisterName");
+
+        // test lift block
+        let tb = context.lift_block(Address::from(0x0u64), &mut lifter, &mut irb);
+
+        assert_eq!(
+            &tb.bytes, &TEST_PROGRAM[..16],
+            "failed to lift first translation block correctly",
+        );
+
+        // test fetch
+        let pcode = context.fetch(Address::from(0u64))
+            .expect("failed to fetch instruction at address 0x0");
+
+        assert!(pcode.operations.len() > 0, "pcode: {:?}", pcode);
+
+        context.fetch(addr.clone())
+            .expect_err("fetch() should have failed with Fetch error");
 
     }
 

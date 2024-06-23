@@ -231,11 +231,19 @@ impl MemoryMapContext<BitVec> for ConcreteMemoryMap {
     ) -> Result<(), context::Error> {
         let base_address = base.into();
 
+        // check for alignment problems
+        if base_address.offset() % Self::ALIGNMENT_SIZE != 0 {
+            return Err(context::Error::UnalignedAddress(base_address.clone()));
+        }
+        if size % Self::ALIGNMENT_SIZE as usize != 0 {
+            return Err(context::Error::UnalignedSize(size, Self::ALIGNMENT_SIZE as usize));
+        }
+
         // check for collision with existing mapped contexts
         // this is pretty much the only thing segments is used for as
         // accesses should be much faster using nohash lookup method
         let range = base_address..base_address + size;
-        for std::ops::Range { start, .. } in self.segments.intervals(range.clone()) {
+        if let Some(std::ops::Range { start, .. }) = self.segments.intervals(range.clone()).next() {
             return Err(context::Error::MapConflict(base_address, start));
         }
 

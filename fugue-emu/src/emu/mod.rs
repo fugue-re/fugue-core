@@ -6,5 +6,5 @@ pub mod traits;
 pub mod error;
 
 
-use error::*;
+pub use error::*;
 use traits::*;

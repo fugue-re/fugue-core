@@ -4,6 +4,7 @@ use thiserror::Error;
 use anyhow;
 
 use fugue_ir;
+use fugue_ir::Address;
 
 use crate::context;
 
@@ -12,6 +13,8 @@ use crate::context;
 pub enum Error {
     #[error("runtime error: {0}")]
     Runtime(anyhow::Error),
+    #[error("fetch error {0}")]
+    Fetch(String),
     #[error("context error: {0}")]
     Context(context::Error),
 }

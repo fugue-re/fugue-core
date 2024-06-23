@@ -44,12 +44,13 @@ pub trait Context<'irb, Data>:
 pub trait MemoryMapContext<Data>: VarnodeContext<Data> + Clone {
     /// the alignment size should be a multiple of 2 (and be fairly large)
     const ALIGNMENT_SIZE: u64 = context::types::DEFAULT_ALIGNMENT_SIZE;
+    // todo: add peripheral alignment
 
     /// add a new region of memory to the memory map at the give base address
     /// and of the given size
     /// 
-    /// an implementation should check the size parameter against the given
-    /// alignment size
+    /// an implementation should check both the base and size parameters
+    /// against the trait's configured alignment size
     fn map_mem(
         &mut self,
         base: impl Into<Address>,
@@ -57,6 +58,9 @@ pub trait MemoryMapContext<Data>: VarnodeContext<Data> + Clone {
     ) -> Result<(), context::Error>;
 
     /// add a peripheral to the memory map as mmio
+    /// 
+    /// peripheral base address and size need not be aligned to memory alignment size
+    /// (peripheral address ranges tend to be smaller)
     fn map_mmio(
         &mut self,
         base: impl Into<Address>,
