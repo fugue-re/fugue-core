@@ -57,7 +57,7 @@ pub trait EvaluatorContext<'irb, Data>: VarnodeContext<Data> {
     fn lift_block(
         &mut self,
         address: impl Into<Address>,
-        irb: &'irb mut IRBuilderArena,
+        irb: &'irb IRBuilderArena,
         // observers: &Vec<&mut dyn observer::BlockObserver>,
     ) -> TranslationBlock;
 
@@ -108,7 +108,7 @@ pub trait Evaluator<'irb> {
     /// lifted pcode will be allocated
     fn step(
         &mut self,
-        irb: &'irb mut IRBuilderArena,
+        irb: &'irb IRBuilderArena,
         context: &mut Self::Context,
     ) -> Result<(), eval::Error>;
 

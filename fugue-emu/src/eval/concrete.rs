@@ -5,7 +5,7 @@
 use thiserror::Error;
 
 use fugue_bv::BitVec;
-use fugue_ir::disassembly::{Opcode, PCodeData};
+use fugue_ir::disassembly::{Opcode, PCodeData, IRBuilderArena};
 use fugue_ir::{Address, VarnodeData};
 use fugue_core::ir::Location;
 
@@ -255,7 +255,7 @@ impl<'irb> Evaluator<'irb> for ConcreteEvaluator {
 
     fn step(
         &mut self,
-        irb: &'irb mut fugue_ir::disassembly::IRBuilderArena,
+        irb: &'irb IRBuilderArena,
         context: &mut Self::Context,
     ) -> Result<(), eval::Error> {
         // let mut pc = Location::from(bv2addr(context.get_pc()?).into()?);
@@ -552,7 +552,7 @@ mod test {
 
         let halt_address = Address::from(0x4u64);
         while evaluator.pc.address() != halt_address {
-            evaluator.step(&mut irb, &mut context)
+            evaluator.step(&irb, &mut context)
                 .expect("step failed:");
 
         }

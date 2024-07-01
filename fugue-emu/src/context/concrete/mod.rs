@@ -141,7 +141,7 @@ impl<'irb> EvaluatorContext<'irb, BitVec> for ConcreteContext<'irb> {
     fn lift_block(
         &mut self,
         address: impl Into<Address>,
-        irb: &'irb mut IRBuilderArena,
+        irb: &'irb IRBuilderArena,
     ) -> TranslationBlock {
         let mut lifter = self.lang.lifter();
         let base = address.into();
