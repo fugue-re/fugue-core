@@ -22,13 +22,9 @@ use std::sync::Arc;
 
 // use serde;
 
-use fugue_core::{
-    lifter::Lifter,
-    ir::PCode,
-};
+use fugue_core::ir::PCode;
 use fugue_ir::{
     Address,
-    VarnodeData,
     disassembly::PCodeData,
     disassembly::lift::IRBuilderArena,
 };
@@ -61,7 +57,6 @@ pub trait EvaluatorContext<'irb, Data>: VarnodeContext<Data> {
     fn lift_block(
         &mut self,
         address: impl Into<Address>,
-        lifter: &mut Lifter<'_>,
         irb: &'irb mut IRBuilderArena,
         // observers: &Vec<&mut dyn observer::BlockObserver>,
     ) -> TranslationBlock;
@@ -109,15 +104,21 @@ pub trait Evaluator<'irb> {
 
     /// perform a single architectural step on the given context
     /// 
-    /// must also be passed the lifter used to lift instructions as well
-    /// as the IRBuilderArena (bump arena) where lifted pcode will be allocated
+    /// must also be passed the IRBuilderArena (bump arena) where 
+    /// lifted pcode will be allocated
     fn step(
         &mut self,
-        lifter: &mut Lifter<'_>,
         irb: &'irb mut IRBuilderArena,
         context: &mut Self::Context,
     ) -> Result<(), eval::Error>;
 
+    /// evaluate a single pcode operation on the given context
+    /// 
+    /// this should be used as part of step() to evaluate instructions
+    fn evaluate(&self,
+        operation: &PCodeData,
+        context: &mut Self::Context,
+    ) -> Result<eval::Target, eval::Error>;
 }
 
 

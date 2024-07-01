@@ -61,7 +61,7 @@ impl Location {
         self.position
     }
 
-    pub(super) fn absolute_from(base: Address, address: VarnodeData, position: u32) -> Self {
+    pub fn absolute_from(base: Address, address: VarnodeData, position: u32) -> Self {
         if !address.space().is_constant() {
             return Self::new(address.offset(), 0); // position);
         }

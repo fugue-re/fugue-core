@@ -9,12 +9,12 @@ use fugue_ir::Address;
 use crate::context;
 
 /// error types for the eval module
-#[derive(Debug, Error)]
+#[derive(Clone, Debug, Error)]
 pub enum Error {
     #[error("runtime error: {0}")]
-    Runtime(anyhow::Error),
-    #[error("fetch error {0}")]
-    Fetch(String),
+    Runtime(String),
+    #[error("instruction @ {0:#x?} not in translation cache")]
+    TranslationCache(Address),
     #[error("context error: {0}")]
     Context(context::Error),
 }
@@ -29,9 +29,9 @@ impl Error {
     /// convert an arbitrary error into an evaluator runtime error
     pub fn runtime<E>(err: E) -> Self
     where
-        E: std::error::Error + Send + Sync + 'static,
+        E: std::error::Error + std::fmt::Debug + Send + Sync + 'static,
     {
-        Self::Runtime(anyhow::Error::new(err))
+        Self::Runtime(format!("{:?}", err))
     }
 
     /// create a runtime error form a static message
@@ -39,6 +39,6 @@ impl Error {
     where
         M: std::fmt::Display + std::fmt::Debug + Send + Sync + 'static,
     {
-        Self::Runtime(anyhow::Error::msg(msg))
+        Self::Runtime(format!("{0}", msg))
     }
 }

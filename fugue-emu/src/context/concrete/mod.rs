@@ -11,18 +11,16 @@ use std::sync::Arc;
 use nohash_hasher::IntMap;
 use parking_lot::{ RwLock, RwLockReadGuard };
 
-use fugue_ir::{ 
-    Address, Translator, VarnodeData,
-    disassembly::{ 
-        PCodeData, Opcode,
-        lift::IRBuilderArena 
-    },
+use fugue_ir::{
+    Address, VarnodeData,
+    convention::Convention,
+    space::AddressSpace,
+    disassembly::{ Opcode, lift::IRBuilderArena },
 };
 use fugue_bv::BitVec;
 use fugue_bytes::Endian;
-use fugue_core::lifter::Lifter;
 use fugue_core::language::Language;
-use fugue_core::ir::{ Location, PCode };
+use fugue_core::ir::PCode;
 
 use crate::context;
 use crate::context::traits::*;
@@ -53,7 +51,7 @@ pub struct ConcreteContext<'irb> {
 impl<'irb> ConcreteContext<'irb> {
 
     /// creates a new concrete context
-    pub fn new_with(lang: Language) -> Self {
+    pub fn new_with(lang: &Language) -> Self {
         Self {
             memory_map: ConcreteMemoryMap::new_with(lang.translator()),
             regs: ConcreteRegisters::new_with(lang.translator()),
@@ -61,7 +59,7 @@ impl<'irb> ConcreteContext<'irb> {
 
             pc: lang.translator().program_counter().clone(),
             endian: if lang.translator().is_big_endian() { Endian::Big } else { Endian::Little },
-            lang,
+            lang: lang.clone(),
             translation_cache: Arc::new(RwLock::new(IntMap::default())),
         }
     }
@@ -69,6 +67,38 @@ impl<'irb> ConcreteContext<'irb> {
     /// get shared reference to the context's language
     pub fn language(&self) -> &Language {
         &self.lang
+    }
+
+    /// get shared reference to context's convention
+    pub fn convention(&self) -> &Convention {
+        self.lang.convention()
+    }
+
+    /// read current pc value
+    /// 
+    /// todo: make read/write important registers part of the trait
+    pub fn get_pc(&self) -> Result<BitVec, context::Error> {
+        self.regs.read_vnd(&self.pc)
+    }
+
+    /// write to current pc value
+    pub fn set_pc(&mut self, val: &BitVec) -> Result<(), context::Error> {
+        self.regs.write_vnd(&self.pc, val)
+    }
+
+    /// read current sp value
+    pub fn get_sp(&self) -> Result<BitVec, context::Error> {
+        let vnd = self.convention().stack_pointer().varnode().clone();
+        self.regs.read_vnd(&vnd)
+    }
+
+    pub fn set_sp(&mut self, val: &BitVec) -> Result<(), context::Error> {
+        let vnd = self.convention().stack_pointer().varnode().clone();
+        self.regs.write_vnd(&vnd, val)
+    }
+
+    pub fn default_space(&self) -> &AddressSpace {
+        self.lang.translator().manager().default_space_ref()
     }
 }
 
@@ -111,10 +141,9 @@ impl<'irb> EvaluatorContext<'irb, BitVec> for ConcreteContext<'irb> {
     fn lift_block(
         &mut self,
         address: impl Into<Address>,
-        lifter: &mut Lifter<'_>,
         irb: &'irb mut IRBuilderArena,
     ) -> TranslationBlock {
-        
+        let mut lifter = self.lang.lifter();
         let base = address.into();
         let mut offsets = vec![0usize];
         // the largest instruction in x86 is 15 bytes
@@ -194,7 +223,7 @@ impl<'irb> EvaluatorContext<'irb, BitVec> for ConcreteContext<'irb> {
         let address = address.into();
         let lift_result = self.translation_cache.read()
             .get(&address.offset())
-            .ok_or(eval::Error::Fetch(format!("instruction @ {:#x} not in translation cache", address.offset())))?
+            .ok_or(eval::Error::TranslationCache(address.clone()))?
             .clone();
 
         lift_result.map_err(eval::Error::from)
@@ -261,48 +290,8 @@ mod tests {
     use fugue_core::language::LanguageBuilder;
     use crate::peripheral::traits::MappedPeripheralState;
     use crate::peripheral::generic::dummy::DummyPeripheral;
+    use crate::tests::TEST_PROGRAM;
     use super::*;
-
-    // a program that computes (((3 ** 2) ** 2) ** 2)
-    // compiled with xpack arm-none-eabi-gcc arm64 11.3.1 20220712
-    // arm-none-eabi-gcc main.c -mcpu=cortex-m4 -mthumb -nostdlib
-    static TEST_PROGRAM: &[u8] = &[
-        // 0000 <main>:
-        0x80, 0xb5,             // 00: push     {r7, lr}
-        0x82, 0xb0,             // 02: sub      sp, #8
-        0x00, 0xaf,             // 04: add      r7, sp, #0
-        0x03, 0x23,             // 06: movs     r3, #3
-        0x7b, 0x60,             // 08: str      r3, [r7, #4]
-        0x00, 0x23,             // 0a: movs     r3, #0
-        0x3b, 0x60,             // 0c: str      r3, [r7, #0]
-        0x06, 0xe0,             // 0e: b.n      1e <main+0x1e>
-        0x78, 0x68,             // 10: ldr      r0, [r7, #4]
-        0x00, 0xf0, 0x0c, 0xf8, // 12: bl       2e <square>
-        0x78, 0x60,             // 16: str      r0, [r7, #4]
-        0x3b, 0x68,             // 18: ldr      r3, [r7, #0]
-        0x01, 0x33,             // 1a: adds     r3, #1
-        0x3b, 0x60,             // 1c: str      r3, [r7, #0]
-        0x3b, 0x68,             // 1e: ldr      r3, [r7, #0]
-        0x02, 0x2b,             // 20: cmp      r3, #2
-        0xf5, 0xdd,             // 22: ble.n    10 <main+0x10>
-        0x7b, 0x68,             // 24: ldr      r3, [r7, #4]
-        0x18, 0x46,             // 26: mov      r0, r3
-        0x08, 0x37,             // 28: adds     r7, #8
-        0xbd, 0x46,             // 2a: mov      sp, r7
-        0x80, 0xbd,             // 2c: pop      {r7, pc}
-        // 002e <square>:
-        0x80, 0xb4,             // 2e: push     {r7}
-        0x83, 0xb0,             // 30: sub      sp, #12
-        0x00, 0xaf,             // 32: add      r7, sp, #0
-        0x78, 0x60,             // 34: str      r0, [r7, #4]
-        0x7b, 0x68,             // 36: ldr      r3, [r7, #4]
-        0x03, 0xfb, 0x03, 0xf3, // 38: mul.w    r3, r3, r3
-        0x18, 0x46,             // 3c: mov      r0, r3
-        0x0c, 0x37,             // 3e: adds     r7, #12
-        0xbd, 0x46,             // 40: mov      sp, r7
-        0x80, 0xbc,             // 42: pop      {r7}
-        0x70, 0x47,             // 44: bx       lr
-    ];
 
     /// test basic functionality of context operations
     #[test]
@@ -312,9 +301,9 @@ mod tests {
             .expect("language builder not instantiated");
         let lang = lang_builder.build("ARM:LE:32:Cortex", "default")
             .expect("language failed to build");
-        let mut lifter = lang.lifter();
+        let lifter = lang.lifter();
         let mut irb = lifter.irb(1024);
-        let mut context = ConcreteContext::new_with(lang.clone());
+        let mut context = ConcreteContext::new_with(&lang);
 
         assert_eq!(
             context.language().convention().name(),
@@ -346,7 +335,7 @@ mod tests {
 
         // test read/write bytes
         context.write_bytes(mem_base, TEST_PROGRAM)
-        .expect("write_bytes() failed to write program into memory");
+            .expect("write_bytes() failed to write program into memory");
         let bytes = context.read_bytes(Address::from(0x0u64), TEST_PROGRAM.len())
             .expect("read_bytes() failed to read program from memory");
         assert_eq!(bytes, TEST_PROGRAM, "read/write bytes mismatch");
@@ -402,16 +391,16 @@ mod tests {
             .expect_err("read_reg() should have failed with InvalidRegisterName");
 
         // test lift block
-        let tb = context.lift_block(Address::from(0x0u64), &mut lifter, &mut irb);
+        let tb = context.lift_block(Address::from(0x6u64), &mut irb);
 
         assert_eq!(
-            &tb.bytes, &TEST_PROGRAM[..16],
+            &tb.bytes, &TEST_PROGRAM[0x6..0x16],
             "failed to lift first translation block correctly",
         );
 
         // test fetch
-        let pcode = context.fetch(Address::from(0u64))
-            .expect("failed to fetch instruction at address 0x0");
+        let pcode = context.fetch(Address::from(0x6u64))
+            .expect("failed to fetch instruction at address 0x6");
 
         assert!(pcode.operations.len() > 0, "pcode: {:?}", pcode);
 

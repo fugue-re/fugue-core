@@ -2,12 +2,8 @@
 //! 
 //! defines various traits related to emulation contexts
 
-
-use std::sync::Arc;
-
-use fugue_ir::{ Address, VarnodeData, disassembly::PCodeData };
+use fugue_ir::{ Address, VarnodeData };
 use fugue_bytes::Endian;
-use fugue_core::ir::Location;
 
 use crate::eval::traits::EvaluatorContext;
 use crate::peripheral::traits::MappedPeripheralState;

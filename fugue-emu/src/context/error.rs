@@ -3,6 +3,8 @@
 use thiserror::Error;
 
 use fugue_ir::{ Address, disassembly::VarnodeData };
+use fugue_bv::BitVec;
+use fugue_core::eval::fixed_state::FixedStateError;
 
 use crate::peripheral;
 
@@ -22,10 +24,12 @@ pub enum Error {
     Unexpected(String),
     #[error("address {0} out of bounds")]
     OutOfBounds(Address),
-    #[error("invalid register name {0}")]
-    InvalidRegisterName(String),
+    #[error("invalid register {0}")]
+    InvalidRegister(String),
     #[error("invalid varnode {0:?}")]
     InvalidVarnode(VarnodeData),
+    #[error("could not convert bitvec {0} to type {1}")]
+    BitVecConversion(BitVec, &'static str),
     #[error("peripheral error: {0}")]
     Peripheral(String),
     #[error("{0}")]
@@ -43,5 +47,12 @@ impl From<fugue_ir::error::Error> for Error {
 impl From<peripheral::Error> for Error {
     fn from(value: peripheral::Error) -> Self {
         Self::Peripheral(format!("{:?}", value))
+    }
+}
+
+// enable coercion from fixed state errors
+impl From<FixedStateError> for Error {
+    fn from(value: FixedStateError) -> Self {
+        Self::State(format!("{:?}", value))
     }
 }

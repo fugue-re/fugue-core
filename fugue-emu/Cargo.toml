@@ -21,3 +21,4 @@ ustr = { version = "1.0", features = ["serde"] }
 parking_lot = "0.12"
 # enum_dispatch = "0.3"
 dyn-clone = "1"
+ouroboros = "0.18"

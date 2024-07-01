@@ -2,11 +2,9 @@
 //! 
 //! various state backings for the concrete context
 
-use std::collections::HashMap;
 use std::sync::Arc;
 use nohash_hasher::IntMap;
 use iset::IntervalMap;
-use ustr::Ustr;
 
 use fugue_ir::{ 
     Address, Translator, VarnodeData, 
@@ -15,7 +13,7 @@ use fugue_ir::{
 };
 use fugue_bv::BitVec;
 use fugue_bytes::Endian;
-use fugue_core::eval::fixed_state::{ FixedState, FixedStateError };
+use fugue_core::eval::fixed_state::FixedState;
 
 use crate::context;
 use crate::context::traits::{
@@ -79,15 +77,15 @@ impl RegisterContext<BitVec> for ConcreteRegisters {
     fn read_reg(&self, name: &str) -> Result<BitVec, context::Error> {
         let (_, offset, size) = self.reg_names
             .get_by_name(name)
-            .ok_or(context::Error::InvalidRegisterName(String::from(name)))?;
+            .ok_or(context::Error::InvalidRegister(String::from(name)))?;
         self.inner.read_val_with(offset as usize, size, self.endian)
             .map_err(context::Error::from)
     }
 
     fn write_reg(&mut self, name: &str, data: &BitVec) -> Result<(), context::Error> {
-        let (_, offset, size) = self.reg_names
+        let (_, offset, _size) = self.reg_names
             .get_by_name(name)
-            .ok_or(context::Error::InvalidRegisterName(String::from(name)))?;
+            .ok_or(context::Error::InvalidRegister(String::from(name)))?;
         self.inner.write_val_with(offset as usize, data, self.endian)
             .map_err(context::Error::from)
     }
@@ -386,12 +384,6 @@ impl MappedContext<BitVec> for ConcreteState {
     fn write_mem(&mut self, address: &Address, data: &BitVec, endian: fugue_bytes::Endian) -> Result<(), context::Error> {
         self.inner.write_val_with(self.offset(address)? as usize, data, endian)
             .map_err(context::Error::from)
-    }
-}
-
-impl From<FixedStateError> for context::Error {
-    fn from(value: FixedStateError) -> Self {
-        Self::State(format!("{:?}", value))
     }
 }
 

@@ -2,7 +2,6 @@
 //! 
 //! defines various traits related to managing emulation
 
-
 use fugue_core::eval::EvaluatorContext;
 use fugue_ir::disassembly::lift::IRBuilderArena;
 
