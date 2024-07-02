@@ -21,6 +21,7 @@ use std::sync::Arc;
 // };
 
 // use serde;
+use dyn_clone::{ DynClone, clone_trait_object };
 
 use fugue_core::ir::PCode;
 use fugue_ir::{
@@ -28,6 +29,7 @@ use fugue_ir::{
     disassembly::PCodeData,
     disassembly::lift::IRBuilderArena,
 };
+use fugue_bv::BitVec;
 
 use crate::context::traits::VarnodeContext;
 use crate::context::types::TranslationBlock;
@@ -127,13 +129,29 @@ pub trait Evaluator<'irb> {
 /// observer traits may or may not need to be implemeneted
 /// on a per-evaluator basis
 pub mod observer {
+    use super::*;
     use crate::context::types::TranslationBlock;
 
+
+    /// observer types
+    // todo: replace this with a macro
+    #[derive(Hash, Eq, PartialEq, Clone)]
+    pub enum ObserverType {
+        Block,
+        PCode,
+    }
+
+    /// generic wrapper for observers
+    #[derive(Clone)]
+    pub enum Observer {
+        Block(Box<dyn BlockObserver>),
+        PCode(Box<dyn PCodeObserver>),
+    }
     
     /// a block observer will be updated only when a new translation block
     /// is found and lifted, and before any of its instructions are
     /// evaluated. revisiting an old block will not update the observer
-    pub trait BlockObserver {
+    pub trait BlockObserver: DynClone {
         /// on update, the block observer will be given an immutable 
         /// reference to the raw translation block.
         /// this block will contain the lifted bytes, as well as the
@@ -143,4 +161,23 @@ pub mod observer {
             todo!();
         }
     }
+
+    clone_trait_object!(BlockObserver);
+
+    /// a pcode observer will be updated after any pcode instruction
+    /// is evaluated
+    pub trait PCodeObserver: DynClone {
+        /// on update, the pcode observer will be passed a reference to 
+        /// the PCodeData being evaluated, as well as a reference to 
+        /// the input and output values
+        fn update(
+            &mut self,
+            pcode: &PCodeData,
+            inputs: &Vec<BitVec>,
+            output: &Option<BitVec>,
+        ) -> Result<(), eval::Error>;
+    }
+
+    // need to declare this for more data types as necessary
+    clone_trait_object!(PCodeObserver);
 }

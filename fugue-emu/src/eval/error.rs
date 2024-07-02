@@ -15,6 +15,8 @@ pub enum Error {
     Runtime(String),
     #[error("instruction @ {0:#x?} not in translation cache")]
     TranslationCache(Address),
+    #[error("observer error: {0}")]
+    Observer(String),
     #[error("context error: {0}")]
     Context(context::Error),
 }
@@ -40,5 +42,13 @@ impl Error {
         M: std::fmt::Display + std::fmt::Debug + Send + Sync + 'static,
     {
         Self::Runtime(format!("{0}", msg))
+    }
+
+    /// convert arbitrary error into observer error
+    pub fn observer<E>(err: E) -> Self
+    where
+        E: std::error::Error + std::fmt::Debug + Send + Sync + 'static,
+    {
+        Self::Observer(format!("{:?}", err))
     }
 }

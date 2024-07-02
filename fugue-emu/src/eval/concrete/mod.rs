@@ -5,14 +5,19 @@
 use thiserror::Error;
 
 use fugue_bv::BitVec;
-use fugue_ir::disassembly::{Opcode, PCodeData, IRBuilderArena};
+use fugue_ir::disassembly::{
+    Opcode, PCodeData, IRBuilderArena,
+};
 use fugue_ir::{Address, VarnodeData};
 use fugue_core::ir::Location;
 
 use crate::eval;
 use crate::eval::traits::{ Evaluator, EvaluatorContext };
+use crate::eval::traits::observer::*;
 use crate::context::traits::VarnodeContext;
 use crate::context::concrete::ConcreteContext;
+
+mod observer;
 
 /// error types specific to concrete evaluator
 /// 
@@ -40,6 +45,7 @@ impl Into<eval::Error> for Error {
 /// as a BitVec
 pub struct ConcreteEvaluator {
     pc: Location,
+    pcode_observers: Vec<Box<dyn PCodeObserver>>,
 }
 
 /// helper function to convert BitVec to Address
@@ -59,7 +65,24 @@ fn bool2bv(val: bool) -> BitVec {
 impl ConcreteEvaluator {
 
     pub fn new() -> Self {
-        Self { pc: Location::default() }
+        Self {
+            pc: Location::default(),
+            pcode_observers: Vec::new(),
+        }
+    }
+
+    /// register pcode observer
+    pub fn register_observer(
+        &mut self,
+        observer: Observer,
+    ) -> Result<(), eval::Error> {
+        match observer {
+            Observer::PCode(obs) => {
+                self.pcode_observers.push(obs);
+            },
+            _ => { },
+        }
+        Ok(())
     }
 }
 
@@ -265,6 +288,7 @@ impl<'irb> Evaluator<'irb> for ConcreteEvaluator {
         // try to fetch. if not in translation cache, lift new block.
         let mut fetch_result = context.fetch(addr);
         if let Err(eval::Error::TranslationCache(_)) = fetch_result {
+            #[allow(unused)]
             let tb = context.lift_block(addr, irb);
             // todo: add block observer update here
             // note: because we are checking if the _instruction_ is in the translation
@@ -284,6 +308,19 @@ impl<'irb> Evaluator<'irb> for ConcreteEvaluator {
             let pos = self.pc.position() as usize;
             let op = &pcode.operations()[pos];
             target = self.evaluate(op, context)?;
+
+            // call pcode observers
+            if self.pcode_observers.len() > 0 {
+                let out: Option<BitVec> = op.output
+                    .map(|vnd| context.read_vnd(&vnd).unwrap());
+                let ins: Vec<BitVec> = op.inputs.iter()
+                    .map(|vnd| context.read_vnd(&vnd).unwrap())
+                    .collect();
+                for observer in self.pcode_observers.iter_mut() {
+                    observer.update(op, &ins, &out)?;
+                }
+            }
+
             match target {
                 eval::Target::Branch(loc) |
                 eval::Target::Call(loc) |
@@ -510,6 +547,7 @@ mod test {
     use crate::context::traits::*;
     use crate::tests::TEST_PROGRAM;
     use super::*;
+    use super::observer::PCodeStdoutLogger;
 
     #[test]
     fn test_evaluator() {
@@ -519,7 +557,7 @@ mod test {
         let lang = lang_builder.build("ARM:LE:32:Cortex", "default")
             .expect("language failed to build");
         let lifter = lang.lifter();
-        let mut irb = lifter.irb(1024);
+        let irb = lifter.irb(1024);
         let mut context = ConcreteContext::new_with(&lang);
 
         assert_eq!(
@@ -542,19 +580,33 @@ mod test {
             .expect("write_bytes() failed to write program into memory");
 
         // initialize registers
-        context.set_pc(&BitVec::from_u32(0x0u32, 32))
+        context.set_pc(&BitVec::from_u32(0x0u32, 64))
             .expect("failed to set pc");
-        context.set_sp(&BitVec::from_u32(aligned_size as u32, 32))
+        context.set_sp(&BitVec::from_u32(aligned_size as u32, 64))
             .expect("failed to set sp");
 
         // initialize evaluator
         let mut evaluator = ConcreteEvaluator::new();
+        let t = lifter.translator();
+        let pcode_logger = PCodeStdoutLogger::new_with(t);
+        evaluator.register_observer(Observer::PCode(Box::new(pcode_logger)))
+            .expect("failed to register pcode observer");
 
         let halt_address = Address::from(0x4u64);
+        let mut cycles = 0;
         while evaluator.pc.address() != halt_address {
+            println!("pc: {:#x}", evaluator.pc.address().offset());
             evaluator.step(&irb, &mut context)
                 .expect("step failed:");
-
+            cycles += 1;
         }
+
+        // should've executed a bunch of instructions
+        assert!(cycles > 10, "instructions executed: {}", cycles);
+
+        let retval = context.read_reg("r0")
+            .expect("failed to read register r0");
+
+        assert_eq!(retval.to_i32().unwrap(), 6561, "retval: {:?}, cycles: {}", retval, cycles);
     }
 }
