@@ -32,5 +32,6 @@ yaxpeax-x86 = "1.2"
 uuid = "1"
 
 [dev-dependencies]
+ahash = { version = "0.8.11", features = ["serde"] }
 anyhow = "1"
 env_logger = "0.10"
