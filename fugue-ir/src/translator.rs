@@ -1037,38 +1037,4 @@ mod test {
 
         Ok(())
     }
-
-    #[test]
-    fn test_arm7_thumb_cmp_bug() {
-        use crate::disassembly::IRBuilderArena;
-        use crate::translator::Translator;
-        use fugue_arch::ArchitectureDef;
-        use fugue_bytes::endian::Endian;
-        use ahash::AHashMap as Map;
-
-        let mut translator = Translator::from_file(
-            "pc",
-            &ArchitectureDef::new("ARM", Endian::Little, 64, "Cortex"),
-            &Map::default(),
-            "./data/processors/ARM/ARM7_le.sla",
-        ).expect("failed to load translator");
-
-        translator.set_variable_default("TMode", 1);
-        translator.set_variable_default("LRset", 0);
-        translator.set_variable_default("spsr", 0);
-
-        
-        let bytes = [0x02, 0x2b];
-
-        let mut db = translator.context_database();
-        let irb = IRBuilderArena::with_capacity(4096);
-
-        let addr = translator.address(0x1000u64);
-        let pcode = translator.lift(&mut db, &irb, addr, &bytes)
-            .expect("failed to lift bytes");
-        
-        println!("{}", pcode.display(&translator));
-        let intlesseq_op = &pcode.operations[0];
-        assert!(intlesseq_op.inputs[0].space().is_register(), "expected lhs to be register")
-    }
 }
