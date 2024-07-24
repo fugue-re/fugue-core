@@ -14,10 +14,7 @@ use ahash::AHashMap as Map;
 use parking_lot::{ RwLock, RwLockReadGuard };
 
 use fugue_ir::{
-    Address, VarnodeData,
-    convention::Convention,
-    space::AddressSpace,
-    disassembly::{ Opcode, lift::IRBuilderArena },
+    convention::Convention, disassembly::{ lift::IRBuilderArena, Opcode }, space::AddressSpace, Address, AddressSpaceId, VarnodeData
 };
 use fugue_bv::BitVec;
 use fugue_core::language::Language;
@@ -36,6 +33,8 @@ pub mod observer;
 pub mod state;
 pub use state::*;
 
+type ObserverIdx = usize;
+
 /// concrete context
 /// 
 /// a context for a concrete evaluator that holds all state information
@@ -45,8 +44,9 @@ pub struct ConcreteContext<'irb> {
     memory_map: ConcreteMemoryMap,
     regs: ConcreteRegisters,
     tmps: ConcreteTemps,
-    mem_observers: Map<ObserverKey, Vec<Box<dyn MemObserver>>>,
-    reg_observers: Map<ObserverKey, Vec<Box<dyn RegObserver>>>,
+    observers: Map<ObserverKey, Vec<ObserverIdx>>,
+    mem_observers: Vec<(Box<dyn MemObserver>, Vec<ObserverKey>)>,
+    reg_observers: Vec<(Box<dyn RegObserver>, Vec<ObserverKey>)>,
 
     // meta
     pc: VarnodeData,
@@ -63,8 +63,9 @@ impl<'irb> ConcreteContext<'irb> {
             memory_map: ConcreteMemoryMap::new_with(lang.translator()),
             regs: ConcreteRegisters::new_with(lang.translator()),
             tmps: ConcreteTemps::new_with(lang.translator()),
-            mem_observers: Map::default(),
-            reg_observers: Map::default(),
+            observers: Map::default(),
+            mem_observers: Vec::new(),
+            reg_observers: Vec::new(),
 
             pc: lang.translator().program_counter().clone(),
             // endian: if lang.translator().is_big_endian() { Endian::Big } else { Endian::Little },
@@ -87,7 +88,7 @@ impl<'irb> ConcreteContext<'irb> {
     /// 
     /// todo: make read/write important registers part of the trait
     pub fn get_pc(&self) -> Result<BitVec, context::Error> {
-        self.regs.read_vnd(&self.pc)
+        self.regs.read_reg_by_vnd(&self.pc)
     }
 
     /// write to current pc value
@@ -98,7 +99,7 @@ impl<'irb> ConcreteContext<'irb> {
     /// read current sp value
     pub fn get_sp(&self) -> Result<BitVec, context::Error> {
         let vnd = self.convention().stack_pointer().varnode().clone();
-        self.regs.read_vnd(&vnd)
+        self.regs.read_reg_by_vnd(&vnd)
     }
 
     pub fn set_sp(&mut self, val: &BitVec) -> Result<(), context::Error> {
@@ -110,6 +111,31 @@ impl<'irb> ConcreteContext<'irb> {
         self.lang.translator().manager().default_space_ref()
     }
 
+    fn add_observer_keys(
+        &mut self,
+        space_id: AddressSpaceId,
+        offset: u64,
+        size: usize,
+        access: AccessType,
+        idx: &ObserverIdx,
+    ) -> Result<Vec<ObserverKey>, context::Error> {
+        let mut keys = vec![];
+        for (name, access_type) in access.iter_names() {
+            let key = ObserverKey { space_id, offset, size, access: access_type };
+            if !self.observers.contains_key(&key) {
+                self.observers.insert(key.clone(), vec![idx.clone()]);
+            } else {
+                self.observers.get_mut(&key).unwrap().push(idx.clone());
+            }
+            keys.push(key);
+        }
+        if keys.len() > 0 {
+            Ok(keys)
+        } else {
+            Err(context::Error::Observer(String::from("no access type specified")))
+        }
+    }
+
     /// add an observer to context
     /// note: the observer will be consumed
     pub fn add_observer(
@@ -119,33 +145,31 @@ impl<'irb> ConcreteContext<'irb> {
         match observer {
             Observer::Mem(address, access, obs) => {
                 let space = self.default_space();
-                let key = ObserverKey { 
-                    space_id: space.id(),
-                    offset: address.offset(),
-                    size: space.address_size(),
+                let idx = self.mem_observers.len();
+                let keys = self.add_observer_keys(
+                    space.id(),
+                    address.offset(),
+                    space.address_size(),
                     access,
-                };
-                if !self.mem_observers.contains_key(&key) {
-                    self.mem_observers.insert(key.clone(), Vec::new());
-                }
-                self.mem_observers.get_mut(&key).unwrap()
-                    .push(obs);
+                    &idx,
+                )?;
+                
+                self.mem_observers.push((obs, keys));
                 Ok(())
             }
             Observer::Reg(name, access, obs) => {
                 let vnd = self.lang.translator().register_by_name(name)
                     .ok_or(context::Error::Observer(format!("register {} does not exist", name)))?;
-                let key = ObserverKey {
-                    space_id: vnd.space(),
-                    offset: vnd.offset(),
-                    size: vnd.size(),
+                let idx = self.reg_observers.len();
+                let keys = self.add_observer_keys(
+                    vnd.space(),
+                    vnd.offset(),
+                    vnd.size(),
                     access,
-                };
-                if !self.reg_observers.contains_key(&key) {
-                    self.reg_observers.insert(key.clone(), Vec::new());
-                }
-                self.reg_observers.get_mut(&key).unwrap()
-                    .push(obs);
+                    &idx,
+                )?;
+
+                self.reg_observers.push((obs, keys));
                 Ok(())
             }
             _ => { Err(context::Error::Observer(String::from("observer type not supported"))) }
@@ -154,7 +178,7 @@ impl<'irb> ConcreteContext<'irb> {
 }
 
 impl<'irb> VarnodeContext<BitVec> for ConcreteContext<'irb> {
-    fn read_vnd(&self, var: &VarnodeData) -> Result<BitVec, context::Error> {
+    fn read_vnd(&mut self, var: &VarnodeData) -> Result<BitVec, context::Error> {
         let key = ObserverKey {
             space_id: var.space(),
             offset: var.offset(),
@@ -166,32 +190,67 @@ impl<'irb> VarnodeContext<BitVec> for ConcreteContext<'irb> {
             Ok(BitVec::from_u64(var.offset(), var.bits()))
         } else if spc.is_register() {
             let val = self.regs.read_vnd(var)?;
-            if let Some(observers) = self.reg_observers.get(&key) {
+            if let Some(observers_idx) = self.observers.get_mut(&key) {
                 let name = self.lang.translator().registers().get(key.offset, key.size).unwrap();
-                for obs in observers.iter() {
-                    obs.update(name, key.offset, key.size, &val, AccessType::R)?;
+                for idx in observers_idx.iter() {
+                    if let Some((obs, _keys)) = self.reg_observers.get_mut(*idx) {
+                        obs.update(name, var.offset(), var.size(), &val, AccessType::R)?;
+                    }
                 }
             }
             Ok(val)
         } else if spc.is_unique() {
             self.tmps.read_vnd(var)
         } else if spc.is_default() {
-            self.memory_map.read_vnd(var)
+            let val = self.memory_map.read_vnd(var)?;
+            if let Some(observers_idx) =  self.observers.get_mut(&key) {
+                for idx in observers_idx.iter() {
+                    if let Some((obs, _keys)) = self.mem_observers.get_mut(*idx) {
+                        obs.update(&Address::from(key.offset), &val, AccessType::R)?;
+                    }
+                }
+            }
+            Ok(val)
         } else {
             Err(context::Error::InvalidVarnode(var.clone()))
         }
     }
 
     fn write_vnd(&mut self, var: &VarnodeData, val: &BitVec) -> Result<(), context::Error> {
+        let key = ObserverKey {
+            space_id: var.space(),
+            offset: var.offset(),
+            size: var.size(),
+            access: AccessType::W,
+        };
         let spc = var.space();
         if spc.is_constant() {
             panic!("cannot write to constant Varnode!");
         } else if spc.is_register() {
-            self.regs.write_vnd(var, val)
+            self.regs.write_vnd(var, val)?;
+
+            if let Some(observers_idx) = self.observers.get_mut(&key) {
+                let name = self.lang.translator().registers().get(key.offset, key.size).unwrap();
+                for idx in observers_idx.iter() {
+                    if let Some((obs, _keys)) = self.reg_observers.get_mut(*idx) {
+                        obs.update(name, var.offset(), var.size(), val, AccessType::W)?;
+                    }
+                }
+            }
+            Ok(())
         } else if spc.is_unique() {
             self.tmps.write_vnd(var, val)
         } else if spc.is_default() {
-            self.memory_map.write_vnd(var, val)
+            self.memory_map.write_vnd(var, val)?;
+
+            if let Some(observers_idx) =  self.observers.get_mut(&key) {
+                for idx in observers_idx.iter() {
+                    if let Some((obs, _keys)) = self.mem_observers.get_mut(*idx) {
+                        obs.update(&Address::from(key.offset), val, AccessType::W)?;
+                    }
+                }
+            }
+            Ok(())
         } else {
             Err(context::Error::InvalidVarnode(var.clone()))
         }

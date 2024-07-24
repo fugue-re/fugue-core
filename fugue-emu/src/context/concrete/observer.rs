@@ -19,7 +19,7 @@ impl MemAccessLogger {
 impl MemObserver for MemAccessLogger {
     
     fn update<'c>(
-        &self,
+        &mut self,
         address: &fugue_ir::Address,
         val: &fugue_bv::BitVec,
         access: AccessType,
@@ -49,7 +49,7 @@ impl RegAccessLogger {
 impl RegObserver for RegAccessLogger {
 
     fn update(
-        &self,
+        &mut self,
         name: &str,
         offset: u64,
         size: usize,

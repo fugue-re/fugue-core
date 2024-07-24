@@ -49,17 +49,22 @@ impl ConcreteRegisters {
             inner: FixedState::new(translator.register_space_size()),
         }
     }
-}
 
-impl VarnodeContext<BitVec> for ConcreteRegisters {
-
-    fn read_vnd(&self, var: &VarnodeData) -> Result<BitVec, context::Error> {
+    /// read register from varnode without exclusive reference
+    pub fn read_reg_by_vnd(&self, var: &VarnodeData) -> Result<BitVec, context::Error> {
         if var.space() != self.spaceid {
             return Err(context::Error::Unexpected(
                 format!{"register space id mismatch: {:?} expected {:?}", var.space(), self.spaceid}))
         }
         self.inner.read_val_with(var.offset() as usize, var.size(), self.endian)
             .map_err(context::Error::from)
+    }
+}
+
+impl VarnodeContext<BitVec> for ConcreteRegisters {
+
+    fn read_vnd(&mut self, var: &VarnodeData) -> Result<BitVec, context::Error> {
+        self.read_reg_by_vnd(var)
     }
 
     fn write_vnd(&mut self, var: &VarnodeData, val: &BitVec) -> Result<(), context::Error> {
@@ -115,7 +120,7 @@ impl ConcreteTemps {
 
 impl VarnodeContext<BitVec> for ConcreteTemps {
 
-    fn read_vnd(&self, var: &VarnodeData) -> Result<BitVec, context::Error> {
+    fn read_vnd(&mut self, var: &VarnodeData) -> Result<BitVec, context::Error> {
         if var.space() != self.spaceid {
             return Err(context::Error::Unexpected(
                 format!{"unique space id mismatch: {:?} expected {:?}", var.space(), self.spaceid}))
@@ -209,7 +214,7 @@ impl ConcreteMemoryMap {
 
 impl VarnodeContext<BitVec> for ConcreteMemoryMap {
 
-    fn read_vnd(&self, var: &VarnodeData) -> Result<BitVec, context::Error> {
+    fn read_vnd(&mut self, var: &VarnodeData) -> Result<BitVec, context::Error> {
         let address = Address::from(var.offset());
         self.read_mem(&address, var.size())
     }

@@ -21,12 +21,7 @@ bitflags! {
         const R = 0b0100;    // read
         const W = 0b0010;    // write
         const X = 0b0001;    // fetch/execute
-        const Z = 0b1000;   // no permissions (bitflags crate doesn't like 0-bit flags)
-
-        const RW = 0b110;   // read/write
-        const RX = 0b101;   // read/fetch
-        
-        const RWX = 0b111;  // any access
+        // const Z = 0b1000;   // no permissions (bitflags crate doesn't like 0-bit flags)
     }
 }
 

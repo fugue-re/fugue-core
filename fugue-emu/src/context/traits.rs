@@ -17,7 +17,7 @@ use crate::context;
 pub trait VarnodeContext<Data> {
 
     /// read data at the location of the specified varnode
-    fn read_vnd(&self, var: &VarnodeData) -> Result<Data, context::Error>;
+    fn read_vnd(&mut self, var: &VarnodeData) -> Result<Data, context::Error>;
 
     /// write data to the location of the specified varnode
     fn write_vnd(&mut self, var: &VarnodeData, val: &Data) -> Result<(), context::Error>;
@@ -169,7 +169,7 @@ pub mod observer {
         /// to the value that was either written or read, the address,
         ///  and the memory access type
         fn update(
-            &self,
+            &mut self,
             address: &Address,
             val: &BitVec,
             access: context::AccessType,
@@ -184,7 +184,7 @@ pub mod observer {
         /// to the register name, offset, and size; as well as the value
         /// that was written or read, and the access type
         fn update(
-            &self,
+            &mut self,
             name: &str,
             offset: u64,
             size: usize,
