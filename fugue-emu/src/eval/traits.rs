@@ -123,13 +123,13 @@ pub trait Evaluator<'irb> {
     ) -> Result<eval::Target, eval::Error>;
 }
 
-
 /// evaluator observer traits
 /// 
 /// observer traits may or may not need to be implemeneted
 /// on a per-evaluator basis
 pub mod observer {
     use super::*;
+    use crate::context;
     use crate::context::types::TranslationBlock;
 
 
@@ -139,6 +139,7 @@ pub mod observer {
     pub enum ObserverType {
         Block,
         PCode,
+        Insn,
     }
 
     /// generic wrapper for observers
@@ -146,8 +147,9 @@ pub mod observer {
     pub enum Observer {
         Block(Box<dyn BlockObserver>),
         PCode(Box<dyn PCodeObserver>),
+        Insn(Box<dyn InsnObserver>),
     }
-    
+
     /// a block observer will be updated only when a new translation block
     /// is found and lifted, and before any of its instructions are
     /// evaluated. revisiting an old block will not update the observer
@@ -180,4 +182,19 @@ pub mod observer {
 
     // need to declare this for more data types as necessary
     clone_trait_object!(PCodeObserver);
+
+    /// an instruction observer will be updated just before any 
+    /// instruction is evaluated
+    pub trait InsnObserver: DynClone {
+        /// on update, the insn observer will be passed a reference to
+        /// the bytes of the instruction that is about to be executed
+        /// and the address the instruction is located at
+        fn update(
+            &mut self,
+            address: &Address,
+            insn_bytes: &[u8],
+        ) -> Result<(), eval::Error>;
+    }
+
+    clone_trait_object!(InsnObserver);
 }

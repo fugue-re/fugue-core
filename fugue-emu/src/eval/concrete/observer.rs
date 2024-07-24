@@ -1,6 +1,8 @@
 //! concrete observer implementations
 //! 
 
+use fugue_core::lifter::Lifter;
+use fugue_ir::Address;
 use fugue_ir::disassembly::PCodeData;
 use fugue_ir::translator::Translator;
 use fugue_bv::BitVec;
@@ -58,6 +60,36 @@ impl observer::PCodeObserver for PCodeStdoutLogger {
         } else {
             print!("            : out [None]\n");
         };
+
+        Ok(())
+    }
+}
+
+/// instruction step logging observer
+#[derive(Clone)]
+pub struct InsnStdoutLogger {
+    translator: Translator,
+}
+
+impl InsnStdoutLogger {
+    pub fn new_with(translator: &Translator) -> Self {
+        Self {
+            translator: translator.clone(),
+        }
+    }
+}
+
+impl observer::InsnObserver for InsnStdoutLogger {
+    fn update(
+        &mut self,
+        address: &Address,
+        insn_bytes: &[u8],
+    ) -> Result<(), eval::Error> {
+        // display the instruction mnemonic
+        let mut lifter = Lifter::new(&self.translator);
+        let arena = lifter.irb(1024);
+        let insn = lifter.disassemble(&arena, *address, insn_bytes).unwrap();
+        println!("{:x}: {:<6} {}", address.offset(), insn.mnemonic(), insn.operands());
 
         Ok(())
     }

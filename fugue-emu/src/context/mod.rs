@@ -9,4 +9,5 @@ pub mod error;
 pub mod concrete;
 
 pub use error::*;
+pub use types::*;
 

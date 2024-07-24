@@ -34,6 +34,8 @@ pub enum Error {
     Peripheral(String),
     #[error("{0}")]
     State(String),
+    #[error("observer error: {0}")]
+    Observer(String),
 }
 
 // enable coercion from disassembly/lifting errors

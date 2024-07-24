@@ -1,8 +1,8 @@
 //! context types
 //! 
 //! various struct and type definitions for contexts in general
-
 use std::sync::Arc;
+use bitflags::bitflags;
 
 use fugue_ir::Address;
 use fugue_core::ir::PCode;
@@ -15,6 +15,20 @@ pub const DEFAULT_ALIGNMENT_SIZE: u64 = 0x1000u64;
 /// a wrapper for lifter results
 pub type LiftResult<'irb> = Result<Arc<PCode<'irb>>, context::Error>;
 
+bitflags! {
+    #[derive(Clone, Hash, PartialEq, Eq, Debug)]
+    pub struct AccessType: u8 {
+        const R = 0b0100;    // read
+        const W = 0b0010;    // write
+        const X = 0b0001;    // fetch/execute
+        const Z = 0b1000;   // no permissions (bitflags crate doesn't like 0-bit flags)
+
+        const RW = 0b110;   // read/write
+        const RX = 0b101;   // read/fetch
+        
+        const RWX = 0b111;  // any access
+    }
+}
 
 /// translation block
 /// 

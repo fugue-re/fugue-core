@@ -9,6 +9,8 @@
 use std::sync::Arc;
 
 use nohash_hasher::IntMap;
+use ahash::AHashMap as Map;
+#[allow(unused_imports)]
 use parking_lot::{ RwLock, RwLockReadGuard };
 
 use fugue_ir::{
@@ -18,16 +20,19 @@ use fugue_ir::{
     disassembly::{ Opcode, lift::IRBuilderArena },
 };
 use fugue_bv::BitVec;
-use fugue_bytes::Endian;
 use fugue_core::language::Language;
 use fugue_core::ir::PCode;
 
 use crate::context;
 use crate::context::traits::*;
 use crate::context::types::*;
+use crate::context::traits::observer::{
+    MemObserver, RegObserver, Observer, ObserverKey,
+};
 use crate::eval;
-use crate::eval::traits::{ EvaluatorContext, observer::BlockObserver };
+use crate::eval::traits::EvaluatorContext;
 
+pub mod observer;
 pub mod state;
 pub use state::*;
 
@@ -40,10 +45,12 @@ pub struct ConcreteContext<'irb> {
     memory_map: ConcreteMemoryMap,
     regs: ConcreteRegisters,
     tmps: ConcreteTemps,
+    mem_observers: Map<ObserverKey, Vec<Box<dyn MemObserver>>>,
+    reg_observers: Map<ObserverKey, Vec<Box<dyn RegObserver>>>,
 
     // meta
     pc: VarnodeData,
-    endian: Endian,
+    // endian: Endian,
     lang: Language,
     translation_cache: Arc<RwLock<IntMap< u64, LiftResult<'irb> >>>,
 }
@@ -56,9 +63,11 @@ impl<'irb> ConcreteContext<'irb> {
             memory_map: ConcreteMemoryMap::new_with(lang.translator()),
             regs: ConcreteRegisters::new_with(lang.translator()),
             tmps: ConcreteTemps::new_with(lang.translator()),
+            mem_observers: Map::default(),
+            reg_observers: Map::default(),
 
             pc: lang.translator().program_counter().clone(),
-            endian: if lang.translator().is_big_endian() { Endian::Big } else { Endian::Little },
+            // endian: if lang.translator().is_big_endian() { Endian::Big } else { Endian::Little },
             lang: lang.clone(),
             translation_cache: Arc::new(RwLock::new(IntMap::default())),
         }
@@ -100,15 +109,70 @@ impl<'irb> ConcreteContext<'irb> {
     pub fn default_space(&self) -> &AddressSpace {
         self.lang.translator().manager().default_space_ref()
     }
+
+    /// add an observer to context
+    /// note: the observer will be consumed
+    pub fn add_observer(
+        &mut self,
+        observer: Observer<'static>,
+    ) -> Result<(), context::Error> {
+        match observer {
+            Observer::Mem(address, access, obs) => {
+                let space = self.default_space();
+                let key = ObserverKey { 
+                    space_id: space.id(),
+                    offset: address.offset(),
+                    size: space.address_size(),
+                    access,
+                };
+                if !self.mem_observers.contains_key(&key) {
+                    self.mem_observers.insert(key.clone(), Vec::new());
+                }
+                self.mem_observers.get_mut(&key).unwrap()
+                    .push(obs);
+                Ok(())
+            }
+            Observer::Reg(name, access, obs) => {
+                let vnd = self.lang.translator().register_by_name(name)
+                    .ok_or(context::Error::Observer(format!("register {} does not exist", name)))?;
+                let key = ObserverKey {
+                    space_id: vnd.space(),
+                    offset: vnd.offset(),
+                    size: vnd.size(),
+                    access,
+                };
+                if !self.reg_observers.contains_key(&key) {
+                    self.reg_observers.insert(key.clone(), Vec::new());
+                }
+                self.reg_observers.get_mut(&key).unwrap()
+                    .push(obs);
+                Ok(())
+            }
+            _ => { Err(context::Error::Observer(String::from("observer type not supported"))) }
+        }
+    }
 }
 
 impl<'irb> VarnodeContext<BitVec> for ConcreteContext<'irb> {
     fn read_vnd(&self, var: &VarnodeData) -> Result<BitVec, context::Error> {
+        let key = ObserverKey {
+            space_id: var.space(),
+            offset: var.offset(),
+            size: var.size(),
+            access: AccessType::R,
+        };
         let spc = var.space();
         if spc.is_constant() {
             Ok(BitVec::from_u64(var.offset(), var.bits()))
         } else if spc.is_register() {
-            self.regs.read_vnd(var)
+            let val = self.regs.read_vnd(var)?;
+            if let Some(observers) = self.reg_observers.get(&key) {
+                let name = self.lang.translator().registers().get(key.offset, key.size).unwrap();
+                for obs in observers.iter() {
+                    obs.update(name, key.offset, key.size, &val, AccessType::R)?;
+                }
+            }
+            Ok(val)
         } else if spc.is_unique() {
             self.tmps.read_vnd(var)
         } else if spc.is_default() {
@@ -288,6 +352,7 @@ impl <'irb> RegisterContext<BitVec> for ConcreteContext<'irb> {
 #[cfg(test)]
 mod tests {
     use fugue_core::language::LanguageBuilder;
+    use fugue_bytes::Endian;
     use crate::peripheral::traits::MappedPeripheralState;
     use crate::peripheral::generic::dummy::DummyPeripheral;
     use crate::tests::TEST_PROGRAM;
@@ -412,6 +477,7 @@ mod tests {
     #[test]
     fn test_vnd_context_trait_impl() {
         use fugue_bv::BitVec;
+        #[allow(unused_imports)]
         use fugue_ir::{
             VarnodeData,
             space::{ AddressSpace, Space, SpaceKind },
@@ -423,7 +489,8 @@ mod tests {
         let lang = lang_builder.build("ARM:LE:32:Cortex", "default")
             .expect("language failed to build");
         let lifter = lang.lifter();
-        let mut irb = lifter.irb(1024);
+        #[allow(unused_variables)]
+        let irb = lifter.irb(1024);
         let mut context = ConcreteContext::new_with(&lang);
 
         assert_eq!(
@@ -446,6 +513,10 @@ mod tests {
         let r0_vnd = context.lang.translator()
             .register_by_name("r0")
             .expect("register named r0 not found");
+        let ng_vnd = context.lang.translator()
+            .register_by_name("NG")
+            .expect("register named NG not found");
+        println!("{}", ng_vnd.display(context.lang.translator()));
         let mem0x1000_vnd = VarnodeData::new(
             context.lang.translator().manager().default_space_ref(),
             0x1000u64,
@@ -467,6 +538,10 @@ mod tests {
         context.write_vnd(&r0_vnd, &r0_val)
             .expect("failed to write r0");
 
+        let ng_val = BitVec::from_usize(1usize, ng_vnd.bits());
+        context.write_vnd(&ng_vnd, &ng_val)
+            .expect("failed to write NG");
+
         let mem0x1000_val = BitVec::from_u64(0xdeadbeef, 32);
         context.write_vnd(&mem0x1000_vnd, &mem0x1000_val)
             .expect("failed to write mem[0x1000]");
@@ -481,6 +556,8 @@ mod tests {
         // test read_vnd()
         let r0_rval = context.read_vnd(&r0_vnd)
             .expect("failed to read r0");
+        let ng_rval = context.read_vnd(&ng_vnd)
+            .expect("failed to read NG flag");
         let mem0x1000_rval = context.read_vnd(&mem0x1000_vnd)
             .expect("failed to read mem[0x1000]");
         let unique0_rval = context.read_vnd(&unique0_vnd)
@@ -488,9 +565,10 @@ mod tests {
         let const42_rval = context.read_vnd(&const42_vnd)
             .expect("failed to read constant");
 
-        assert_eq!(r0_val, r0_rval);
-        assert_eq!(mem0x1000_val, mem0x1000_rval);
-        assert_eq!(unique0_val, unique0_rval);
-        assert_eq!(const42_val, const42_rval);
+        assert_eq!(ng_val, ng_rval, "NG read/write value mismatch");
+        assert_eq!(r0_val, r0_rval, "r0 read/write value mismatch");
+        assert_eq!(mem0x1000_val, mem0x1000_rval, "mem read/write at 0x1000 value mismatch");
+        assert_eq!(unique0_val, unique0_rval, "unique read/write at offset 0 value mismatch");
+        assert_eq!(const42_val, const42_rval, "const 42 read mismatch actual");
     }
 }

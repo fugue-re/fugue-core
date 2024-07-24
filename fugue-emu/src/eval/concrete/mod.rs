@@ -2,6 +2,7 @@
 //! 
 //! an evaluator for concrete execution on BitVec
 
+use nohash_hasher::IntMap;
 use thiserror::Error;
 
 use fugue_bv::BitVec;
@@ -14,10 +15,10 @@ use fugue_core::ir::Location;
 use crate::eval;
 use crate::eval::traits::{ Evaluator, EvaluatorContext };
 use crate::eval::traits::observer::*;
-use crate::context::traits::VarnodeContext;
+use crate::context::traits::{ VarnodeContext, MemoryMapContext };
 use crate::context::concrete::ConcreteContext;
 
-mod observer;
+pub mod observer;
 
 /// error types specific to concrete evaluator
 /// 
@@ -46,6 +47,8 @@ impl Into<eval::Error> for Error {
 pub struct ConcreteEvaluator {
     pc: Location,
     pcode_observers: Vec<Box<dyn PCodeObserver>>,
+    insn_observers: Vec<Box<dyn InsnObserver>>,
+    breakpoints: IntMap<u64, Vec<Box<dyn FnMut(&mut ConcreteContext) -> Result<(), eval::Error> + 'static>>>,
 }
 
 /// helper function to convert BitVec to Address
@@ -60,14 +63,14 @@ fn bool2bv(val: bool) -> BitVec {
     BitVec::from(if val { 1u8 } else { 0u8 })
 }
 
-
-
 impl ConcreteEvaluator {
 
     pub fn new() -> Self {
         Self {
             pc: Location::default(),
             pcode_observers: Vec::new(),
+            insn_observers: Vec::new(),
+            breakpoints: IntMap::default(),
         }
     }
 
@@ -80,9 +83,32 @@ impl ConcreteEvaluator {
             Observer::PCode(obs) => {
                 self.pcode_observers.push(obs);
             },
+            Observer::Insn(obs) => {
+                self.insn_observers.push(obs);
+            },
             _ => { },
         }
         Ok(())
+    }
+
+    /// register breakpoint with optional callback
+    pub fn register_breakpoint(
+        &mut self,
+        breakpoint: &Address,
+        callback: impl FnMut(&mut ConcreteContext) -> Result<(), eval::Error> + 'static,
+    ) -> Result<(), eval::Error> {
+        if !self.breakpoints.contains_key(&breakpoint.offset()) {
+            self.breakpoints.insert(breakpoint.offset(), vec![Box::new(callback)]);
+        } else {
+            self.breakpoints.get_mut(&breakpoint.offset()).unwrap()
+                .push(Box::new(callback))
+        }
+        Ok(())
+    }
+
+    /// get shared reference to pc
+    pub fn pc(&self) -> &Location {
+        &self.pc
     }
 }
 
@@ -285,6 +311,12 @@ impl<'irb> Evaluator<'irb> for ConcreteEvaluator {
 
         let addr = self.pc.address();
 
+        if let Some(callbacks) = self.breakpoints.get_mut(&addr.offset()) {
+            for cb in callbacks.iter_mut() {
+                cb(context)?;
+            }
+        }
+
         // try to fetch. if not in translation cache, lift new block.
         let mut fetch_result = context.fetch(addr);
         if let Err(eval::Error::TranslationCache(_)) = fetch_result {
@@ -302,6 +334,15 @@ impl<'irb> Evaluator<'irb> for ConcreteEvaluator {
         }
 
         let pcode = fetch_result?;
+
+        // call insn observers
+        if self.insn_observers.len() > 0 {
+            let insn_bytes = context.read_bytes(&addr, pcode.len()).unwrap();
+            for observer in self.insn_observers.iter_mut() {
+                observer.update(&addr, insn_bytes)?;
+            }
+        }
+
         let op_count = pcode.operations.len() as u32;
         let mut target = eval::Target::Fall;
         while addr == self.pc.address() && self.pc.position() < op_count {
@@ -314,7 +355,7 @@ impl<'irb> Evaluator<'irb> for ConcreteEvaluator {
                 let out: Option<BitVec> = op.output
                     .map(|vnd| context.read_vnd(&vnd).unwrap());
                 let ins: Vec<BitVec> = op.inputs.iter()
-                    .map(|vnd| context.read_vnd(&vnd).unwrap())
+                    .map(|vnd| context.read_vnd(vnd).unwrap())
                     .collect();
                 for observer in self.pcode_observers.iter_mut() {
                     observer.update(op, &ins, &out)?;
@@ -547,7 +588,7 @@ mod test {
     use crate::context::traits::*;
     use crate::tests::TEST_PROGRAM;
     use super::*;
-    use super::observer::PCodeStdoutLogger;
+    use super::observer::{ PCodeStdoutLogger, InsnStdoutLogger };
 
     #[test]
     fn test_evaluator() {
@@ -587,15 +628,31 @@ mod test {
 
         // initialize evaluator
         let mut evaluator = ConcreteEvaluator::new();
-        let t = lifter.translator();
-        let pcode_logger = PCodeStdoutLogger::new_with(t);
+        let insn_t = lifter.translator();
+        let pcode_t = lifter.translator();
+        let insn_logger = InsnStdoutLogger::new_with(insn_t);
+        let pcode_logger = PCodeStdoutLogger::new_with(pcode_t);
+        evaluator.register_observer(Observer::Insn(Box::new(insn_logger)))
+            .expect("failed to register insn observer");
         evaluator.register_observer(Observer::PCode(Box::new(pcode_logger)))
             .expect("failed to register pcode observer");
+
+        // debugging the CMP instruction issue
+        evaluator.register_breakpoint(&Address::from(0x28u64), |context| {
+            let ng_val = context.read_reg("NG")
+                .map_err(eval::Error::from)?;
+            println!("NG val: {:?}", ng_val);
+            Ok(())
+        }).expect("failed to register breakpoint");
+
 
         let halt_address = Address::from(0x4u64);
         let mut cycles = 0;
         while evaluator.pc.address() != halt_address {
             println!("pc: {:#x}", evaluator.pc.address().offset());
+            if evaluator.pc.address.offset() == 0x26u64 {
+                println!("breakpoint");
+            }
             evaluator.step(&irb, &mut context)
                 .expect("step failed:");
             cycles += 1;

@@ -1,6 +1,7 @@
 //! context traits
 //! 
 //! defines various traits related to emulation contexts
+use dyn_clone::{ DynClone, clone_trait_object };
 
 use fugue_ir::{ Address, VarnodeData };
 use fugue_bytes::Endian;
@@ -126,3 +127,86 @@ pub trait RegisterContext<Data>: VarnodeContext<Data> + Clone {
 /// must be made accessible via varnode
 pub trait UniqueContext<Data>: VarnodeContext<Data> + Clone { }
 
+
+/// context observer traits
+/// 
+/// observer traits may or may not need to be implemented
+/// on a per-evaluator basis
+/// 
+/// context observers should only be triggered by varnode-based
+/// accesses, i.e., only calls to context.read/write_vnd() should
+/// trigger them
+pub mod observer {
+    use super::*;
+    use fugue_bv::BitVec;
+    use fugue_ir::AddressSpaceId;
+    use crate::context;
+
+    /// observer key type for hash map access
+    #[derive(Clone, PartialEq, Eq, Hash)]
+    pub struct ObserverKey {
+        pub space_id: AddressSpaceId,
+        pub offset: u64,
+        pub size: usize,
+        pub access: context::AccessType,
+    }
+    
+    /// generic wrapper for context observers
+    #[derive(Clone)]
+    pub enum Observer<'a> {
+        /// memory observer
+        Mem(&'a Address, context::AccessType, Box<dyn MemObserver>),
+        /// register observer
+        Reg(&'a str, context::AccessType, Box<dyn RegObserver>),
+        /// pcode temporaries observer
+        Temp(&'a VarnodeData, context::AccessType, Box<dyn TempObserver>),
+    }
+
+    /// by default, memory observers should be updated after the corresponding
+    /// operation has been performed
+    pub trait MemObserver: DynClone {
+        /// on update, the memory observer will be passed a shared reference
+        /// to the value that was either written or read, the address,
+        ///  and the memory access type
+        fn update(
+            &self,
+            address: &Address,
+            val: &BitVec,
+            access: context::AccessType,
+        ) -> Result<(), context::Error>;
+    }
+    clone_trait_object!(MemObserver);
+
+    /// by default register observers should be updated after the corresponding
+    /// operation has been performed
+    pub trait RegObserver: DynClone {
+        /// on update, the register observer will be passed a shared reference
+        /// to the register name, offset, and size; as well as the value
+        /// that was written or read, and the access type
+        fn update(
+            &self,
+            name: &str,
+            offset: u64,
+            size: usize,
+            value: &BitVec,
+            access: context::AccessType,
+        ) -> Result<(), context::Error>;
+    }
+    clone_trait_object!(RegObserver);
+
+    /// by default, temporaries observers should be updated after the corresonding
+    /// operation has been performed
+    pub trait TempObserver: DynClone {
+        /// on update the temporaries observer will be passed the offset and size
+        /// of the temporary being modified, the value that was written or read,
+        /// and the access type
+        fn update(
+            &mut self,
+            offset: u64,
+            size: usize,
+            value: &BitVec,
+            access: context::AccessType,
+        ) -> Result<(), context::Error>;
+    }
+    clone_trait_object!(TempObserver);
+}
