@@ -93,7 +93,8 @@ impl<'irb> ConcreteContext<'irb> {
 
     /// write to current pc value
     pub fn set_pc(&mut self, val: &BitVec) -> Result<(), context::Error> {
-        self.regs.write_vnd(&self.pc, val)
+        let val = val.unsigned_cast(self.pc.bits());
+        self.regs.write_vnd(&self.pc, &val)
     }
 
     /// read current sp value
@@ -617,6 +618,8 @@ mod tests {
             .expect("failed to read r0");
         let ng_rval = context.read_vnd(&ng_vnd)
             .expect("failed to read NG flag");
+        let ng_rval2 = context.read_vnd(&ng_vnd)
+            .expect("failed to read NG flag");
         let mem0x1000_rval = context.read_vnd(&mem0x1000_vnd)
             .expect("failed to read mem[0x1000]");
         let unique0_rval = context.read_vnd(&unique0_vnd)
@@ -625,6 +628,7 @@ mod tests {
             .expect("failed to read constant");
 
         assert_eq!(ng_val, ng_rval, "NG read/write value mismatch");
+        assert_eq!(ng_rval, ng_rval2, "NG read value changes unexpectedly");
         assert_eq!(r0_val, r0_rval, "r0 read/write value mismatch");
         assert_eq!(mem0x1000_val, mem0x1000_rval, "mem read/write at 0x1000 value mismatch");
         assert_eq!(unique0_val, unique0_rval, "unique read/write at offset 0 value mismatch");

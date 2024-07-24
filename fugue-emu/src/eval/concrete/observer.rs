@@ -43,19 +43,52 @@ impl observer::PCodeObserver for PCodeStdoutLogger {
         print!("{:<12}", format!("{:?}", pcode.opcode));
         
         for (i, input) in pcode.inputs.iter().enumerate() {
+            let varnode_str = {
+                if input.space().is_register() {
+                    let name = self.translator.registers()
+                        .get(input.offset(), input.size())
+                        .unwrap();
+                    format!("Register(name={}, offset={}, size={})", name, input.offset(), input.size())
+                } else if input.space().is_constant() {
+                    format!("Constant(value={:#x}, size={}", input.offset(), input.size())
+                } else {
+                    format!("Varnode(space={}, offset={:#x}, size={}", 
+                        self.translator.manager().unchecked_space_by_id(input.space()).name(),
+                        input.offset(),
+                        input.size()
+                    )
+                }
+            };
+
             print!(
-                "{}: in{} [{:<50} := {:?}]\n",
+                "{}: in{} [{:<50} := {:>15}]\n",
                 if i == 0 { "" } else { "            " }, i,
-                format!("{}", input.display(&self.translator)),
-                inputs[i]
+                varnode_str,
+                format!("{}", inputs[i]),
             );
         }
 
         if let Some(ref out) = pcode.output {
+            let out_vnd_str = {
+                if out.space().is_register() {
+                    let name = self.translator.registers()
+                        .get(out.offset(), out.size())
+                        .unwrap();
+                    format!("Register(name={}, offset={}, size={})", name, out.offset(), out.size())
+                } else if out.space().is_constant() {
+                    format!("Constant(value={:#x}, size={}", out.offset(), out.size())
+                } else {
+                    format!("Varnode(space={}, offset={:#x}, size={}", 
+                        self.translator.manager().unchecked_space_by_id(out.space()).name(),
+                        out.offset(),
+                        out.size()
+                    )
+                }
+            };
             print!(
-                "            : out [{:<50} := {:?}]\n",
+                "            : out [{:<50} := {:>15}]\n",
                 format!("{}", out.display(&self.translator)),
-                output.as_ref().unwrap(),
+                format!("{}", output.as_ref().unwrap()),
             );
         } else {
             print!("            : out [None]\n");
