@@ -104,8 +104,9 @@ impl<'irb> ConcreteContext<'irb> {
     }
 
     pub fn set_sp(&mut self, val: &BitVec) -> Result<(), context::Error> {
+        let val = val.unsigned_cast(self.convention().stack_pointer().varnode().bits());
         let vnd = self.convention().stack_pointer().varnode().clone();
-        self.regs.write_vnd(&vnd, val)
+        self.regs.write_vnd(&vnd, &val)
     }
 
     pub fn default_space(&self) -> &AddressSpace {
@@ -191,6 +192,7 @@ impl<'irb> VarnodeContext<BitVec> for ConcreteContext<'irb> {
             Ok(BitVec::from_u64(var.offset(), var.bits()))
         } else if spc.is_register() {
             let val = self.regs.read_vnd(var)?;
+            
             if let Some(observers_idx) = self.observers.get_mut(&key) {
                 let name = self.lang.translator().registers().get(key.offset, key.size).unwrap();
                 for idx in observers_idx.iter() {
@@ -204,6 +206,7 @@ impl<'irb> VarnodeContext<BitVec> for ConcreteContext<'irb> {
             self.tmps.read_vnd(var)
         } else if spc.is_default() {
             let val = self.memory_map.read_vnd(var)?;
+
             if let Some(observers_idx) =  self.observers.get_mut(&key) {
                 for idx in observers_idx.iter() {
                     if let Some((obs, _keys)) = self.mem_observers.get_mut(*idx) {

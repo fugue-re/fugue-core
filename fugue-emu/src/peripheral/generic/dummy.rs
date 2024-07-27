@@ -1,5 +1,5 @@
-//! 
 //! dummy peripheral
+//! 
 //! a dummy memory-mapped peripheral implementation that basically
 //! acts just like concrete memory
 
@@ -8,7 +8,7 @@ use fugue_bv::BitVec;
 use fugue_bytes::Endian;
 use fugue_core::eval::fixed_state::FixedState;
 
-use crate::emu::traits::Clocked;
+use crate::sim::traits::Clocked;
 
 use crate::peripheral;
 use crate::peripheral::traits::MappedPeripheralState;

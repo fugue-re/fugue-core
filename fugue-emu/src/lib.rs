@@ -2,7 +2,7 @@
 //! 
 //! an emulation library for fugue
 
-pub mod emu;
+pub mod sim;
 pub mod context;
 pub mod peripheral;
 pub mod eval;

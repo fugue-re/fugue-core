@@ -7,7 +7,7 @@ use fugue_ir::Address;
 use fugue_bytes::Endian;
 use fugue_bv::BitVec;
 
-use crate::emu::traits::Clocked;
+use crate::sim::traits::Clocked;
 use crate::peripheral;
 // use crate::context::traits::MappedContext;
 
