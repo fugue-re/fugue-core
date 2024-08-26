@@ -6,6 +6,7 @@ pub mod sim;
 pub mod context;
 pub mod peripheral;
 pub mod eval;
+pub mod mach;
 
 
 #[cfg(test)]

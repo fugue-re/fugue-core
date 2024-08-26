@@ -303,8 +303,13 @@ impl<'irb> EvaluatorContext<'irb, BitVec> for ConcreteContext<'irb> {
                 // check if the instruction is branching
                 let mut is_branch = false;
                 match pcode.operations.last().unwrap().opcode {
-                    Opcode::Branch | Opcode::CBranch | Opcode::IBranch |
-                    Opcode::Call | Opcode::ICall | Opcode::Return => {
+                    Opcode::Branch
+                    | Opcode::CBranch
+                    | Opcode::IBranch
+                    | Opcode::Call
+                    | Opcode::ICall
+                    | Opcode::Return
+                    | Opcode::CallOther => {
                         // usually we can tell if the last opcode is branching
                         is_branch = true;
                     },

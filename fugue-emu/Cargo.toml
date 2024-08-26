@@ -22,5 +22,9 @@ ustr = { version = "1.0", features = ["serde"] }
 parking_lot = "0.12"
 # enum_dispatch = "0.3"
 dyn-clone = "1"
-ouroboros = "0.18"
 ahash = { version = "0.8", features = ["serde"] }
+bitfield-struct = "0.8"
+
+[dev-dependencies]
+csv = "1.3.0"
+serde = { version = "1" }

@@ -7,7 +7,7 @@ use crate::eval;
 use crate::context;
 use super::channel;
 
-#[derive(Debug, Error)]
+#[derive(Error, Debug)]
 pub enum Error {
     #[error("simulation time: {1} | evaluator error: {0}")]
     Evaluator(eval::Error, usize),

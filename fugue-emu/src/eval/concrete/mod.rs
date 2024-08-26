@@ -2,6 +2,8 @@
 //! 
 //! an evaluator for concrete execution on BitVec
 
+use std::any::Any;
+
 use nohash_hasher::IntMap;
 use thiserror::Error;
 
@@ -109,6 +111,11 @@ impl ConcreteEvaluator {
     /// get shared reference to pc
     pub fn pc(&self) -> &Location {
         &self.pc
+    }
+
+    /// set pc
+    pub fn set_pc(&mut self, address: Address) {
+        self.pc.address = address;
     }
 }
 
@@ -296,7 +303,10 @@ impl<'irb> Evaluator<'irb> for ConcreteEvaluator {
                 let addr = self.read_addr(&operation.inputs[0], context)?;
                 return Ok(eval::Target::Return(addr.into()));
             }
-            op => return Err(Error::Unsupported(op).into()),
+            op => {
+                println!("{}", operation.display(context.language().translator()));
+                return Err(Error::Unsupported(op).into())
+            }
         }
 
         Ok(eval::Target::Fall)

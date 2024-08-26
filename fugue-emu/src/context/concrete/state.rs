@@ -88,7 +88,6 @@ impl RegisterContext<BitVec> for ConcreteRegisters {
     }
 
     fn write_reg(&mut self, name: &str, data: &BitVec) -> Result<(), context::Error> {
-        println!("write_reg(name: {}, val: {} ", name, data);
         let (_, offset, _size) = self.reg_names
             .get_by_name(name)
             .ok_or(context::Error::InvalidRegister(String::from(name)))?;
