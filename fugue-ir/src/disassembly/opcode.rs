@@ -1,7 +1,6 @@
 use crate::deserialise::Error;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[derive(serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 #[repr(u16)]
 pub enum Opcode {
     Copy,

@@ -3,13 +3,13 @@ use std::collections::BTreeMap as Map;
 use std::mem;
 use std::ops::{Deref, DerefMut};
 
+use fugue_ir::Translator;
 use itertools::Itertools;
 
-use crate::address::AddressValue;
-use crate::disassembly::partmap::{BoundKind, PartMap};
-use crate::disassembly::VarnodeData;
+use crate::utils::partmap::{BoundKind, PartMap};
+use crate::utils::varnode::VarnodeData;
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone)]
 pub struct ContextBitRange {
     word: usize,
     start_bit: usize,
@@ -82,7 +82,7 @@ impl ContextBitRange {
     }
 }
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone)]
 pub struct TrackedContext {
     location: VarnodeData,
     value: u32,
@@ -98,7 +98,7 @@ impl TrackedContext {
     }
 }
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone)]
 pub struct TrackedSet(Vec<TrackedContext>);
 
 impl Default for TrackedSet {
@@ -121,21 +121,13 @@ impl DerefMut for TrackedSet {
     }
 }
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone)]
 pub struct FreeArray {
     values: Vec<u32>,
     masks: Vec<u32>,
 }
 
 impl FreeArray {
-    pub fn values(&self) -> &[u32] {
-        &self.values
-    }
-
-    pub fn masks(&self) -> &[u32] {
-        &self.masks
-    }
-
     pub fn reset(&mut self, size: usize) {
         self.values.resize_with(size, Default::default);
         self.masks.resize_with(size, Default::default);
@@ -152,189 +144,72 @@ impl Default for FreeArray {
     }
 }
 
-/*
-pub enum CachedDatabaseContext {
-    Plain(Box<ContextDatabase>),
-    Cached {
-        lower: u64,
-        upper: u64,
-        space: Arc<AddressSpace>,
-        inner: OwningRef<Box<ContextDatabase>, Vec<u64>>,
-    },
-}
-
-impl CachedDatabaseContext {
-    pub fn has_cached(&self) -> bool {
-        match self {
-            Self::Plain(..) => true,
-            _ => false,
-        }
-    }
-}
-
-pub struct ContextCache {
-    database: CachedDatabaseContext,
-    allow_set: bool,
-}
-
-impl CachedDatabaseContext {
-    pub fn get_cached(&mut self, address: &Address) -> Vec<u64> {
-        let mut ret = Vec::new();
-        replace_with_or_abort(self, |db| match db {
-            CachedDatabaseContext::Cached {
-                ref space,
-                upper,
-                lower,
-                ref inner,
-            } if address.space() == space.as_ref()
-                && lower <= address.offset()
-                && upper >= address.offset() =>
-            {
-                ret.extend_from_slice(&*inner);
-                db
-            },
-            CachedDatabaseContext::Cached { inner, .. } => {
-                let mut lower = 0;
-                let mut upper = 0;
-                let db = inner.into_owner();
-                let inner = OwningRef::new(db).map(|db| {
-                    let (v, lb, ub) = db.get_context_bounds(address);
-                    lower = lb;
-                    upper = ub;
-                    v
-                });
-
-                ret.extend_from_slice(&*inner);
-
-                CachedDatabaseContext::Cached {
-                    lower,
-                    upper,
-                    space: address.space_cloned(),
-                    inner,
-                }
-            }
-            CachedDatabaseContext::Plain(db) => {
-                let mut lower = 0;
-                let mut upper = 0;
-                let inner = OwningRef::new(db).map(|db| {
-                    let (v, lb, ub) = db.get_context_bounds(address);
-                    lower = lb;
-                    upper = ub;
-                    v
-                });
-
-                ret.extend_from_slice(&*inner);
-
-                CachedDatabaseContext::Cached {
-                    lower,
-                    upper,
-                    space: address.space_cloned(),
-                    inner,
-                }
-            }
-        });
-        ret
-    }
-
-    /*
-    pub fn set_cached(&mut self, address: Address, ret: &mut Vec<u64>) {
-        replace_with_or_abort(self, |db| match db {
-            CachedDatabaseContext::Cached {
-                ref space,
-                upper,
-                lower,
-                ref inner,
-            } if address.space() == space.as_ref()
-                && lower <= address.offset()
-                && upper >= address.offset() =>
-            {
-                ret.extend_from_slice(&*inner);
-                db
-            }
-            CachedDatabaseContext::Cached { inner, .. } => {
-                let mut lower = 0;
-                let mut upper = 0;
-                let db = inner.into_owner();
-                let ndb = OwningRef::new(db).map(|db| {
-                    let (v, lb, ub) = db.get_context_bounds(address.clone());
-                    lower = lb;
-                    upper = ub;
-                    v
-                });
-                ret.extend_from_slice(&*ndb);
-
-                CachedDatabaseContext::Cached {
-                    lower,
-                    upper,
-                    space: address.space_cloned(),
-                    inner: ndb,
-                }
-            }
-            CachedDatabaseContext::Plain(db) => {
-                let mut lower = 0;
-                let mut upper = 0;
-                let ndb = OwningRef::new(db).map(|db| {
-                    let (v, lb, ub) = db.get_context_bounds(address.clone());
-                    lower = lb;
-                    upper = ub;
-                    v
-                });
-                ret.extend_from_slice(&*ndb);
-
-                CachedDatabaseContext::Cached {
-                    lower,
-                    upper,
-                    space: address.space_cloned(),
-                    inner: ndb,
-                }
-            }
-        })
-    }
-    */
-}
-
-impl ContextCache {
-    pub fn new(database: ContextDatabase) -> Self {
-        Self {
-            database: CachedDatabaseContext::Plain(Box::new(database)),
-            allow_set: false,
-        }
-    }
-
-    pub fn toggle_set(&mut self, allow: bool) {
-        self.allow_set = allow;
-    }
-
-    pub fn context(&mut self, address: &Address) -> Vec<u64> {
-        self.database.get_cached(address).to_vec()
-    }
-
-    /*
-    pub fn set_context(&mut self, address: Address, num: usize, mask: u64, value: u64) {
-        if !self.allow_set {
-            return;
-        }
-        self.database.set_cached(&address, num, mask, value)
-    }
-    */
-}
-*/
-
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone)]
 pub struct ContextDatabase {
     size: usize,
     variables: Map<String, ContextBitRange>,
-    database: PartMap<AddressValue, FreeArray>,
-    trackbase: PartMap<AddressValue, TrackedSet>,
+    database: PartMap<u64, FreeArray>,
+    trackbase: PartMap<u64, TrackedSet>,
+    address_limit: u64,
 }
 
 impl ContextDatabase {
-    pub fn new() -> Self {
+    pub fn new(address_limit: u64) -> Self {
         Self {
             size: 0,
             variables: Map::new(),
             database: PartMap::new(Default::default()),
             trackbase: PartMap::new(Default::default()),
+            address_limit,
+        }
+    }
+
+    pub fn from_translator(translator: &Translator) -> Self {
+        let limit = translator.manager().default_space_ref().highest_offset();
+        let ctxt = translator.context_database();
+
+        Self {
+            size: ctxt.size(),
+            address_limit: limit,
+            variables: ctxt
+                .variables()
+                .map(|(k, v)| {
+                    (
+                        k.to_owned(),
+                        ContextBitRange {
+                            start_bit: v.start_bit(),
+                            end_bit: v.end_bit(),
+                            mask: v.mask(),
+                            shift: v.shift(),
+                            word: v.word(),
+                        },
+                    )
+                })
+                .collect(),
+            database: PartMap::new({
+                let array = ctxt.database().default_value();
+
+                FreeArray {
+                    masks: array.masks().to_vec(),
+                    values: array.values().to_vec(),
+                }
+            }),
+            trackbase: PartMap::new({
+                let base = ctxt
+                    .trackbase()
+                    .default_value()
+                    .iter()
+                    .map(|ctxt| TrackedContext {
+                        location: VarnodeData {
+                            space: ctxt.location().space().index() as _,
+                            offset: ctxt.location().offset(),
+                            size: ctxt.location().size() as _,
+                        },
+                        value: ctxt.value(),
+                    })
+                    .collect();
+                TrackedSet(base)
+            }),
         }
     }
 
@@ -342,21 +217,13 @@ impl ContextDatabase {
         self.size
     }
 
-    pub fn database(&self) -> &PartMap<AddressValue, FreeArray> {
-        &self.database
-    }
-
-    pub fn trackbase(&self) -> &PartMap<AddressValue, TrackedSet> {
-        &self.trackbase
-    }
-
-    pub fn new_tracked_set(&mut self, addr1: AddressValue, addr2: AddressValue) -> &mut TrackedSet {
+    pub fn new_tracked_set(&mut self, addr1: u64, addr2: u64) -> &mut TrackedSet {
         let range = self.trackbase.clear_range(&addr1, &addr2);
         range.clear();
         range
     }
 
-    pub fn tracked_set(&self, address: AddressValue) -> &TrackedSet {
+    pub fn tracked_set(&self, address: u64) -> &TrackedSet {
         self.trackbase.get_or_default(&address)
     }
 
@@ -376,11 +243,7 @@ impl ContextDatabase {
         self.variables.get_mut(name.borrow())
     }
 
-    pub fn variables(&self) -> impl Iterator<Item = (&str, &ContextBitRange)> {
-        self.variables.iter().map(|(name, range)| (name.as_ref(), range))
-    }
-
-    pub fn get_variable<S: Borrow<str>>(&self, name: S, address: AddressValue) -> Option<u32> {
+    pub fn get_variable<S: Borrow<str>>(&self, name: S, address: u64) -> Option<u32> {
         self.variable(name.borrow())
             .map(|context| context.get(&self.database.get_or_default(&address).values))
     }
@@ -388,7 +251,7 @@ impl ContextDatabase {
     pub fn set_variable<S: Borrow<str>>(
         &mut self,
         name: S,
-        address: AddressValue,
+        address: u64,
         value: u32,
     ) -> Option<()> {
         let context = self.variables.get(name.borrow())?;
@@ -438,38 +301,18 @@ impl ContextDatabase {
         Some(())
     }
 
-    pub fn get_context(&self, address: &AddressValue) -> &Vec<u32> {
-        &self.database.get_or_default(address).values
+    pub fn get_context(&self, address: u64) -> &[u32] {
+        &self.database.get_or_default(&address).values
     }
 
-    pub fn get_context_bounds(&self, address: &AddressValue) -> (&Vec<u32>, u64, u64) {
-        match self.database.bounds(address) {
-            BoundKind::None(fa) => (&fa.values, 0, address.highest_offset()),
-            BoundKind::Lower(l, fa) => {
-                if l.space() == address.space() {
-                    (&fa.values, l.offset(), address.highest_offset())
-                } else {
-                    (&fa.values, 0, address.highest_offset())
-                }
-            }
-            BoundKind::Upper(u, fa) => {
-                if u.space() == address.space() {
-                    (&fa.values, 0, u.offset() - 1)
-                } else {
-                    (&fa.values, 0, address.highest_offset())
-                }
-            }
+    pub fn get_context_bounds(&self, address: u64) -> (&[u32], u64, u64) {
+        match self.database.bounds(&address) {
+            BoundKind::None(fa) => (&fa.values, 0, self.address_limit),
+            BoundKind::Lower(l, fa) => (&fa.values, *l, self.address_limit),
+            BoundKind::Upper(u, fa) => (&fa.values, 0, *u - 1),
             BoundKind::Both(l, u, fa) => {
-                let lb = if l.space() == address.space() {
-                    l.offset()
-                } else {
-                    0
-                };
-                let ub = if u.space() == address.space() {
-                    u.offset() - 1
-                } else {
-                    address.highest_offset()
-                };
+                let lb = *l;
+                let ub = *u - 1;
                 (&fa.values, lb, ub)
             }
         }
@@ -477,8 +320,8 @@ impl ContextDatabase {
 
     pub fn set_context_change_point(
         &mut self,
-        current_address: AddressValue,
-        commit_address: AddressValue,
+        current_address: u64,
+        commit_address: u64,
         num: usize,
         mask: u32,
         value: u32,
@@ -494,8 +337,8 @@ impl ContextDatabase {
 
     pub fn set_context_region(
         &mut self,
-        addr1: AddressValue,
-        addr2: Option<AddressValue>,
+        addr1: u64,
+        addr2: Option<u64>,
         num: usize,
         mask: u32,
         value: u32,
@@ -508,8 +351,8 @@ impl ContextDatabase {
     pub fn set_variable_region<S: Borrow<str>>(
         &mut self,
         name: S,
-        addr1: AddressValue,
-        addr2: Option<AddressValue>,
+        addr1: u64,
+        addr2: Option<u64>,
         value: u32,
     ) -> Option<()> {
         let context = self.variables.get(name.borrow())?;
@@ -526,8 +369,8 @@ impl ContextDatabase {
 }
 
 fn get_region_to_change_point<'a, F>(
-    db: &'a mut PartMap<AddressValue, FreeArray>,
-    addr: AddressValue,
+    db: &'a mut PartMap<u64, FreeArray>,
+    addr: u64,
     num: usize,
     mask: u32,
     mut f: F,
@@ -558,9 +401,9 @@ fn get_region_to_change_point<'a, F>(
 }
 
 fn get_region_for_set<'a, F>(
-    db: &'a mut PartMap<AddressValue, FreeArray>,
-    addr1: AddressValue,
-    addr2: Option<AddressValue>,
+    db: &'a mut PartMap<u64, FreeArray>,
+    addr1: u64,
+    addr2: Option<u64>,
     num: usize,
     mask: u32,
     mut f: F,

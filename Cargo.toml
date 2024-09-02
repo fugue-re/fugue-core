@@ -8,6 +8,7 @@ members = [
   "fugue-db",
   "fugue-fp",
   "fugue-ir",
+  "fugue-lifter",
   "fugue-state",
   "fugue-state-derive",
 ]

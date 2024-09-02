@@ -23,6 +23,7 @@ rustc-hash = "1.1"
 sealed = "0.5"
 serde = { version = "1", features = ["derive"] }
 serde_yaml = "0.9"
+smallvec = "1.13"
 static_init = "1"
 tempfile = "3"
 thiserror = "1"

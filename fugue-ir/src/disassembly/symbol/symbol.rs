@@ -16,10 +16,10 @@ use crate::space_manager::SpaceManager;
 #[derive(Debug, Clone)]
 pub struct FixedHandle<'space> {
     pub space: &'space AddressSpace,
-    pub size: usize,
+    pub size: u8,
     pub offset_space: Option<&'space AddressSpace>,
     pub offset_offset: u64,
-    pub offset_size: usize,
+    pub offset_size: u8,
     pub temporary_space: Option<&'space AddressSpace>,
     pub temporary_offset: u64,
 }
@@ -367,7 +367,7 @@ impl Symbol {
                 ..
             } => FixedHandle {
                 space: manager.unchecked_space_by_id(*space),
-                size: *size,
+                size: *size as _,
                 offset_space: None,
                 offset_offset: *offset,
                 offset_size: 0,
@@ -380,7 +380,7 @@ impl Symbol {
                 let size = space.address_size();
                 FixedHandle {
                     space,
-                    size,
+                    size: size as _,
                     offset_space: None,
                     offset_offset: walker.address().offset(),
                     offset_size: 0,
@@ -393,7 +393,7 @@ impl Symbol {
                 let size = space.address_size();
                 FixedHandle {
                     space,
-                    size,
+                    size: size as _,
                     offset_space: None,
                     offset_offset: walker
                         .unchecked_next_address() /*.ok_or_else(|| Error::InvalidNextAddress)?*/
@@ -404,7 +404,7 @@ impl Symbol {
                 }
             }
             Self::Next2 { .. } => {
-                return Err(Error::InvalidNext2Address)
+                return Err(Error::InvalidNext2Address);
                 /*
                 let space = manager.unchecked_space_by_id(walker.address().space());
                 let size = space.address_size();

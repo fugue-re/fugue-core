@@ -645,14 +645,14 @@ impl<'b, 'c, 'cz, 'z> IRBuilder<'b, 'c, 'cz, 'z> {
         let size = handle.offset_size;
 
         let offset = if space.is_constant() {
-            handle.offset_offset & bits::calculate_mask(size)
+            handle.offset_offset & bits::calculate_mask(size as _)
         } else if space.is_unique() {
             handle.offset_offset | self.unique_offset
         } else {
             space.wrap_offset(handle.offset_offset)
         };
 
-        Ok((handle.space, VarnodeData::new(space, offset, size)))
+        Ok((handle.space, VarnodeData::new(space, offset, size as _)))
     }
 
     #[inline]

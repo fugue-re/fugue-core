@@ -99,7 +99,7 @@ impl<'a> Loadable<'a> for Object<'a> {
     fn entry(&self) -> Option<Address> {
         let view = self.0.borrow_view();
 
-        if matches!(view.kind(), ObjectKind::Executable) {
+        if matches!(view.kind(), ObjectKind::Dynamic | ObjectKind::Executable) {
             Some(Address::from(view.entry()))
         } else {
             None

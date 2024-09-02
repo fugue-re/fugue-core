@@ -288,6 +288,10 @@ impl Translator {
         self.unique_base as usize
     }
 
+    pub fn root_symbol(&self) -> &Symbol {
+        &*self.root
+    }
+
     pub fn symbol_table(&self) -> &SymbolTable {
         &self.symbol_table
     }
@@ -596,10 +600,22 @@ impl Translator {
             }
         }
 
+        let t1 = std::time::Instant::now();
+
         context.reinitialise(db, address.clone(), bytes);
         let mut walker = ParserWalker::new(context, self);
 
         Translator::resolve(&mut walker, self.root.id(), &self.symbol_table)?;
+
+        let t2 = std::time::Instant::now();
+
+        let diff = t2.duration_since(t1);
+
+        let nanos = diff.as_nanos();
+        let micros = diff.as_micros();
+
+        println!("{micros}us / {nanos}ns");
+
         Translator::resolve_handles(&mut walker, &self.manager, &self.symbol_table)?;
 
         walker.base_state();

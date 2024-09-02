@@ -30,6 +30,7 @@ pub trait ProjectRawView: Sized {
 
 pub trait ProjectRawViewReader<'a> {
     fn find_region(&self, point: impl Into<Address>) -> Result<LoadedSegment, ProjectRawViewError>;
+
     fn view_bytes(&self, address: impl Into<Address>) -> Result<&[u8], ProjectRawViewError>;
 }
 
@@ -415,6 +416,10 @@ impl<R> Project<R>
 where
     R: ProjectRawView,
 {
+    pub fn entry(&self) -> Option<Address> {
+        self.entry
+    }
+
     pub fn language(&self) -> &Language {
         &self.language
     }

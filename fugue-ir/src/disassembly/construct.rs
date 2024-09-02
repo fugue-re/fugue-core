@@ -274,7 +274,7 @@ impl HandleTpl {
     ) -> FixedHandle<'b> {
         if self.ptr_space.is_real() {
             let mut handle = FixedHandle::new(self.space.space(walker, manager));
-            handle.size = self.size.fix(walker, manager) as usize;
+            handle.size = self.size.fix(walker, manager) as _;
             self.ptr_offset.offset(&mut handle, walker, manager);
             handle
         } else {
@@ -283,7 +283,7 @@ impl HandleTpl {
                     .unchecked_fix_space(walker, manager)
                     .unwrap_unchecked()
             });
-            handle.size = self.size.fix(walker, manager) as usize;
+            handle.size = self.size.fix(walker, manager) as _;
             handle.offset_offset = self.ptr_offset.fix(walker, manager);
             handle.offset_space = self.ptr_space.unchecked_fix_space(walker, manager);
 
@@ -292,7 +292,7 @@ impl HandleTpl {
                 handle.offset_offset = handle.offset_offset * handle.space.word_size() as u64;
                 handle.offset_offset = handle.space.wrap_offset(handle.offset_offset);
             } else {
-                handle.offset_size = self.ptr_size.fix(walker, manager) as usize;
+                handle.offset_size = self.ptr_size.fix(walker, manager) as _;
                 handle.temporary_space = self.tmp_space.unchecked_fix_space(walker, manager);
                 handle.temporary_offset = self.tmp_offset.fix(walker, manager);
             }
@@ -341,7 +341,10 @@ pub struct VarnodeTpl {
 }
 
 impl VarnodeTpl {
-    pub fn is_dynamic<'b, 'c, 'z>(&'b self, walker: &mut ParserWalker<'b, 'c, 'z>) -> Result<bool, Error> {
+    pub fn is_dynamic<'b, 'c, 'z>(
+        &'b self,
+        walker: &mut ParserWalker<'b, 'c, 'z>,
+    ) -> Result<bool, Error> {
         if let ConstTpl::Handle(index, _) = self.offset {
             if let Some(h) = walker.handle_ref(index) {
                 Ok(h.offset_space.is_some())

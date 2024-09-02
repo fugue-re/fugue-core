@@ -118,8 +118,20 @@ impl Constructor {
         Ok(())
     }
 
+    pub fn id(&self) -> (usize, usize) {
+        self.id
+    }
+
+    pub fn context(&self) -> &[Context] {
+        &self.context
+    }
+
     pub fn minimum_length(&self) -> usize {
         self.min_length
+    }
+
+    pub fn print_pieces(&self) -> &[String] {
+        &self.print_pieces
     }
 
     pub(crate) fn operands<'b, 'c, 'z, 'az>(
@@ -491,6 +503,30 @@ pub struct DecisionNode {
 }
 
 impl DecisionNode {
+    pub fn number(&self) -> usize {
+        self.number
+    }
+
+    pub fn context_decision(&self) -> bool {
+        self.context_decision
+    }
+
+    pub fn start_bit(&self) -> usize {
+        self.start_bit
+    }
+
+    pub fn size(&self) -> usize {
+        self.size
+    }
+
+    pub fn patterns(&self) -> &[DecisionPair] {
+        &self.patterns
+    }
+
+    pub fn children(&self) -> &[DecisionNode] {
+        &self.children
+    }
+
     pub fn from_xml(input: xml::Node) -> Result<Self, DeserialiseError> {
         let inputs = input.children().filter(xml::Node::is_element);
         let mut patterns = Vec::new();
@@ -559,6 +595,14 @@ pub struct DecisionPair {
 }
 
 impl DecisionPair {
+    pub fn id(&self) -> usize {
+        self.id
+    }
+
+    pub fn pattern(&self) -> &DisjointPattern {
+        &self.pattern
+    }
+
     /*
     #[inline(always)]
     pub fn is_match<'b, 'c>(&'b self, walker: &ParserWalker<'b, 'c>) -> Result<bool, Error> {
@@ -636,6 +680,10 @@ pub struct InstructionPattern {
 }
 
 impl InstructionPattern {
+    pub fn mask_value(&self) -> &PatternBlock {
+        &self.mask_value
+    }
+
     pub fn from_xml(input: xml::Node) -> Result<Self, DeserialiseError> {
         Ok(Self {
             mask_value: PatternBlock::from_xml(
@@ -667,6 +715,10 @@ pub struct ContextPattern {
 }
 
 impl ContextPattern {
+    pub fn mask_value(&self) -> &PatternBlock {
+        &self.mask_value
+    }
+
     pub fn from_xml(input: xml::Node) -> Result<Self, DeserialiseError> {
         Ok(Self {
             mask_value: PatternBlock::from_xml(
@@ -716,6 +768,22 @@ impl PatternBlock {
 
     pub fn always_false(&self) -> bool {
         self.non_zero_size == Self::ALWAYS_FALSE
+    }
+
+    pub fn offset(&self) -> usize {
+        self.offset
+    }
+
+    pub fn non_zero_size(&self) -> Option<usize> {
+        self.non_zero_size
+    }
+
+    pub fn masks(&self) -> &[u32] {
+        &self.masks
+    }
+
+    pub fn values(&self) -> &[u32] {
+        &self.values
     }
 
     pub fn is_context_match<'b, 'c, 'z>(&'b self, walker: &ParserWalker<'b, 'c, 'z>) -> bool {

@@ -7,6 +7,7 @@ use fugue_ir::il::instruction::Instruction;
 use fugue_ir::translator::TranslationContext;
 use fugue_ir::{Address, Translator};
 
+use smallvec::SmallVec;
 use thiserror::Error;
 
 use crate::ir::{Insn, PCode};
@@ -130,7 +131,7 @@ impl<'a> Lifter<'a> {
 }
 
 bitflags::bitflags! {
-    #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct LiftedInsnProperties: u16 {
         const FALL        = 0b0000_0000_0000_0001;
         const BRANCH      = 0b0000_0000_0000_0010;
@@ -176,6 +177,12 @@ bitflags::bitflags! {
     }
 }
 
+impl Default for LiftedInsnProperties {
+    fn default() -> Self {
+        Self::FALL
+    }
+}
+
 pub struct LiftedInsn<'input, 'lifter> {
     pub address: Address,
     pub bytes: &'input [u8],
@@ -192,6 +199,14 @@ impl<'input, 'lifter> LiftedInsn<'input, 'lifter> {
 
     pub fn properties(&self) -> LiftedInsnProperties {
         self.properties.get()
+    }
+
+    pub fn is_flow(&self) -> bool {
+        self.properties().contains(LiftedInsnProperties::FLOW)
+    }
+
+    pub fn has_fall(&self) -> bool {
+        self.properties().contains(LiftedInsnProperties::FALL)
     }
 
     pub fn bytes(&self) -> &[u8] {
@@ -236,6 +251,22 @@ impl<'input, 'lifter> LiftedInsn<'input, 'lifter> {
         }
 
         lifter.lift(irb, self.address, self.bytes)
+    }
+
+    pub fn local_targets(
+        &self,
+        lifter: &mut Lifter,
+        irb: &'lifter IRBuilderArena,
+    ) -> Result<SmallVec<[Address; 2]>, Error> {
+        todo!()
+    }
+
+    pub fn global_targets(
+        &self,
+        lifter: &mut Lifter,
+        irb: &'lifter IRBuilderArena,
+    ) -> Result<SmallVec<[Address; 2]>, Error> {
+        todo!()
     }
 }
 

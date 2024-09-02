@@ -51,6 +51,8 @@ impl X86Arch for x86_32 {
             | Opcode::JECXZ => true,
             Opcode::CALL | Opcode::CALLF => true,
             Opcode::RETF | Opcode::RETURN => true,
+            Opcode::HLT => true,
+            Opcode::INT => true,
             _ => false,
         };
     }
@@ -83,6 +85,8 @@ impl X86Arch for x86_64 {
             | Opcode::JMPE => true,
             Opcode::CALL | Opcode::CALLF => true,
             Opcode::RETF | Opcode::RETURN => true,
+            Opcode::HLT => true,
+            Opcode::INT => true,
             _ => false,
         };
     }
@@ -161,6 +165,7 @@ where
             .try_into()
             .map_err(LifterError::decode)?;
 
+        // anything that can affect control-flow
         if D::should_lift(&insn) {
             let PCode {
                 address,
@@ -171,6 +176,7 @@ where
                 .lift(irb, address, bytes)
                 .map_err(LifterError::lift)?;
 
+            // we need to obtain the true properties from the pcode
             Ok(LiftedInsn {
                 address,
                 bytes,
@@ -180,6 +186,7 @@ where
                 length,
             })
         } else {
+            // by default, we assume fall
             Ok(LiftedInsn {
                 address,
                 bytes,

@@ -1,29 +1,99 @@
-use std::collections::VecDeque;
+use std::collections::btree_map::Entry;
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::marker::PhantomData;
 
+use fugue_ir::disassembly::IRBuilderArena;
 use fugue_ir::Address;
 
+use thiserror::Error;
+
+use crate::language::Language;
 use crate::lifter::{InsnLifter, Lifter};
-use crate::project::{Project, ProjectRawView};
+use crate::project::{
+    LoadedSegment, Project, ProjectRawView, ProjectRawViewError, ProjectRawViewReader,
+};
+
+#[derive(Debug, Error)]
+pub enum ICFGBuilerError {
+    #[error(transparent)]
+    RawView(#[from] ProjectRawViewError),
+}
+
+struct ICFGLiftingContext<'a, R>
+where
+    R: ProjectRawView,
+{
+    language: &'a Language,
+    lifter: Lifter<'a>,
+    fast_lifter: Box<dyn InsnLifter>,
+    view: R::Reader<'a>,
+    _marker: PhantomData<&'a R>,
+}
+
+impl<'a, R> ICFGLiftingContext<'a, R>
+where
+    R: ProjectRawView,
+{
+    fn new(project: &'a Project<R>) -> Result<Self, ICFGBuilerError> {
+        Ok(Self {
+            language: project.language(),
+            lifter: project.lifter(),
+            fast_lifter: project.language().lifter_for_arch(),
+            view: project.raw().reader()?,
+            _marker: PhantomData,
+        })
+    }
+}
 
 pub struct ICFGBuilder<'a, R>
 where
     R: ProjectRawView,
 {
-    project: &'a mut Project<R>,
-    fast_lifter: Box<dyn InsnLifter>,
+    config: ICFGBuilderConfig,
+    context: ICFGLiftingContext<'a, R>,
     candidates: VecDeque<Address>,
+    arena: IRBuilderArena,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ICFGBuilderConfig {
+    pub arena_init_capacity: usize,
+    pub arena_purge_threshold: usize,
+}
+
+impl Default for ICFGBuilderConfig {
+    fn default() -> Self {
+        Self {
+            arena_init_capacity: 4_096,
+            arena_purge_threshold: 1_000_000,
+        }
+    }
 }
 
 impl<'a, R> ICFGBuilder<'a, R>
 where
     R: ProjectRawView,
 {
-    pub fn new(project: &'a mut Project<R>) -> Self {
-        Self {
-            fast_lifter: project.language().lifter_for_arch(),
+    pub fn new(project: &'a Project<R>) -> Result<Self, ICFGBuilerError> {
+        Self::new_with(project, Default::default())
+    }
+
+    pub fn new_with(
+        project: &'a Project<R>,
+        config: ICFGBuilderConfig,
+    ) -> Result<Self, ICFGBuilerError> {
+        let mut slf = Self {
+            arena: IRBuilderArena::with_capacity(config.arena_init_capacity),
             candidates: VecDeque::new(),
-            project,
+            config,
+            context: ICFGLiftingContext::new(project)?,
+        };
+
+        if let Some(entry) = project.entry() {
+            slf.add_candidate(entry);
         }
+
+        Ok(slf)
     }
 
     pub fn add_candidate(&mut self, candidate: impl Into<Address>) {
@@ -33,141 +103,182 @@ where
     pub fn add_candidates(&mut self, candidates: impl IntoIterator<Item = Address>) {
         self.candidates.extend(candidates);
     }
+
+    pub fn explore(&mut self) {
+        let mut fb = FunctionBuilder::new(
+            &self.arena,
+            &mut self.context.lifter,
+            &mut self.context.fast_lifter,
+        );
+
+        // Pass: explore candidates
+        while let Some(candidate) = self.candidates.pop_front() {
+            let Ok(region) = self.context.view.find_region(candidate) else {
+                // Unknown address -- continue
+                continue;
+            };
+
+            fb.explore(candidate, region);
+        }
+
+        // Pass: explore gaps
+    }
 }
 
-pub struct FunctionBuilder<'a, 'b, R> where R: ProjectRawView {
-    builder: &'a mut ICFGBuilder<'b, R>,
+pub struct FunctionBuilder<'a, 'b> {
+    arena: &'a IRBuilderArena,
+    lifter: &'a mut Lifter<'b>,
+    fast_lifter: &'a mut Box<dyn InsnLifter>,
+    candidates: VecDeque<Address>,
+    local_targets: BTreeSet<Address>,
+    global_targets: BTreeSet<Address>,
 }
 
-impl<'a, 'b, R> FunctionBuilder<'a, 'b, R> where R: ProjectRawView {
-    pub fn new(builder: &'a mut ICFGBuilder<'b, R>) -> Self {
-        Self { builder }
+impl<'a, 'b> FunctionBuilder<'a, 'b> {
+    pub fn new(
+        arena: &'a IRBuilderArena,
+        lifter: &'a mut Lifter<'b>,
+        fast_lifter: &'a mut Box<dyn InsnLifter>,
+    ) -> Self {
+        Self {
+            arena,
+            lifter,
+            fast_lifter,
+            candidates: VecDeque::new(),
+            local_targets: BTreeSet::new(),
+            global_targets: BTreeSet::new(),
+        }
     }
 
-    pub fn explore(&mut self, from: impl Into<Address>) { // -> Function
-        let entry = from.into();
-        todo!("explore from {entry}")
-    }
+    pub fn explore(&mut self, candidate: Address, region: LoadedSegment) {
+        println!("exploring from {candidate}");
 
-    pub fn reset(&mut self) {
-        // self.blocks.clear();
-        // self.insns.clear();
+        self.candidates.clear();
+        self.local_targets.clear();
+        self.global_targets.clear();
+
+        self.candidates.push_back(candidate);
+        self.local_targets.insert(candidate);
+
+        let view = region.data();
+        let start = region.address();
+        let bounds = start..start + view.len();
+
+        let mut insns = BTreeMap::<Address, _>::new();
+
+        'pass: loop {
+            // This is the stage where we build blocks by collecting instructions and marking them.
+            'outer: while let Some(block) = self.candidates.pop_front() {
+                // If the requested block is not inside our region, then we mark it as global
+                if !bounds.contains(&block) {
+                    self.global_targets.insert(block);
+                    continue;
+                }
+
+                let mut offset = usize::from(block - start);
+
+                'inner: loop {
+                    let address = start + offset;
+
+                    // If we've already disassembled this instruction select the next candidate,
+                    // otherwise get the entry ready for update.
+                    let Entry::Vacant(entry) = insns.entry(address) else {
+                        continue 'outer;
+                    };
+
+                    match self.fast_lifter.properties(
+                        self.lifter,
+                        self.arena,
+                        address,
+                        &view[offset..],
+                    ) {
+                        Ok(insn) => {
+                            let insn = entry.insert(insn);
+
+                            // Explicit control-flow
+                            if insn.is_flow() {
+                                // We're done with this block; we schedule the next bit of work
+
+                                // local branches, etc.
+                                for taken in insn.local_targets(self.lifter, self.arena).unwrap() {
+                                    if self.local_targets.insert(taken) {
+                                        self.candidates.push_back(taken);
+                                    }
+                                }
+
+                                // calls, etc.
+                                for taken in insn.global_targets(self.lifter, self.arena).unwrap() {
+                                    self.global_targets.insert(taken);
+                                }
+                            }
+
+                            // Implicit control-flow (it is a halt, etc.)
+                            if !insn.has_fall() {
+                                // we're done with this block
+                                continue 'outer;
+                            }
+
+                            offset += insn.len();
+                        }
+                        Err(_) => {
+                            // flows into bad data
+                            continue 'outer;
+                        }
+                    }
+                }
+            }
+
+            // Structure the blocks
+            let iinsns = &mut insns.iter();
+            let mut iblocks = self
+                .local_targets
+                .iter()
+                .skip(1)
+                .chain(std::iter::once(&Address::MAX));
+
+            let mut blocks = Vec::new();
+
+            while let Some(next_block_start) = iblocks.next() {
+                blocks.push(
+                    iinsns
+                        .take_while(|(start, _)| *start < next_block_start)
+                        .collect::<Vec<_>>(),
+                );
+            }
+
+            // In this stage we attempt to recover function control-flow and schedule more blocks
+            // due to jump table resolution.
+            break;
+        }
     }
 }
 
 #[cfg(test)]
 mod test {
-    use std::cell::{Cell, RefCell};
-
-    use fugue_ir::disassembly::IRBuilderArena;
-    use fugue_ir::Address;
-
-    use yaxpeax_arch::*;
-    use yaxpeax_arm::armv7::InstDecoder as ARMInstDecoder;
-
     use crate::language::LanguageBuilder;
-    use crate::lifter::*;
+    use crate::loader::{Loadable, Object};
+    use crate::project::{ProjectBuilder, ProjectRawViewMmaped};
+    use crate::util::BytesOrMapping;
+
+    use super::*;
 
     #[test]
-    #[ignore]
-    fn test_arm32_props() -> anyhow::Result<()> {
-        let lbuilder = LanguageBuilder::new("data")?;
-        let language = lbuilder.build("ARM:LE:32:v7", "default")?;
+    fn test_icfg_explore() -> Result<(), Box<dyn std::error::Error>> {
+        // Load the binary at tests/ls.elf into a mapping object
+        let input = BytesOrMapping::from_file("tests/ls.elf")?;
+        let object = Object::new(input)?;
 
-        let memory = &[
-            0x03, 0x00, 0x51, 0xE3, 0x0A, 0x00, 0x00, 0x9A, 0x00, 0x30, 0xA0, 0xE3, 0x01, 0x10,
-            0x80, 0xE0, 0x03, 0x00, 0x80, 0xE2, 0x01, 0x20, 0xD0, 0xE4, 0x02, 0x30, 0x83, 0xE0,
-            0x01, 0x00, 0x50, 0xE1, 0xFF, 0x30, 0x03, 0xE2, 0xFA, 0xFF, 0xFF, 0x1A, 0x00, 0x00,
-            0x63, 0xE2, 0xFF, 0x00, 0x00, 0xE2, 0x1E, 0xFF, 0x2F, 0xE1, 0x00, 0x00, 0xA0, 0xE3,
-            0x1E, 0xFF, 0x2F, 0xE1,
-        ];
+        let language_builder = LanguageBuilder::new("data")?;
 
-        let address = Address::from(0x00015E38u32);
-        let mut off = 0usize;
+        let project_builder = ProjectBuilder::<ProjectRawViewMmaped>::new(language_builder);
 
-        let mut lifter = language.lifter();
-        let irb = lifter.irb(1024);
+        // Create the project from the mapping object
+        let project = project_builder.build(&object)?;
 
-        struct ARMInsnLifter(ARMInstDecoder);
+        // Let's get some functions!
+        let mut icfg_builder = ICFGBuilder::new(&project)?;
 
-        impl ARMInsnLifter {
-            pub fn new() -> Self {
-                Self(ARMInstDecoder::armv7())
-            }
-        }
-
-        impl InsnLifter for ARMInsnLifter {
-            fn properties<'a, 'b>(
-                &mut self,
-                _lifter: &mut Lifter,
-                _irb: &'b IRBuilderArena,
-                address: Address,
-                bytes: &'a [u8],
-            ) -> Result<LiftedInsn<'a, 'b>, LifterError> {
-                let mut reader = yaxpeax_arch::U8Reader::new(bytes);
-                let insn = self.0.decode(&mut reader).map_err(LifterError::decode)?;
-                let size = insn.len().to_const() as u8;
-
-                Ok(LiftedInsn {
-                    address,
-                    bytes,
-                    properties: Cell::new(LiftedInsnProperties::default()),
-                    operations: RefCell::new(None),
-                    delay_slots: 0,
-                    length: size,
-                })
-            }
-        }
-
-        let mut plifter = ARMInsnLifter::new();
-
-        while off < memory.len() {
-            let lifted = plifter.properties(&mut lifter, &irb, address + off, &memory[off..])?;
-
-            println!("--- pcode @ {} ---", lifted.address());
-            for (i, op) in lifted.pcode(&mut lifter, &irb)?.iter().enumerate() {
-                println!("{i:02} {}", op.display(language.translator()));
-            }
-            println!();
-
-            off += lifted.len();
-        }
-
-        Ok(())
-    }
-
-    #[test]
-    #[ignore]
-    fn test_xtensa_props() -> anyhow::Result<()> {
-        env_logger::try_init().ok();
-
-        let lbuilder = LanguageBuilder::new("data")?;
-        let language = lbuilder.build("Xtensa:LE:32:default", "default")?;
-
-        let memory = &[
-            0x36, 0x41, 0x00, 0x25, 0xFE, 0xFF, 0x0C, 0x1B, 0xAD, 0x02, 0x81, 0x4C, 0xFA, 0xE0,
-            0x08, 0x00, 0x1D, 0xF0,
-        ];
-
-        let address = Address::from(0x40375C28u32);
-        let mut off = 0usize;
-
-        let mut lifter = language.lifter();
-        let irb = lifter.irb(1024);
-
-        let mut plifter = DefaultInsnLifter::new();
-
-        while off < memory.len() {
-            let lifted = plifter.properties(&mut lifter, &irb, address + off, &memory[off..])?;
-
-            println!("--- pcode @ {} ---", lifted.address());
-            for (i, op) in lifted.try_pcode().unwrap().iter().enumerate() {
-                println!("{i:02} {}", op.display(language.translator()));
-            }
-            println!();
-
-            off += lifted.len();
-        }
+        icfg_builder.explore();
 
         Ok(())
     }

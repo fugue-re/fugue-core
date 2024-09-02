@@ -15,6 +15,18 @@ impl SymbolScope {
         self.tree.insert(symbol);
     }
 
+    pub fn id(&self) -> usize {
+        self.id
+    }
+
+    pub fn parent(&self) -> usize {
+        self.parent
+    }
+
+    pub fn tree(&self) -> &Set<usize> {
+        &self.tree
+    }
+
     pub fn iter(&self) -> impl Iterator<Item=&usize> {
         self.tree.iter()
     }

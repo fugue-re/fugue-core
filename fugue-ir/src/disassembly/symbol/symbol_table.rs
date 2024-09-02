@@ -31,6 +31,14 @@ impl SymbolTable {
         unsafe { self.symbols.get_unchecked(id) }
     }
 
+    pub fn scopes(&self) -> &[SymbolScope] {
+        &self.scopes
+    }
+
+    pub fn symbols(&self) -> &[Symbol] {
+        &self.symbols
+    }
+
     pub (crate) fn resolve<'b, 'c, 'z>(&'b self, id: usize, walker: &mut ParserWalker<'b, 'c, 'z>) -> Result<&'b Constructor, Error> {
         if let Symbol::Subtable { decision_tree, constructors, .. } = unsafe { self.symbols.get_unchecked(id) } {
             decision_tree.resolve(walker, constructors)

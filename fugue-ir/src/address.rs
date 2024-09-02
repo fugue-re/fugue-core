@@ -23,6 +23,8 @@ pub struct AddressValue {
 pub struct Address(u64);
 
 impl Address {
+    pub const MAX: Address = Address(u64::MAX);
+
     pub fn new(space: &AddressSpace, offset: u64) -> Self {
         Self(space.wrap_offset(offset))
     }
