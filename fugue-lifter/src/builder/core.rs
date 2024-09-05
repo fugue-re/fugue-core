@@ -17,7 +17,7 @@ use crate::LifterGeneratorError;
 
 pub struct LifterGenerator<'a> {
     symbols: Vec<TokenStream>,
-    ctor_names: Vec<Ident>,
+    // ctor_names: Vec<Ident>,
     lifter: TokenStream,
     translator: &'a Translator,
 }
@@ -26,7 +26,7 @@ impl<'a> LifterGenerator<'a> {
     pub fn new(translator: &'a Translator) -> Result<Self, LifterGeneratorError> {
         let mut slf = Self {
             symbols: Vec::new(),
-            ctor_names: Vec::new(),
+            // ctor_names: Vec::new(),
             lifter: Default::default(),
             translator,
         };
@@ -53,7 +53,7 @@ impl<'a> LifterGenerator<'a> {
 
     pub fn build_symbols(&mut self) -> Result<(), LifterGeneratorError> {
         let symtab = self.translator.symbol_table();
-        let mut variants = Vec::new();
+        // let mut variants = Vec::new();
 
         for symbol in symtab.symbols().iter() {
             match symbol {
@@ -77,14 +77,14 @@ impl<'a> LifterGenerator<'a> {
                         name,
                         constructors,
                         decision_tree,
-                        &mut variants,
+                        // &mut variants,
                     )?);
                 }
                 _ => (),
             }
         }
 
-        self.ctor_names = variants;
+        // self.ctor_names = variants;
 
         Ok(())
     }
@@ -136,7 +136,7 @@ impl<'a> LifterGenerator<'a> {
 
                 if !*big_endian {
                     parts.push(quote! {
-                        res = crate::utils::byte_swap(res, #size);
+                        res = fugue_lifter::utils::byte_swap(res, #size);
                     });
                 }
 
@@ -147,9 +147,9 @@ impl<'a> LifterGenerator<'a> {
                 let range = bit_end - bit_start;
 
                 parts.push(if *sign_bit {
-                    quote! { crate::utils::sign_extend(res, #range) }
+                    quote! { fugue_lifter::utils::sign_extend(res, #range) }
                 } else {
-                    quote! { crate::utils::zero_extend(res, #range) }
+                    quote! { fugue_lifter::utils::zero_extend(res, #range) }
                 });
 
                 quote! {
@@ -199,9 +199,9 @@ impl<'a> LifterGenerator<'a> {
                 let range = bit_end - bit_start;
 
                 parts.push(if *sign_bit {
-                    quote! { crate::utils::sign_extend(res, #range) }
+                    quote! { fugue_lifter::utils::sign_extend(res, #range) }
                 } else {
-                    quote! { crate::utils::zero_extend(res, #range) }
+                    quote! { fugue_lifter::utils::zero_extend(res, #range) }
                 });
 
                 quote! {
@@ -277,24 +277,24 @@ impl<'a> LifterGenerator<'a> {
 
                 quote! {
                     {
-                        let operand_value = |input: &mut ParserInput| -> Option<i64> {
+                        let operand_value = |input: &mut fugue_lifter::utils::ParserInput| -> Option<i64> {
                             let mut cur_depth = input.depth;
                             let mut point = &input.context.constructors[input.point as usize];
 
-                            while point.constructor.map(|ctor| ctor.id()) != Some(#ctor_id) {
+                            while point.constructor.map(|ctor| ctor.id) != Some(#ctor_id) {
                                 if cur_depth <= 0 {
                                     // preserve old and init new state
                                     let old_point = input.point;
                                     let old_depth = std::mem::take(&mut input.depth);
-                                    let old_breadcrumb = std::mem::replace(&mut input.breadcrumb, [0u8; BREADCRUMBS]);
+                                    let old_breadcrumb = std::mem::replace(&mut input.breadcrumb, [0u8; fugue_lifter::utils::input::BREADCRUMBS]);
 
                                     input.point = input.context.alloc;
                                     {
                                         let state = &mut input.context.constructors[input.point as usize];
 
                                         state.constructor = Some(#ctor_vname);
-                                        state.parent = INVALID_HANDLE;
-                                        state.operands = INVALID_HANDLE;
+                                        state.parent = fugue_lifter::utils::input::INVALID_HANDLE;
+                                        state.operands = fugue_lifter::utils::input::INVALID_HANDLE;
                                         state.offset = 0;
                                         state.length = 0;
                                     }
@@ -307,8 +307,8 @@ impl<'a> LifterGenerator<'a> {
                                         let state = &mut input.context.constructors[input.point as usize];
 
                                         state.constructor = None;
-                                        state.parent = INVALID_HANDLE;
-                                        state.operands = INVALID_HANDLE;
+                                        state.parent = fugue_lifter::utils::input::INVALID_HANDLE;
+                                        state.operands = fugue_lifter::utils::input::INVALID_HANDLE;
                                         state.offset = 0;
                                         state.length = 0;
                                     }
@@ -331,15 +331,15 @@ impl<'a> LifterGenerator<'a> {
                             // preserve old and init new state
                             let old_point = input.point;
                             let old_depth = std::mem::take(&mut input.depth);
-                            let old_breadcrumb = std::mem::replace(&mut input.breadcrumb, [0u8; BREADCRUMBS]);
+                            let old_breadcrumb = std::mem::replace(&mut input.breadcrumb, [0u8; fugue_lifter::utils::input::BREADCRUMBS]);
 
                             input.point = input.context.alloc;
                             {
                                 let state = &mut input.context.constructors[input.point as usize];
 
                                 state.constructor = Some(#ctor_vname);
-                                state.parent = INVALID_HANDLE;
-                                state.operands = INVALID_HANDLE;
+                                state.parent = fugue_lifter::utils::input::INVALID_HANDLE;
+                                state.operands = fugue_lifter::utils::input::INVALID_HANDLE;
                                 state.offset = offset;
                                 state.length = length;
                             }
@@ -352,8 +352,8 @@ impl<'a> LifterGenerator<'a> {
                                 let state = &mut input.context.constructors[input.point as usize];
 
                                 state.constructor = None;
-                                state.parent = INVALID_HANDLE;
-                                state.operands = INVALID_HANDLE;
+                                state.parent = fugue_lifter::utils::input::INVALID_HANDLE;
+                                state.operands = fugue_lifter::utils::input::INVALID_HANDLE;
                                 state.offset = 0;
                                 state.length = 0;
                             }
@@ -424,6 +424,167 @@ impl<'a> LifterGenerator<'a> {
         }
     }
 
+    pub fn generate_constructor_operand_resolvers(
+        &self,
+        id: usize,
+        scope: usize,
+        cid: usize,
+        ctor: &Constructor,
+    ) -> (Vec<TokenStream>, Vec<TokenStream>) {
+        let mut helpers = Vec::new();
+        let mut operands = Vec::new();
+
+        for oid in 0..ctor.operand_count() {
+            let index = ctor.operand(oid);
+            let operand = self.translator.symbol_table().unchecked_symbol(index);
+
+            let offset_base = operand
+                .offset_base()
+                .map(|v| quote! { Some(#v) })
+                .unwrap_or(quote! { None });
+            let offset_rela = operand.relative_offset();
+            let minimum_length = if let Symbol::Operand { min_length, .. } = operand {
+                min_length
+            } else {
+                unreachable!()
+            };
+
+            let resolver = if let Some(tsym) =
+                operand.defining_symbol(self.translator.symbol_table())
+            {
+                match tsym {
+                    Symbol::Subtable { id, scope, .. } => {
+                        // The subtable to perform resolution
+                        let stname = format_ident!("SubTable{id}In{scope}");
+                        quote! { fugue_lifter::utils::OperandResolver::Constructor(<#stname>::resolve) }
+                    }
+                    Symbol::ValueMap {
+                        table_is_filled,
+                        pattern_value,
+                        value_table,
+                        ..
+                    } => {
+                        if !*table_is_filled {
+                            let bad_indices = value_table
+                                .iter()
+                                .enumerate()
+                                .filter_map(|(i, v)| if *v == 0xbadbeef { Some(i) } else { None });
+
+                            let pattern_resolver = self.generate_pattern_resolver(pattern_value);
+                            let limit = value_table.len();
+
+                            let ctor_opnd_resolver =
+                                format_ident!("operand_resolver_{id}_{scope}_{cid}_{oid}");
+
+                            helpers.push(quote! {
+                                #[inline]
+                                fn #ctor_opnd_resolver(input: &mut fugue_lifter::utils::ParserInput) -> Option<()> {
+                                    let index = #pattern_resolver as usize;
+                                    if index >= #limit || [#(#bad_indices),*].contains(&index) {
+                                        None
+                                    } else {
+                                        Some(())
+                                    }
+                                }
+                            });
+
+                            quote! { fugue_lifter::utils::OperandResolver::Filter(#ctor_opnd_resolver) }
+                        } else {
+                            quote! { fugue_lifter::utils::OperandResolver::None }
+                        }
+                    }
+                    Symbol::VarnodeList {
+                        table_is_filled,
+                        pattern_value,
+                        varnode_table,
+                        ..
+                    } => {
+                        if !*table_is_filled {
+                            let bad_indices = varnode_table
+                                .iter()
+                                .enumerate()
+                                .filter_map(|(i, v)| if v.is_none() { Some(i) } else { None });
+
+                            let pattern_resolver = self.generate_pattern_resolver(pattern_value);
+                            let limit = varnode_table.len();
+
+                            let ctor_opnd_resolver =
+                                format_ident!("operand_resolver_{id}_{scope}_{cid}_{oid}");
+
+                            helpers.push(quote! {
+                                #[inline]
+                                fn #ctor_opnd_resolver(input: &mut fugue_lifter::utils::ParserInput) -> Option<()> {
+                                    let index = #pattern_resolver as usize;
+                                    if index >= #limit || [#(#bad_indices),*].contains(&index) {
+                                        None
+                                    } else {
+                                        Some(())
+                                    }
+                                }
+                            });
+
+                            quote! { fugue_lifter::utils::OperandResolver::Filter(#ctor_opnd_resolver) }
+                        } else {
+                            quote! { fugue_lifter::utils::OperandResolver::None }
+                        }
+                    }
+                    Symbol::Name {
+                        table_is_filled,
+                        pattern_value,
+                        name_table,
+                        ..
+                    } => {
+                        if !*table_is_filled {
+                            let bad_indices = name_table.iter().enumerate().filter_map(|(i, v)| {
+                                if v == "\t" {
+                                    Some(i)
+                                } else {
+                                    None
+                                }
+                            });
+
+                            let pattern_resolver = self.generate_pattern_resolver(pattern_value);
+                            let limit = name_table.len();
+
+                            let ctor_opnd_resolver =
+                                format_ident!("operand_resolver_{id}_{scope}_{cid}_{oid}");
+
+                            helpers.push(quote! {
+                                #[inline]
+                                fn #ctor_opnd_resolver(input: &mut fugue_lifter::utils::ParserInput) -> Option<()> {
+                                    let index = #pattern_resolver as usize;
+                                    if index >= #limit || [#(#bad_indices),*].contains(&index) {
+                                        None
+                                    } else {
+                                        Some(())
+                                    }
+                                }
+                            });
+
+                            quote! { fugue_lifter::utils::OperandResolver::Filter(#ctor_opnd_resolver) }
+                        } else {
+                            quote! { fugue_lifter::utils::OperandResolver::None }
+                        }
+                    }
+                    _ => quote! { fugue_lifter::utils::OperandResolver::None },
+                }
+            } else {
+                quote! { fugue_lifter::utils::OperandResolver::None }
+            };
+
+            operands.push(quote! {
+                fugue_lifter::utils::Operand {
+                    resolver: #resolver,
+                    offset_base: #offset_base,
+                    offset_rela: #offset_rela,
+                    minimum_length: #minimum_length,
+                }
+            });
+        }
+
+        (helpers, operands)
+    }
+
     /*
     pub fn generate_constructor_operand_resolver(
         &self,
@@ -445,7 +606,7 @@ impl<'a> LifterGenerator<'a> {
         //     let ctor = input.constructor();
         //     let opnd = input.operand();
         //
-        //     if opnd == INVALID_HANDLE {
+        //     if opnd == fugue_lifter::utils::input::INVALID_HANDLE {
         //         ctor.end_operand_resolution(input)?;
         //         continue;
         //     }
@@ -770,7 +931,7 @@ impl<'a> LifterGenerator<'a> {
         //     let ctor = input.constructor();
         //     let opnd = input.operand();
         //
-        //     if opnd == INVALID_HANDLE {
+        //     if opnd == fugue_lifter::utils::input::INVALID_HANDLE {
         //         ctor.end_operand_resolution(input)?;
         //         continue;
         //     }
@@ -828,6 +989,7 @@ impl<'a> LifterGenerator<'a> {
     }
     */
 
+    /*
     pub fn generate_constructor_operand_resolver(
         &self,
         id: &Ident,
@@ -1081,7 +1243,7 @@ impl<'a> LifterGenerator<'a> {
         //     let ctor = input.constructor();
         //     let opnd = input.operand();
         //
-        //     if opnd == INVALID_HANDLE {
+        //     if opnd == fugue_lifter::utils::input::INVALID_HANDLE {
         //         ctor.end_operand_resolution(input)?;
         //         continue;
         //     }
@@ -1138,32 +1300,53 @@ impl<'a> LifterGenerator<'a> {
             Some(())
         }
     }
+    */
 
-    pub fn generate_constructor_context_actions(&self, ctor: &Constructor) -> TokenStream {
-        let parts = ctor.context().iter().filter_map(|context| {
-            let Context::Operator {
-                num,
-                shift,
-                mask,
-                pattern_value,
-            } = context
-            else {
-                return None;
-            };
+    pub fn generate_constructor_context_actions(
+        &self,
+        id: usize,
+        scope: usize,
+        cid: usize,
+        ctor: &Constructor,
+    ) -> (TokenStream, TokenStream) {
+        let parts = ctor
+            .context()
+            .iter()
+            .filter_map(|context| {
+                let Context::Operator {
+                    num,
+                    shift,
+                    mask,
+                    pattern_value,
+                } = context
+                else {
+                    return None;
+                };
 
-            let num = *num;
-            let shift = *shift;
-            let mask = *mask;
-            let value = self.generate_pattern_resolver(pattern_value);
+                let num = *num;
+                let shift = *shift;
+                let mask = *mask;
+                let value = self.generate_pattern_resolver(pattern_value);
 
-            Some(quote! {
-                let value = (#value as u32) << #shift;
-                input.set_context_word(#num, value, #mask);
+                Some(quote! {
+                    let value = (#value as u32) << #shift;
+                    input.set_context_word(#num, value, #mask);
+                })
             })
-        });
+            .collect::<Vec<_>>();
 
-        quote! {
-            #(#parts)*
+        if parts.is_empty() {
+            (TokenStream::new(), quote! { None })
+        } else {
+            let ctor_apply_context = format_ident!("apply_context_{id}_{scope}_{cid}");
+            let pre_actions = quote! {
+                #[inline]
+                fn #ctor_apply_context(input: &mut fugue_lifter::utils::ParserInput) -> Option<()> {
+                    #(#parts)*
+                    Some(())
+                }
+            };
+            (pre_actions, quote! { Some(#ctor_apply_context) })
         }
     }
 
@@ -1172,22 +1355,29 @@ impl<'a> LifterGenerator<'a> {
         id: usize,
         scope: usize,
         ctors: &'a [Constructor],
-        variants: &'b mut Vec<Ident>,
+        // variants: &'b mut Vec<Ident>,
     ) -> impl Iterator<Item = TokenStream> + 'b {
         ctors.iter().enumerate().map(move |(cid, ctor)| {
-            let ctor_tname = format_ident!("SubTable{id}In{scope}Constructor{cid}");
+            // let ctor_tname = format_ident!("SubTable{id}In{scope}Constructor{cid}");
             let ctor_vname = Self::ctor_vname(id, scope, cid);
-            let ctor_vname_id = format_ident!("{ctor_vname}_ID");
-            let ctor_vname_impl = format_ident!("{ctor_vname}_IMPL");
+
+            // let ctor_vname_id = format_ident!("{ctor_vname}_ID");
+            // let ctor_vname_impl = format_ident!("{ctor_vname}_IMPL");
+            // let ctor_vname_pimpl = format_ident!("{ctor_vname}_CTOR");
 
             let (ctor_id1, ctor_id2) = ctor.id();
             let ctor_id = (ctor_id1 as u32 & 0xffff) << 16 | (ctor_id2 as u32 & 0xffff);
 
-            let pieces = ctor.print_pieces();
-            let resolver_body = self.generate_constructor_operand_resolver(&ctor_vname, ctor);
-            let apply_context = self.generate_constructor_context_actions(ctor);
+            let delay_slots = ctor.template().map(|tpl| tpl.delay_slot()).unwrap_or_default();
+            let minimum_length = ctor.minimum_length();
 
-            variants.push(ctor_tname.clone());
+            let pieces = ctor.print_pieces();
+            let (operand_helpers, operands) = self.generate_constructor_operand_resolvers(id, scope, cid, ctor);
+
+            let (context_helpers, apply_context) = self.generate_constructor_context_actions(id, scope, cid, ctor);
+
+            // let resolver_body = self.generate_constructor_operand_resolver(&ctor_vname, ctor);
+            // variants.push(ctor_tname.clone());
 
             // procedure:
             //
@@ -1221,14 +1411,26 @@ impl<'a> LifterGenerator<'a> {
             // - process operand3
 
             quote! {
-                #[derive(Debug, Clone, Copy)]
-                pub struct #ctor_tname;
+                // #[derive(Debug, Clone, Copy)]
+                // pub struct #ctor_tname;
+                // pub const #ctor_vname_id: u32 = #ctor_id;
+                // pub const #ctor_vname_impl: #ctor_tname = #ctor_tname;
+                // pub const #ctor_vname: ConstructorT = ConstructorT::#ctor_tname(#ctor_vname_impl);
 
-                pub const #ctor_vname_id: u32 = #ctor_id;
-                pub const #ctor_vname_impl: #ctor_tname = #ctor_tname;
+                pub const #ctor_vname: &'static fugue_lifter::utils::Constructor = &fugue_lifter::utils::Constructor {
+                    id: #ctor_id,
+                    context_pre_actions: #apply_context,
+                    operands: &[#(#operands),*],
+                    print_pieces: &[#(#pieces),*],
+                    delay_slots: #delay_slots,
+                    minimum_length: #minimum_length,
+                };
 
-                pub const #ctor_vname: ConstructorT = ConstructorT::#ctor_tname(#ctor_vname_impl);
+                #context_helpers
 
+                #(#operand_helpers)*
+
+                /*
                 impl #ctor_tname {
                     #[inline]
                     fn id(&self) -> u32 {
@@ -1244,20 +1446,21 @@ impl<'a> LifterGenerator<'a> {
                     #[inline]
                     fn print_pieces(&self) -> &'static [&'static str] {
                         &[#(#pieces),*]
-                    }
 
                     #[inline]
                     fn resolve_operands(&self, input: &mut ParserInput) -> Option<()> {
                         #resolver_body
                     }
 
-                    // #resolver_body
+                    #resolver_body
+
 
                     #[inline]
                     fn resolve_operand_handles(&self, input: &mut ParserInput) -> Option<()> {
                         todo!()
                     }
                 }
+                */
             }
         })
     }
@@ -1420,13 +1623,13 @@ impl<'a> LifterGenerator<'a> {
 
                     trees.push(quote! {
                         #[inline]
-                        fn #tree_fn(input: &mut ParserInput) -> Option<ConstructorT> {
+                        fn #tree_fn(input: &mut fugue_lifter::utils::ParserInput) -> Option<&'static fugue_lifter::utils::Constructor> {
                             #body
                         }
                     });
 
                     quote! {
-                        (#tree_fn as fn(&mut ParserInput) -> Option<ConstructorT>)
+                        (#tree_fn as fn(&mut fugue_lifter::utils::ParserInput) -> Option<&'static fugue_lifter::utils::Constructor>)
                     }
                     /*
                     quote! {
@@ -1453,7 +1656,7 @@ impl<'a> LifterGenerator<'a> {
             );
 
             trees.push(quote! {
-                const #table: [fn(&mut ParserInput) -> Option<ConstructorT>; #nodes] = [
+                const #table: [fn(&mut fugue_lifter::utils::ParserInput) -> Option<&'static fugue_lifter::utils::Constructor>; #nodes] = [
                     #(#parts),*
                 ];
             });
@@ -1485,7 +1688,7 @@ impl<'a> LifterGenerator<'a> {
         let body = self.generate_dtree_aux(id, scope, dtree, &tree_fn, trees);
         quote! {
             #[inline]
-            pub fn resolve(&self, input: &mut ParserInput) -> Option<ConstructorT> {
+            pub fn resolve(input: &mut fugue_lifter::utils::ParserInput) -> Option<&'static fugue_lifter::utils::Constructor> {
                 #body
             }
         }
@@ -1498,12 +1701,12 @@ impl<'a> LifterGenerator<'a> {
         name: &str,
         ctors: &[Constructor],
         dtree: &DecisionNode,
-        variants: &mut Vec<Ident>,
+        // variants: &mut Vec<Ident>,
     ) -> Result<TokenStream, LifterGeneratorError> {
         let tname = format_ident!("SubTable{id}In{scope}");
         let mut trees = Vec::new();
 
-        let ctor_tokens = self.generate_constructors(id, scope, ctors, variants);
+        let ctor_tokens = self.generate_constructors(id, scope, ctors); // , variants);
         let dtree_tokens = self.generate_dtree(id, scope, dtree, &mut trees);
 
         let tokens = quote! {
@@ -1530,14 +1733,12 @@ impl<'a> LifterGenerator<'a> {
 
 impl<'a> ToTokens for LifterGenerator<'a> {
     fn to_tokens(&self, tokens: &mut TokenStream) {
+        /*
         let cname = &self.ctor_names;
 
         // This is the main impl for all constructors
         let ctor = quote! {
-            #![allow(unused_parens)]
-            #![allow(unused_variables)]
-
-            use fugue_lifter::utils::input::*;
+            // use fugue_lifter::utils::input::*;
 
             #[derive(Debug, Clone, Copy)]
             pub enum ConstructorT {
@@ -1573,7 +1774,6 @@ impl<'a> ToTokens for LifterGenerator<'a> {
                     }
                 }
 
-                /*
                 #[inline]
                 pub fn resolve_operand_constructor(&self, input: &mut ParserInput) -> Option<()> {
                     match self {
@@ -1587,7 +1787,6 @@ impl<'a> ToTokens for LifterGenerator<'a> {
                         #(Self::#cname(ref v) => v.resolve_operand_chunk(input, operand)),*
                     }
                 }
-                */
 
                 #[inline]
                 pub fn resolve_operand_handles(&self, input: &mut ParserInput) -> Option<()> {
@@ -1599,6 +1798,7 @@ impl<'a> ToTokens for LifterGenerator<'a> {
         };
 
         tokens.append_all(ctor);
+        */
         tokens.append_all(&self.symbols);
     }
 }

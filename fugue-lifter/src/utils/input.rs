@@ -2,6 +2,7 @@ use std::mem::size_of;
 
 use arrayvec::ArrayVec;
 
+use crate::utils::constructor::Constructor;
 use crate::utils::context::ContextDatabase;
 
 const MAX_CTOR_STATES: usize = 128;
@@ -12,15 +13,15 @@ pub const INVALID_HANDLE: u8 = 0xff;
 pub const BREADCRUMBS: usize = MAX_PARSER_DEPTH + 1;
 
 #[derive(Copy, Clone)]
-pub(crate) struct ConstructorNode<T> where T: Copy + Clone {
-    pub(crate) constructor: Option<T>,
-    pub(crate) operands: u8, // offset into ctors
-    pub(crate) parent: u8,
-    pub(crate) offset: u8,
-    pub(crate) length: u8,
+pub struct ConstructorNode {
+    pub constructor: Option<&'static Constructor>,
+    pub operands: u8, // offset into ctors
+    pub parent: u8,
+    pub offset: u8,
+    pub length: u8,
 }
 
-impl<T> Default for ConstructorNode<T> where T: Copy + Clone {
+impl Default for ConstructorNode {
     fn default() -> Self {
         Self {
             constructor: None,
@@ -32,25 +33,25 @@ impl<T> Default for ConstructorNode<T> where T: Copy + Clone {
     }
 }
 
-pub(crate) struct ParserContext<T> where T: Copy + Clone {
-    pub(crate) buffer: [u8; 16],
-    pub(crate) context: ArrayVec<u32, MAX_CTXT_CHUNKS>,
-    pub(crate) constructors: [ConstructorNode<T>; MAX_CTOR_STATES],
-    pub(crate) address: u64,
-    pub(crate) next_address: Option<u64>,
-    pub(crate) offset: u8,
-    pub(crate) delay_slot: u8,
-    pub(crate) alloc: u8,
+pub struct ParserContext {
+    pub buffer: [u8; 16],
+    pub context: ArrayVec<u32, MAX_CTXT_CHUNKS>,
+    pub constructors: [ConstructorNode; MAX_CTOR_STATES],
+    pub address: u64,
+    pub next_address: Option<u64>,
+    pub offset: u8,
+    pub delay_slot: u8,
+    pub alloc: u8,
 }
 
-pub struct ParserInput<T> where T: Copy + Clone {
-    pub(crate) context: ParserContext<T>,
-    pub(crate) breadcrumb: [u8; BREADCRUMBS],
-    pub(crate) depth: i8,
-    pub(crate) point: u8,
+pub struct ParserInput {
+    pub context: ParserContext,
+    pub breadcrumb: [u8; BREADCRUMBS],
+    pub depth: i8,
+    pub point: u8,
 }
 
-impl<T> ParserInput<T> where T: Copy + Clone {
+impl ParserInput {
     pub fn new(address: u64, bytes: &[u8]) -> Self {
         let mut buffer = [0u8; 16];
 
@@ -101,7 +102,7 @@ impl<T> ParserInput<T> where T: Copy + Clone {
     }
 
     #[inline]
-    pub fn constructor(&self) -> T {
+    pub fn constructor(&self) -> &'static Constructor {
         unsafe {
             self.context
                 .constructors
@@ -287,7 +288,7 @@ impl<T> ParserInput<T> where T: Copy + Clone {
     }
 
     #[inline(always)]
-    pub fn set_constructor(&mut self, ctor: T) {
+    pub fn set_constructor(&mut self, ctor: &'static Constructor) {
         unsafe {
             self.context
                 .constructors

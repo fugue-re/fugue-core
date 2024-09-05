@@ -1,7 +1,11 @@
+pub mod constructor;
 pub mod context;
 pub mod input;
 pub mod partmap;
 pub mod varnode;
+
+pub use constructor::{Constructor, Operand, OperandResolver};
+pub use input::ParserInput;
 
 const UMASKS: [u64; 9] = [
     0,
