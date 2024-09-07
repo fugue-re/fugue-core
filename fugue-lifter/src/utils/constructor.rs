@@ -2,8 +2,7 @@ use std::fmt::Debug;
 
 use crate::utils::input::ParserInput;
 
-pub type ContextPreActionSet = fn(&mut ParserInput) -> Option<()>;
-pub type ContextPostActionSet = fn(&mut ParserInput) -> Option<()>;
+pub type ContextActionSet = fn(&mut ParserInput) -> Option<()>;
 
 pub enum OperandResolver {
     None,
@@ -20,7 +19,7 @@ pub struct Operand {
 
 pub struct Constructor {
     pub id: u32,
-    pub context_pre_actions: Option<ContextPreActionSet>,
+    pub context_actions: Option<ContextActionSet>,
     pub operands: &'static [Operand],
     pub print_pieces: &'static [&'static str],
     pub delay_slots: usize,
@@ -47,8 +46,8 @@ impl Constructor {
     #[inline]
     pub fn resolve_operands(&'static self, input: &mut ParserInput) -> Option<()> {
         input.set_constructor(self);
-        if let Some(pre_actions) = self.context_pre_actions {
-            (pre_actions)(input)?;
+        if let Some(actions) = self.context_actions {
+            (actions)(input)?;
         }
 
         if self.operands.is_empty() {
@@ -87,8 +86,8 @@ impl Constructor {
                         let ctor = (resolver)(input)?;
 
                         input.set_constructor(ctor);
-                        if let Some(pre_actions) = ctor.context_pre_actions {
-                            (pre_actions)(input)?;
+                        if let Some(actions) = ctor.context_actions {
+                            (actions)(input)?;
                         }
 
                         if !ctor.operands.is_empty() {

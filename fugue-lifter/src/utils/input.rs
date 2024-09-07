@@ -6,15 +6,22 @@ use crate::utils::constructor::Constructor;
 use crate::utils::context::ContextDatabase;
 
 const MAX_CTOR_STATES: usize = 128;
-const MAX_CTXT_CHUNKS: usize = 4;
+const MAX_CTXT_CHUNKS: usize = 2;
 const MAX_PARSER_DEPTH: usize = 64;
 
 pub const INVALID_HANDLE: u8 = 0xff;
 pub const BREADCRUMBS: usize = MAX_PARSER_DEPTH + 1;
 
 #[derive(Copy, Clone)]
+pub struct FixedHandle {
+    pub offset_space: u8,
+    pub offset_offset: u64,
+}
+
+#[derive(Copy, Clone)]
 pub struct ConstructorNode {
     pub constructor: Option<&'static Constructor>,
+    pub handle: Option<FixedHandle>,
     pub operands: u8, // offset into ctors
     pub parent: u8,
     pub offset: u8,
@@ -25,6 +32,7 @@ impl Default for ConstructorNode {
     fn default() -> Self {
         Self {
             constructor: None,
+            handle: None,
             operands: INVALID_HANDLE,
             parent: INVALID_HANDLE,
             offset: 0,
@@ -33,10 +41,17 @@ impl Default for ConstructorNode {
     }
 }
 
+pub struct ContextCommit {
+    pub applier: fn(&ParserInput, &mut ContextDatabase, &ContextCommit),
+    pub point: u8,
+    pub values: ArrayVec<u32, MAX_CTXT_CHUNKS>,
+}
+
 pub struct ParserContext {
     pub buffer: [u8; 16],
     pub context: ArrayVec<u32, MAX_CTXT_CHUNKS>,
     pub constructors: [ConstructorNode; MAX_CTOR_STATES],
+    pub commits: ArrayVec<ContextCommit, MAX_CTOR_STATES>,
     pub address: u64,
     pub next_address: Option<u64>,
     pub offset: u8,
@@ -62,6 +77,7 @@ impl ParserInput {
             buffer,
             context: Default::default(),
             constructors: [ConstructorNode::default(); MAX_CTOR_STATES],
+            commits: Default::default(),
             address,
             next_address: None,
             offset: 0,
@@ -383,6 +399,18 @@ impl ParserInput {
                 .get_unchecked(self.point as usize)
                 .parent;
             self.depth -= 1; // here's where it can go to -1 (when we pop the last ctor)
+        }
+    }
+
+    #[inline(always)]
+    pub fn register_context_commit(&mut self, commit: ContextCommit) {
+        self.context.commits.push(commit);
+    }
+
+    #[inline]
+    pub fn apply_commits(&self, db: &mut ContextDatabase) {
+        for commit in self.context.commits.iter() {
+            (commit.applier)(self, db, commit);
         }
     }
 

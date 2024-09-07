@@ -5,7 +5,8 @@ pub mod partmap;
 pub mod varnode;
 
 pub use constructor::{Constructor, Operand, OperandResolver};
-pub use input::ParserInput;
+pub use context::ContextDatabase;
+pub use input::{ContextCommit, FixedHandle, ParserInput};
 
 const UMASKS: [u64; 9] = [
     0,
@@ -65,4 +66,15 @@ pub fn byte_swap(value: i64, size: usize) -> i64 {
         size -= 1;
     }
     res
+}
+
+#[inline(always)]
+pub fn wrap_offset(highest: u64, offset: u64) -> u64 {
+    if offset <= highest {
+        offset
+    } else {
+        let m = (highest + 1) as i64;
+        let r = (offset as i64) % m;
+        (if r < 0 { r + m } else { r }) as u64
+    }
 }

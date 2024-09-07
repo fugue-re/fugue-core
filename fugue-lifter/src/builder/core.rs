@@ -1309,45 +1309,169 @@ impl<'a> LifterGenerator<'a> {
         cid: usize,
         ctor: &Constructor,
     ) -> (TokenStream, TokenStream) {
-        let parts = ctor
-            .context()
-            .iter()
-            .filter_map(|context| {
-                let Context::Operator {
+        let mut pre_actions = Vec::new();
+        let mut post_actions = Vec::new();
+        let mut post_context_extractors = Vec::new();
+
+        for action in ctor.context().iter() {
+            match action {
+                Context::Operator {
                     num,
                     shift,
                     mask,
                     pattern_value,
-                } = context
-                else {
-                    return None;
-                };
+                } => {
+                    let num = *num;
+                    let shift = *shift;
+                    let mask = *mask;
+                    let value = self.generate_pattern_resolver(pattern_value);
 
-                let num = *num;
-                let shift = *shift;
-                let mask = *mask;
-                let value = self.generate_pattern_resolver(pattern_value);
+                    pre_actions.push(quote! {
+                        let value = (#value as u32) << #shift;
+                        input.set_context_word(#num, value, #mask);
+                    });
+                }
+                Context::Commit {
+                    symbol_id,
+                    num,
+                    mask,
+                    flow,
+                } => {
+                    let index = post_actions.len();
+                    let symbol = self.translator.symbol_table().unchecked_symbol(*symbol_id);
+                    let handle = if let Symbol::Operand { handle_index, .. } = &symbol {
+                        let opid = *handle_index as u8;
+                        quote! {
+                            let id = input.context.constructors[point as usize].operands + #opid;
+                            input.context.constructors[id as usize]
+                                .handle
+                                .as_ref()
+                                .map(|handle| (handle.offset_space, handle.offset_offset))
+                                .unwrap_or_default()
+                        }
+                    } else {
+                        quote! { (0u8, 0u64) }
+                    };
 
-                Some(quote! {
-                    let value = (#value as u32) << #shift;
-                    input.set_context_word(#num, value, #mask);
-                })
-            })
-            .collect::<Vec<_>>();
+                    let space = self.translator.manager().default_space_ref();
+                    let word_size = space.word_size() as u64;
+                    let space_index = space.id().index() as u8;
 
-        if parts.is_empty() {
-            (TokenStream::new(), quote! { None })
-        } else {
-            let ctor_apply_context = format_ident!("apply_context_{id}_{scope}_{cid}");
-            let pre_actions = quote! {
+                    let space_fix = quote! {
+                        let (mut space, mut offset) = { #handle };
+                        if space == 0 {
+                            space = #space_index;
+                            offset = offset * #word_size;
+                        }
+                    };
+
+                    let number = *num;
+                    let mask = *mask;
+
+                    let flow = if *flow {
+                        quote! {
+                            context
+                                .set_context_change_point(
+                                    input.context.address,
+                                    offset,
+                                    #number,
+                                    #mask,
+                                    commit.values[#index],
+                                );
+                        }
+                    } else {
+                        // we wrap the address with respect to the space
+                        let highest = space.highest_offset();
+                        quote! {
+                            let noffset = fugue_lifter::utils::wrap_offset(#highest, offset.wrapping_add(1u64));
+                            if noffset < offset {
+                                context
+                                    .set_context_change_point(
+                                        input.context.address,
+                                        offset,
+                                        #number,
+                                        #mask,
+                                        commit.values[#index],
+                                    );
+                            } else {
+                                context
+                                    .set_context_region(
+                                        input.context.address,
+                                        Some(noffset),
+                                        #number,
+                                        #mask,
+                                        commit.values[#index],
+                                    );
+                            }
+                        }
+                    };
+
+                    post_context_extractors.push(quote! { (input.context.context[#num] & #mask) });
+                    post_actions.push(quote! {
+                        {
+                            #space_fix
+                            #flow
+                        }
+                    });
+                }
+            }
+        }
+
+        if post_actions.is_empty() && pre_actions.is_empty() {
+            return (TokenStream::new(), quote! { None });
+        }
+
+        let (post_field, post_fcn) = if !post_actions.is_empty() {
+            let ctor_post_apply_context = format_ident!("apply_post_context_{id}_{scope}_{cid}");
+            let post_fcn = quote! {
                 #[inline]
-                fn #ctor_apply_context(input: &mut fugue_lifter::utils::ParserInput) -> Option<()> {
-                    #(#parts)*
-                    Some(())
+                fn #ctor_post_apply_context(
+                    input: &fugue_lifter::utils::ParserInput,
+                    context: &mut fugue_lifter::utils::ContextDatabase,
+                    commit: &fugue_lifter::utils::ContextCommit,
+                ) {
+                    let point = commit.point;
+
+                    #(#post_actions);*
                 }
             };
-            (pre_actions, quote! { Some(#ctor_apply_context) })
-        }
+            (Some(ctor_post_apply_context), post_fcn)
+        } else {
+            (None, TokenStream::new())
+        };
+
+        let ctor_pre_apply_context = format_ident!("apply_pre_context_{id}_{scope}_{cid}");
+
+        let post_register = post_field.as_ref().map(|fcn| {
+            quote! {
+                let commit = fugue_lifter::utils::ContextCommit {
+                    applier: #fcn,
+                    point: input.point,
+                    values: [
+                        #(#post_context_extractors),*
+                    ].into_iter().collect(),
+                };
+                input.register_context_commit(commit);
+            }
+        });
+
+        let pre_fcn = quote! {
+            #[inline]
+            fn #ctor_pre_apply_context(input: &mut fugue_lifter::utils::ParserInput) -> Option<()> {
+                #(#pre_actions)*
+
+                #post_register
+
+                Some(())
+            }
+        };
+
+        let fcns = quote! {
+            #post_fcn
+            #pre_fcn
+        };
+
+        (fcns, quote! { Some(#ctor_pre_apply_context) })
     }
 
     pub fn generate_constructors<'b>(
@@ -1419,7 +1543,7 @@ impl<'a> LifterGenerator<'a> {
 
                 pub const #ctor_vname: &'static fugue_lifter::utils::Constructor = &fugue_lifter::utils::Constructor {
                     id: #ctor_id,
-                    context_pre_actions: #apply_context,
+                    context_actions: #apply_context,
                     operands: &[#(#operands),*],
                     print_pieces: &[#(#pieces),*],
                     delay_slots: #delay_slots,
