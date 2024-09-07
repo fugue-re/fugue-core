@@ -89,12 +89,143 @@ impl<'a> LifterGenerator<'a> {
         Ok(())
     }
 
+    pub fn generate_handle_resolver(&self, symbol: &Symbol) -> TokenStream {
+        match symbol {
+            Symbol::Epsilon { .. } => {
+                quote! {
+                    fugue_lifter::utils::FixedHandle {
+                        space: 0,
+                        ..Default::default()
+                    }
+                }
+            }
+            Symbol::Name { pattern_value, .. } | Symbol::Value { pattern_value, .. } => {
+                let expr = self.generate_pattern_resolver(pattern_value);
+                quote! {
+                    fugue_lifter::utils::FixedHandle {
+                        space: 0,
+                        offset_offset: #expr as u64,
+                        ..Default::default()
+                    }
+                }
+            }
+            Symbol::Varnode {
+                space,
+                offset,
+                size,
+                ..
+            } => {
+                let space = space.index() as u8;
+                let offset = *offset;
+                let size = *size as u8;
+
+                quote! {
+                    fugue_lifter::utils::FixedHandle {
+                        space: #space,
+                        size: #size,
+                        offset_offset: #offset,
+                        ..Default::default()
+                    }
+                }
+            }
+            Symbol::Operand { handle_index, .. } => {
+                let opid = *handle_index as u8;
+                quote! {
+                    {
+                        let opid = input.context.constructors[point as usize].operands + #opid;
+                        input.context.constructors[opid as usize]?
+                    }
+                }
+            }
+            Symbol::Start { .. } => {
+                let space = self.translator.manager().default_space_ref();
+                let space_id = space.id().index() as u8;
+                let size = space.address_size() as u8;
+                quote! {
+                    fugue_lifter::utils::FixedHandle {
+                        space: #space_id,
+                        size: #size,
+                        offset_offset: input.context.address,
+                        ..Default::default()
+                    }
+                }
+            }
+            Symbol::End { .. } => {
+                let space = self.translator.manager().default_space_ref();
+                let space_id = space.id().index() as u8;
+                let size = space.address_size() as u8;
+                quote! {
+                    fugue_lifter::utils::FixedHandle {
+                        space: #space_id,
+                        size: #size,
+                        offset_offset: input.next_address(),
+                        ..Default::default()
+                    }
+                }
+            }
+            Symbol::Next2 { .. } => {
+                quote! { unimplemented!() }
+            }
+            Symbol::VarnodeList {
+                pattern_value,
+                varnode_table,
+                ..
+            } => {
+                let index = self.generate_pattern_resolver(pattern_value);
+                let cases = varnode_table.iter().enumerate().map(|(i, symid)| {
+                    if let Some(symid) = symid {
+                        let sym = self.translator.symbol_table().unchecked_symbol(*symid);
+                        let value = self.generate_handle_resolver(sym);
+                        quote! { #i => { #value } }
+                    } else {
+                        quote! { #i => { return None; } }
+                    }
+                });
+
+                quote! {
+                    match #index as usize {
+                        #(#cases),*
+                        _ => { return None },
+                    }
+                }
+            }
+            Symbol::ValueMap {
+                pattern_value,
+                value_table,
+                ..
+            } => {
+                let index = self.generate_pattern_resolver(pattern_value);
+                let cases = value_table.iter().enumerate().map(|(i, symid)| {
+                    if *symid != 0xbadbeef {
+                        let sym = self.translator.symbol_table().unchecked_symbol(*symid as _);
+                        let value = self.generate_handle_resolver(sym);
+                        quote! { #i => { #value as u64 } }
+                    } else {
+                        quote! { #i => { return None; } }
+                    }
+                });
+
+                quote! {
+                    fugue_lifter::utils::FixedHandle {
+                        space: 0,
+                        offset_offset: match #index as usize {
+                            #(#cases),*
+                            _ => { return None },
+                        },
+                        ..Default::default()
+                    }
+                }
+            }
+            _ => TokenStream::new(),
+        }
+    }
+
     pub fn generate_pattern_resolver(&self, pattern: &PatternExpression) -> TokenStream {
         match pattern {
             PatternExpression::Constant { value } => quote! { #value },
             PatternExpression::StartInstruction => quote! { (input.address() as i64) },
             PatternExpression::EndInstruction => {
-                quote! { (input.next_address().unwrap_or(0) as i64) }
+                quote! { (input.next_address() as i64) }
             }
             PatternExpression::Next2Instruction => {
                 quote! { unsupported!("next2_inst is not supported") }
@@ -449,14 +580,18 @@ impl<'a> LifterGenerator<'a> {
                 unreachable!()
             };
 
-            let resolver = if let Some(tsym) =
+            let (resolver, handle_resolver) = if let Some(tsym) =
                 operand.defining_symbol(self.translator.symbol_table())
             {
                 match tsym {
                     Symbol::Subtable { id, scope, .. } => {
                         // The subtable to perform resolution
                         let stname = format_ident!("SubTable{id}In{scope}");
-                        quote! { fugue_lifter::utils::OperandResolver::Constructor(<#stname>::resolve) }
+                        let resolver = quote! { fugue_lifter::utils::OperandResolver::Constructor(<#stname>::resolve) };
+                        let handle_resolver =
+                            quote! { fugue_lifter::utils::OperandHandleResolver::None };
+
+                        (resolver, handle_resolver)
                     }
                     Symbol::ValueMap {
                         table_is_filled,
@@ -464,7 +599,7 @@ impl<'a> LifterGenerator<'a> {
                         value_table,
                         ..
                     } => {
-                        if !*table_is_filled {
+                        let resolver = if !*table_is_filled {
                             let bad_indices = value_table
                                 .iter()
                                 .enumerate()
@@ -491,7 +626,27 @@ impl<'a> LifterGenerator<'a> {
                             quote! { fugue_lifter::utils::OperandResolver::Filter(#ctor_opnd_resolver) }
                         } else {
                             quote! { fugue_lifter::utils::OperandResolver::None }
-                        }
+                        };
+
+                        let ctor_opnd_handle_resolver =
+                            format_ident!("operand_handle_resolver_{id}_{scope}_{cid}_{oid}");
+
+                        let handle_resolver = self.generate_handle_resolver(tsym);
+
+                        helpers.push(quote! {
+                            #[inline]
+                            fn #ctor_opnd_handle_resolver(input: &mut fugue_lifter::utils::ParserInput) -> Option<()> {
+                                let handle = #handle_resolver;
+                                input.set_parent_handle(handle);
+                                Some(())
+                            }
+                        });
+
+                        let handle_resolver = quote! {
+                            fugue_lifter::utils::OperandHandleResolver::Attach(#ctor_opnd_handle_resolver)
+                        };
+
+                        (resolver, handle_resolver)
                     }
                     Symbol::VarnodeList {
                         table_is_filled,
@@ -499,7 +654,7 @@ impl<'a> LifterGenerator<'a> {
                         varnode_table,
                         ..
                     } => {
-                        if !*table_is_filled {
+                        let resolver = if !*table_is_filled {
                             let bad_indices = varnode_table
                                 .iter()
                                 .enumerate()
@@ -526,7 +681,27 @@ impl<'a> LifterGenerator<'a> {
                             quote! { fugue_lifter::utils::OperandResolver::Filter(#ctor_opnd_resolver) }
                         } else {
                             quote! { fugue_lifter::utils::OperandResolver::None }
-                        }
+                        };
+
+                        let ctor_opnd_handle_resolver =
+                            format_ident!("operand_handle_resolver_{id}_{scope}_{cid}_{oid}");
+
+                        let handle_resolver = self.generate_handle_resolver(tsym);
+
+                        helpers.push(quote! {
+                            #[inline]
+                            fn #ctor_opnd_handle_resolver(input: &mut fugue_lifter::utils::ParserInput) -> Option<()> {
+                                let handle = #handle_resolver;
+                                input.set_parent_handle(handle);
+                                Some(())
+                            }
+                        });
+
+                        let handle_resolver = quote! {
+                            fugue_lifter::utils::OperandHandleResolver::Attach(#ctor_opnd_handle_resolver)
+                        };
+
+                        (resolver, handle_resolver)
                     }
                     Symbol::Name {
                         table_is_filled,
@@ -534,7 +709,7 @@ impl<'a> LifterGenerator<'a> {
                         name_table,
                         ..
                     } => {
-                        if !*table_is_filled {
+                        let resolver = if !*table_is_filled {
                             let bad_indices = name_table.iter().enumerate().filter_map(|(i, v)| {
                                 if v == "\t" {
                                     Some(i)
@@ -564,17 +739,92 @@ impl<'a> LifterGenerator<'a> {
                             quote! { fugue_lifter::utils::OperandResolver::Filter(#ctor_opnd_resolver) }
                         } else {
                             quote! { fugue_lifter::utils::OperandResolver::None }
-                        }
+                        };
+
+                        let ctor_opnd_handle_resolver =
+                            format_ident!("operand_handle_resolver_{id}_{scope}_{cid}_{oid}");
+
+                        let handle_resolver = self.generate_handle_resolver(tsym);
+
+                        helpers.push(quote! {
+                            #[inline]
+                            fn #ctor_opnd_handle_resolver(input: &mut fugue_lifter::utils::ParserInput) -> Option<()> {
+                                let handle = #handle_resolver;
+                                input.set_parent_handle(handle);
+                                Some(())
+                            }
+                        });
+
+                        let handle_resolver = quote! {
+                            fugue_lifter::utils::OperandHandleResolver::Attach(#ctor_opnd_handle_resolver)
+                        };
+
+                        (resolver, handle_resolver)
                     }
-                    _ => quote! { fugue_lifter::utils::OperandResolver::None },
+                    _ => {
+                        let ctor_opnd_handle_resolver =
+                            format_ident!("operand_handle_resolver_{id}_{scope}_{cid}_{oid}");
+
+                        let handle_resolver = self.generate_handle_resolver(tsym);
+
+                        helpers.push(quote! {
+                            #[inline]
+                            fn #ctor_opnd_handle_resolver(input: &mut fugue_lifter::utils::ParserInput) -> Option<()> {
+                                let handle = #handle_resolver;
+                                input.set_parent_handle(handle);
+                                Some(())
+                            }
+                        });
+
+                        let handle_resolver = quote! {
+                            fugue_lifter::utils::OperandHandleResolver::Attach(#ctor_opnd_handle_resolver)
+                        };
+
+                        let resolver = quote! { fugue_lifter::utils::OperandResolver::None };
+
+                        (resolver, handle_resolver)
+                    }
                 }
             } else {
-                quote! { fugue_lifter::utils::OperandResolver::None }
+                let pexp = operand.defining_expression().unwrap();
+                let value = self.generate_pattern_resolver(pexp);
+
+                let ctor_opnd_handle_resolver =
+                    format_ident!("operand_handle_resolver_{id}_{scope}_{cid}_{oid}");
+
+                helpers.push(quote! {
+                    #[inline]
+                    fn #ctor_opnd_handle_resolver(input: &mut fugue_lifter::utils::ParserInput) -> Option<()> {
+                        let offset = #value as u64;
+                        if let Some(handle) = input.parent_handle_mut() {
+                            handle.space = 0;
+                            handle.offset_space = fugue_lifter::utils::input::INVALID_HANDLE;
+                            handle.offset_offset = offset;
+                            handle.size = 0;
+                        } else {
+                            input.set_parent_handle(fugue_lifter::utils::FixedHandle {
+                                space: 0,
+                                offset_offset: offset,
+                                ..Default::default()
+                            });
+                        }
+                        Some(())
+                    }
+                });
+
+                let handle_resolver = quote! {
+                    fugue_lifter::utils::OperandHandleResolver::Attach(#ctor_opnd_handle_resolver)
+                };
+
+                let resolver = quote! { fugue_lifter::utils::OperandResolver::None };
+
+                (resolver, handle_resolver)
             };
 
             operands.push(quote! {
                 fugue_lifter::utils::Operand {
                     resolver: #resolver,
+                    handle_resolver: #handle_resolver,
                     offset_base: #offset_base,
                     offset_rela: #offset_rela,
                     minimum_length: #minimum_length,
@@ -1350,17 +1600,19 @@ impl<'a> LifterGenerator<'a> {
                                 .unwrap_or_default()
                         }
                     } else {
-                        quote! { (0u8, 0u64) }
+                        let resolver = self.generate_handle_resolver(symbol);
+                        quote! {
+                            let handle = #resolver;
+                            (handle.space, handle.offset_offset)
+                        }
                     };
 
                     let space = self.translator.manager().default_space_ref();
                     let word_size = space.word_size() as u64;
-                    let space_index = space.id().index() as u8;
 
                     let space_fix = quote! {
-                        let (mut space, mut offset) = { #handle };
+                        let (space, mut offset) = { #handle };
                         if space == 0 {
-                            space = #space_index;
                             offset = offset * #word_size;
                         }
                     };
@@ -1429,10 +1681,12 @@ impl<'a> LifterGenerator<'a> {
                     input: &fugue_lifter::utils::ParserInput,
                     context: &mut fugue_lifter::utils::ContextDatabase,
                     commit: &fugue_lifter::utils::ContextCommit,
-                ) {
+                ) -> Option<()> {
                     let point = commit.point;
 
                     #(#post_actions);*
+
+                    Some(())
                 }
             };
             (Some(ctor_post_apply_context), post_fcn)

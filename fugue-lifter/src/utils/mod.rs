@@ -4,7 +4,7 @@ pub mod input;
 pub mod partmap;
 pub mod varnode;
 
-pub use constructor::{Constructor, Operand, OperandResolver};
+pub use constructor::{Constructor, Operand, OperandHandleResolver, OperandResolver};
 pub use context::ContextDatabase;
 pub use input::{ContextCommit, FixedHandle, ParserInput};
 

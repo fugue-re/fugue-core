@@ -10,8 +10,15 @@ pub enum OperandResolver {
     Filter(fn(&mut ParserInput) -> Option<()>),
 }
 
+pub enum OperandHandleResolver {
+    None,
+    Attach(fn(&mut ParserInput) -> Option<()>),
+    Template,
+}
+
 pub struct Operand {
     pub resolver: OperandResolver,
+    pub handle_resolver: OperandHandleResolver,
     pub offset_base: Option<usize>,
     pub offset_rela: usize,
     pub minimum_length: usize,

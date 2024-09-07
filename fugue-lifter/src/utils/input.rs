@@ -14,8 +14,27 @@ pub const BREADCRUMBS: usize = MAX_PARSER_DEPTH + 1;
 
 #[derive(Copy, Clone)]
 pub struct FixedHandle {
+    pub space: u8,
+    pub size: u8,
     pub offset_space: u8,
     pub offset_offset: u64,
+    pub offset_size: u8,
+    pub temporary_space: u8,
+    pub temporary_offset: u64,
+}
+
+impl Default for FixedHandle {
+    fn default() -> Self {
+        Self {
+            space: INVALID_HANDLE,
+            size: 0,
+            offset_space: INVALID_HANDLE,
+            offset_offset: 0,
+            offset_size: 0,
+            temporary_space: INVALID_HANDLE,
+            temporary_offset: 0,
+        }
+    }
 }
 
 #[derive(Copy, Clone)]
@@ -41,8 +60,11 @@ impl Default for ConstructorNode {
     }
 }
 
+pub type ContextCommitApplier =
+    fn(&ParserInput, &mut ContextDatabase, &ContextCommit) -> Option<()>;
+
 pub struct ContextCommit {
-    pub applier: fn(&ParserInput, &mut ContextDatabase, &ContextCommit),
+    pub applier: ContextCommitApplier,
     pub point: u8,
     pub values: ArrayVec<u32, MAX_CTXT_CHUNKS>,
 }
@@ -53,7 +75,6 @@ pub struct ParserContext {
     pub constructors: [ConstructorNode; MAX_CTOR_STATES],
     pub commits: ArrayVec<ContextCommit, MAX_CTOR_STATES>,
     pub address: u64,
-    pub next_address: Option<u64>,
     pub offset: u8,
     pub delay_slot: u8,
     pub alloc: u8,
@@ -79,7 +100,6 @@ impl ParserInput {
             constructors: [ConstructorNode::default(); MAX_CTOR_STATES],
             commits: Default::default(),
             address,
-            next_address: None,
             offset: 0,
             delay_slot: 0,
             alloc: 1,
@@ -93,26 +113,29 @@ impl ParserInput {
         }
     }
 
+    #[inline(always)]
     pub fn base_state(&mut self) {
         self.point = 0;
         self.depth = 0;
         self.breadcrumb[0] = 0;
     }
 
+    #[inline(always)]
     pub fn address(&self) -> u64 {
         self.context.address
     }
 
-    pub fn next_address(&self) -> Option<u64> {
-        self.context.next_address
+    #[inline(always)]
+    pub fn next_address(&self) -> u64 {
+        self.context.address + self.context.constructors[0].length as u64
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn resolved(&self) -> bool {
         self.point == INVALID_HANDLE
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn operand(&self) -> usize {
         unsafe { *self.breadcrumb.get_unchecked(self.depth as usize) as _ }
     }
@@ -128,6 +151,7 @@ impl ParserInput {
         }
     }
 
+    #[inline]
     pub fn set_context(&mut self, db: &ContextDatabase) {
         self.context.context = db
             .get_context(self.context.address)
@@ -181,7 +205,8 @@ impl ParserInput {
         let mut result = 0u32;
         unsafe {
             for i in 0..bytes_to_read {
-                result = (result << 8) | (*self.context.buffer.get_unchecked(byte_offset + i) as u32);
+                result =
+                    (result << 8) | (*self.context.buffer.get_unchecked(byte_offset + i) as u32);
             }
         }
 
@@ -411,6 +436,34 @@ impl ParserInput {
     pub fn apply_commits(&self, db: &mut ContextDatabase) {
         for commit in self.context.commits.iter() {
             (commit.applier)(self, db, commit);
+        }
+    }
+
+    #[inline(always)]
+    pub fn parent_handle(&self) -> Option<&FixedHandle> {
+        self.context.constructors[self.point as usize]
+            .handle
+            .as_ref()
+    }
+
+    #[inline(always)]
+    pub fn parent_handle_mut(&mut self) -> Option<&mut FixedHandle> {
+        unsafe {
+            self.context
+                .constructors
+                .get_unchecked_mut(self.point as usize)
+                .handle
+                .as_mut()
+        }
+    }
+
+    #[inline(always)]
+    pub fn set_parent_handle(&mut self, handle: FixedHandle) {
+        unsafe {
+            self.context
+                .constructors
+                .get_unchecked_mut(self.point as usize)
+                .handle = Some(handle);
         }
     }
 
