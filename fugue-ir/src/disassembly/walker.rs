@@ -471,7 +471,7 @@ impl<'b, 'z> ParserContext<'b, 'z> {
             };
 
             if address.is_constant() {
-                let space = manager.unchecked_space_by_id(address.space());
+                let space = manager.unchecked_space_by_id(curr_address.space());
                 let noffset = address.offset() * space.word_size() as u64;
                 address = AddressValue::new(space, noffset);
             }
