@@ -432,7 +432,7 @@ impl ParserInput {
         self.context.commits.push(commit);
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn apply_commits(&self, db: &mut ContextDatabase) {
         for commit in self.context.commits.iter() {
             (commit.applier)(self, db, commit);

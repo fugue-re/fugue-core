@@ -1,5 +1,8 @@
 use std::mem::size_of;
 
+use fugue_ir::disassembly::construct::ConstTpl;
+use fugue_ir::disassembly::construct::HandleKind;
+use fugue_ir::disassembly::construct::HandleTpl;
 use fugue_ir::disassembly::symbol::sub_table::Context;
 use fugue_ir::disassembly::symbol::sub_table::{
     ContextPattern, DecisionPair, DisjointPattern, InstructionPattern,
@@ -184,7 +187,7 @@ impl<'a> LifterGenerator<'a> {
 
                 quote! {
                     match #index as usize {
-                        #(#cases),*
+                        #(#cases,)*
                         _ => { return None },
                     }
                 }
@@ -209,7 +212,7 @@ impl<'a> LifterGenerator<'a> {
                     fugue_lifter::utils::FixedHandle {
                         space: 0,
                         offset_offset: match #index as usize {
-                            #(#cases),*
+                            #(#cases,)*
                             _ => { return None },
                         },
                         ..Default::default()
@@ -381,15 +384,6 @@ impl<'a> LifterGenerator<'a> {
                 let symbol = ctor.operand(index);
                 let operand = self.translator.symbol_table().unchecked_symbol(symbol);
 
-                // get current point + depth
-                //
-                // we traverse the tree upwards from the current point until
-                // we find the constructor specified
-                //
-                // if we don't find it, then we compute the value
-                // if we find that the current point's ctor is
-                // until we hit the root of the tree.
-                // 0
                 let (ctor_id1, ctor_id2) = ctor.id();
                 let ctor_id = (ctor_id1 as u32 & 0xffff) << 16 | (ctor_id2 as u32 & 0xffff);
                 let ctor_vname = Self::ctor_vname(*table_id, *scope, *constructor_id);
@@ -398,7 +392,7 @@ impl<'a> LifterGenerator<'a> {
                 let rel_offset = operand.relative_offset() as u8;
                 let offset = if operand.offset_base().is_none() {
                     quote! {
-                        point.offset + #rel_offset;
+                        point.offset + #rel_offset
                     }
                 } else {
                     quote! {
@@ -424,6 +418,7 @@ impl<'a> LifterGenerator<'a> {
                                         let state = &mut input.context.constructors[input.point as usize];
 
                                         state.constructor = Some(#ctor_vname);
+                                        state.handle = None;
                                         state.parent = fugue_lifter::utils::input::INVALID_HANDLE;
                                         state.operands = fugue_lifter::utils::input::INVALID_HANDLE;
                                         state.offset = 0;
@@ -438,6 +433,7 @@ impl<'a> LifterGenerator<'a> {
                                         let state = &mut input.context.constructors[input.point as usize];
 
                                         state.constructor = None;
+                                        state.handle = None;
                                         state.parent = fugue_lifter::utils::input::INVALID_HANDLE;
                                         state.operands = fugue_lifter::utils::input::INVALID_HANDLE;
                                         state.offset = 0;
@@ -469,6 +465,7 @@ impl<'a> LifterGenerator<'a> {
                                 let state = &mut input.context.constructors[input.point as usize];
 
                                 state.constructor = Some(#ctor_vname);
+                                state.handle = None;
                                 state.parent = fugue_lifter::utils::input::INVALID_HANDLE;
                                 state.operands = fugue_lifter::utils::input::INVALID_HANDLE;
                                 state.offset = offset;
@@ -483,6 +480,7 @@ impl<'a> LifterGenerator<'a> {
                                 let state = &mut input.context.constructors[input.point as usize];
 
                                 state.constructor = None;
+                                state.handle = None;
                                 state.parent = fugue_lifter::utils::input::INVALID_HANDLE;
                                 state.operands = fugue_lifter::utils::input::INVALID_HANDLE;
                                 state.offset = 0;
@@ -588,8 +586,7 @@ impl<'a> LifterGenerator<'a> {
                         // The subtable to perform resolution
                         let stname = format_ident!("SubTable{id}In{scope}");
                         let resolver = quote! { fugue_lifter::utils::OperandResolver::Constructor(<#stname>::resolve) };
-                        let handle_resolver =
-                            quote! { fugue_lifter::utils::OperandHandleResolver::None };
+                        let handle_resolver = quote! { None };
 
                         (resolver, handle_resolver)
                     }
@@ -643,7 +640,7 @@ impl<'a> LifterGenerator<'a> {
                         });
 
                         let handle_resolver = quote! {
-                            fugue_lifter::utils::OperandHandleResolver::Attach(#ctor_opnd_handle_resolver)
+                            Some(#ctor_opnd_handle_resolver)
                         };
 
                         (resolver, handle_resolver)
@@ -698,7 +695,7 @@ impl<'a> LifterGenerator<'a> {
                         });
 
                         let handle_resolver = quote! {
-                            fugue_lifter::utils::OperandHandleResolver::Attach(#ctor_opnd_handle_resolver)
+                            Some(#ctor_opnd_handle_resolver)
                         };
 
                         (resolver, handle_resolver)
@@ -756,7 +753,7 @@ impl<'a> LifterGenerator<'a> {
                         });
 
                         let handle_resolver = quote! {
-                            fugue_lifter::utils::OperandHandleResolver::Attach(#ctor_opnd_handle_resolver)
+                            Some(#ctor_opnd_handle_resolver)
                         };
 
                         (resolver, handle_resolver)
@@ -777,7 +774,7 @@ impl<'a> LifterGenerator<'a> {
                         });
 
                         let handle_resolver = quote! {
-                            fugue_lifter::utils::OperandHandleResolver::Attach(#ctor_opnd_handle_resolver)
+                            Some(#ctor_opnd_handle_resolver)
                         };
 
                         let resolver = quote! { fugue_lifter::utils::OperandResolver::None };
@@ -813,7 +810,7 @@ impl<'a> LifterGenerator<'a> {
                 });
 
                 let handle_resolver = quote! {
-                    fugue_lifter::utils::OperandHandleResolver::Attach(#ctor_opnd_handle_resolver)
+                    Some(#ctor_opnd_handle_resolver)
                 };
 
                 let resolver = quote! { fugue_lifter::utils::OperandResolver::None };
@@ -834,723 +831,6 @@ impl<'a> LifterGenerator<'a> {
 
         (helpers, operands)
     }
-
-    /*
-    pub fn generate_constructor_operand_resolver(
-        &self,
-        id: &Ident,
-        ctor: &Constructor,
-    ) -> TokenStream {
-        // NOTE: INIT and FINI would be factored into functions on the
-        // constructor, and we'd have a method `resolve_operand_chunk(N)`
-        // that will resolve the operand chunk indicated by input.operand().
-        //
-        // This function may return an invalid handle (in the case of no
-        // remaining operands), and in that case, we will call FINI.
-        //
-        // Thus, the function would look like:
-        //
-        // #id.begin_operand_resolution(input)?;
-        //
-        // while (input.is_state()) {
-        //     let ctor = input.constructor();
-        //     let opnd = input.operand();
-        //
-        //     if opnd == fugue_lifter::utils::input::INVALID_HANDLE {
-        //         ctor.end_operand_resolution(input)?;
-        //         continue;
-        //     }
-        //
-        //     ctor.resolve_operand_chunk(ctor)?;
-        // }
-        //
-        // It could also be possible to handle invalid, i.e., "we are done",
-        // sentinel values so we actually perform finalisation on the very
-        // final chunk.
-        //
-        // Within resolve_operand_chunk(N), where we deal with a constructor:
-        //
-        // ...
-        //
-        // // Perform regular operand handling
-        //
-        // let offset = #offset_base + #offset_rela;
-        // input.push_operand(#oid);
-        // input.set_offset(offset);
-        //
-        // // For a regular operand we perform the following:
-        // input.set_current_length(#min_length);
-        // input.pop_operand();
-        //
-        // // For a constructor we begin resolution
-        // let ctor = #stname.resolve(input)?;
-        // ctor.begin_operand_resolution(input)?;
-        //
-        // // NOTE: this return corresponds to the inner break in the original
-        // // implementation.
-        // //
-        // return Some(())
-        //
-
-        let count = ctor.operand_count();
-        let minimum_length = ctor.minimum_length();
-        let delay_slot = ctor
-            .template()
-            .and_then(|tpl| {
-                let amount = tpl.delay_slot();
-                if amount > 0 {
-                    Some(quote! { input.set_delay_slot(#amount); })
-                } else {
-                    None
-                }
-            })
-            .unwrap_or_default();
-
-        if count == 0 {
-            return quote! {
-                #[inline]
-                fn resolve_operands(&self, input: &mut ParserInput) -> Option<()> {
-                    self.resolve_operand_constructor(input)?;
-                    self.resolve_operand_chunk(input, 0)?;
-                    Some(())
-                }
-
-                #[inline]
-                fn resolve_operand_constructor(&self, input: &mut ParserInput) -> Option<()> {
-                    // Perform the setup actions
-                    input.set_constructor(#id);
-                    self.apply_context(input)?;
-                    Some(())
-                }
-
-                #[inline]
-                fn resolve_operand_chunk(&self, input: &mut ParserInput, _operand: usize) -> Option<()> {
-                    // Since we have no operands, we have no chunks, so we
-                    // perform clean-up actions.
-
-                    input.calculate_length(#minimum_length, #count);
-                    input.pop_operand(); // the ctor
-
-                    #delay_slot
-
-                    Some(())
-                }
-            };
-        }
-
-        let mut operands = (0..count).into_iter().map(|oid| {
-            let index = ctor.operand(oid);
-            let operand = self.translator.symbol_table().unchecked_symbol(index);
-
-            let offset_base = operand
-                .offset_base()
-                .map(|v| quote! { input.offset_for_operand(#v) })
-                .unwrap_or(quote! { input.offset() });
-            let offset_rela = operand.relative_offset();
-
-            let clean_up = if let Symbol::Operand { min_length, .. } = operand {
-                quote! {
-                    input.set_current_length(#min_length);
-                    input.pop_operand();
-                }
-            } else {
-                TokenStream::new()
-            };
-
-            let part1 = quote! {
-                let offset = #offset_base + #offset_rela;
-
-                input.push_operand(#oid);
-                input.set_offset(offset);
-            };
-
-            // NOTE: for constructors we will set this to true
-            let mut stop_point = false;
-
-            let part2 = if let Some(tsym) = operand.defining_symbol(self.translator.symbol_table())
-            {
-                // let symn = tsym.name();
-                match tsym {
-                    Symbol::Subtable { id, scope, .. } => {
-                        // NOTE: This is a stop point (new constructor to explore)
-                        stop_point = true;
-
-                        // The subtable to perform resolution
-                        let stname = format_ident!("SubTable{id}In{scope}");
-
-                        quote! {
-                            // NOTE:
-                            //
-                            // We track the operand bounds and "current" operand via breadcrumbs;
-                            // this means that if we have an array of functions for handling each
-                            // operand chunk, we could bound the stack growth of operand
-                            // resolution. Consider the following:
-                            //
-                            // Each chunk will look like:
-                            // - op
-                            // - op
-                            // - ctor (where ctor ends a chunk)
-                            //
-                            // So let's assume we have:
-                            // - op
-                            // - op
-                            // - ctor
-                            // - op
-                            //
-                            // We will have two chunks
-                            //
-                            // chunk 0:
-                            // - op
-                            // - op
-                            // - ctor
-                            //
-                            // chunk 1:
-                            // - op
-                            //
-                            // We will process things as before:
-                            //
-                            // let operand = input.operand(); // gives an index
-                            //
-                            // We could have "constructor" set as an array of functions:
-                            //
-                            //     &'static [fn(input: &mut ParserInput) -> Option<()>]
-                            //
-                            // Then we'd do this:
-                            //
-                            // let operand = input.operand();
-                            // let operands = input.constructor();
-                            //
-                            // operands[operand](input)?;
-                            //
-                            // Alternatively, we could have N resolve operand functions that are
-                            // dispatched via resolve_operands(n) which again resolves to a chunk.
-                            //
-                            // Why do this?
-                            //
-                            // This will eliminate stack growth during operand resolution, which
-                            // will match the original Ghidra implementation; it should also
-                            // reduce the size of functions.
-                            //
-
-                            // println!("operand {} for ({}, {}) / {}", #oid, #ctor_id1, #ctor_id2, #symn);
-
-                            let op_ctor = #stname.resolve(input)?;
-
-                            /*
-                            for pp in op_ctor.print_pieces() {
-                                print!("{pp}");
-                            }
-                            println!();
-                            */
-
-                            // This will put the constructor inside the parser context so we
-                            // can resolve its operands (if they exist) on the next iteration.
-                            op_ctor.resolve_operand_constructor(input)?;
-                        }
-                    }
-                    Symbol::ValueMap {
-                        table_is_filled,
-                        pattern_value,
-                        value_table,
-                        ..
-                    } => {
-                        if !*table_is_filled {
-                            let bad_indices = value_table
-                                .iter()
-                                .enumerate()
-                                .filter_map(|(i, v)| if *v == 0xbadbeef { Some(i) } else { None });
-
-                            let pattern_resolver = self.generate_pattern_resolver(pattern_value);
-                            let limit = value_table.len();
-
-                            quote! {
-                                let index = #pattern_resolver as usize;
-                                if index >= #limit || [#(#bad_indices),*].contains(&index) {
-                                    return None;
-                                }
-                                #clean_up
-                            }
-                        } else {
-                            clean_up
-                        }
-                    }
-                    Symbol::VarnodeList {
-                        table_is_filled,
-                        pattern_value,
-                        varnode_table,
-                        ..
-                    } => {
-                        if !*table_is_filled {
-                            let bad_indices = varnode_table
-                                .iter()
-                                .enumerate()
-                                .filter_map(|(i, v)| if v.is_none() { Some(i) } else { None });
-
-                            let pattern_resolver = self.generate_pattern_resolver(pattern_value);
-                            let limit = varnode_table.len();
-
-                            quote! {
-                                let index = #pattern_resolver as usize;
-                                if index >= #limit || [#(#bad_indices),*].contains(&index) {
-                                    return None;
-                                }
-                                #clean_up
-                            }
-                        } else {
-                            clean_up
-                        }
-                    }
-                    Symbol::Name {
-                        table_is_filled,
-                        pattern_value,
-                        name_table,
-                        ..
-                    } => {
-                        if !*table_is_filled {
-                            let bad_indices = name_table.iter().enumerate().filter_map(|(i, v)| {
-                                if v == "\t" {
-                                    Some(i)
-                                } else {
-                                    None
-                                }
-                            });
-
-                            let pattern_resolver = self.generate_pattern_resolver(pattern_value);
-                            let limit = name_table.len();
-
-                            quote! {
-                                let index = #pattern_resolver as usize;
-                                if index >= #limit || [#(#bad_indices),*].contains(&index) {
-                                    return None;
-                                }
-                                #clean_up
-                            }
-                        } else {
-                            clean_up
-                        }
-                    }
-                    _ => clean_up,
-                }
-            } else {
-                clean_up
-            };
-
-            (
-                oid,
-                quote! {
-                    #part1
-                    #part2
-                },
-                stop_point,
-            )
-        });
-
-        let mut chunks = Vec::new();
-
-        loop {
-            let mut chunk = (&mut operands).take_while_inclusive(|(_, _, stop)| !stop);
-
-            let Some((oid, init, stop)) = chunk.next() else {
-                break;
-            };
-
-            if stop {
-                chunks.push(quote! {
-                    #oid => {
-                        #init
-                        Some(())
-                    }
-                });
-                continue;
-            }
-
-            let rest = chunk.map(|(_, tokens, _)| tokens);
-
-            chunks.push(quote! {
-                #oid => {
-                    #init
-                    #(#rest)*
-                    Some(())
-                }
-            });
-        }
-
-        // #id.begin_operand_resolution(input)?;
-        //
-        // while (input.is_state()) {
-        //     let ctor = input.constructor();
-        //     let opnd = input.operand();
-        //
-        //     if opnd == fugue_lifter::utils::input::INVALID_HANDLE {
-        //         ctor.end_operand_resolution(input)?;
-        //         continue;
-        //     }
-        //
-        //     ctor.resolve_operand_chunk(ctor)?;
-        // }
-
-        quote! {
-            #[inline]
-            fn resolve_operands(&self, input: &mut ParserInput) -> Option<()> {
-                self.resolve_operand_constructor(input)?;
-
-                while !input.resolved() {
-                    let ctor = input.constructor(); // I guess this should be unchecked.
-                    let opnd = input.operand(); // This is the chunk number.
-
-                    /*
-                    println!("{ctor:?}");
-                    for pp in ctor.print_pieces() {
-                        print!("{pp}");
-                    }
-                    println!();
-                    */
-
-                    ctor.resolve_operand_chunk(input, opnd)?;
-                }
-
-                Some(())
-            }
-
-            #[inline]
-            fn resolve_operand_constructor(&self, input: &mut ParserInput) -> Option<()> {
-                input.set_constructor(#id);
-                self.apply_context(input)?;
-                input.allocate_operands(#count);
-                Some(())
-            }
-
-            #[inline]
-            fn resolve_operand_chunk(&self, input: &mut ParserInput, operand: usize) -> Option<()> {
-                match operand {
-                    #(#chunks),*
-                    _ => {
-                        // This is the default action when we have no more chunks to process
-                        input.calculate_length(#minimum_length, #count);
-                        input.pop_operand(); // the ctor
-
-                        #delay_slot
-
-                        Some(())
-                    }
-                }
-            }
-        }
-    }
-    */
-
-    /*
-    pub fn generate_constructor_operand_resolver(
-        &self,
-        id: &Ident,
-        ctor: &Constructor,
-    ) -> TokenStream {
-        // let (ctor_id1, ctor_id2) = ctor.id();
-        let count = ctor.operand_count();
-        let minimum_length = ctor.minimum_length();
-        let delay_slot = ctor
-            .template()
-            .and_then(|tpl| {
-                let amount = tpl.delay_slot();
-                if amount > 0 {
-                    Some(quote! { input.set_delay_slot(#amount); })
-                } else {
-                    None
-                }
-            })
-            .unwrap_or_default();
-
-        if count == 0 {
-            return quote! {
-                // println!("constructor ({}, {}) (no args)", #ctor_id1, #ctor_id2);
-
-                input.set_constructor(#id);
-                #id.apply_context(input)?;
-
-                input.calculate_length(#minimum_length, #count);
-                input.pop_operand(); // the ctor
-
-                #delay_slot
-
-                return Some(());
-            };
-        }
-
-        let operands = (0..count).into_iter().map(|oid| {
-            let index = ctor.operand(oid);
-            let operand = self.translator.symbol_table().unchecked_symbol(index);
-
-            let offset_base = operand
-                .offset_base()
-                .map(|v| quote! { input.offset_for_operand(#v) })
-                .unwrap_or(quote! { input.offset() });
-            let offset_rela = operand.relative_offset();
-
-            let clean_up = if let Symbol::Operand { min_length, .. } = operand {
-                quote! {
-                    input.set_current_length(#min_length);
-                    input.pop_operand();
-                }
-            } else {
-                TokenStream::new()
-            };
-
-            let part1 = quote! {
-                let offset = #offset_base + #offset_rela;
-
-                input.push_operand(#oid);
-                input.set_offset(offset);
-            };
-
-            let part2 = if let Some(tsym) = operand.defining_symbol(self.translator.symbol_table())
-            {
-                // let symn = tsym.name();
-                match tsym {
-                    Symbol::Subtable { id, scope, .. } => {
-                        let stname = format_ident!("SubTable{id}In{scope}");
-                        quote! {
-                            // NOTE:
-                            //
-                            // We track the operand bounds and "current" operand via breadcrumbs;
-                            // this means that if we have an array of functions for handling each
-                            // operand chunk, we could bound the stack growth of operand
-                            // resolution. Consider the following:
-                            //
-                            // Each chunk will look like:
-                            // - op
-                            // - op
-                            // - ctor (where ctor ends a chunk)
-                            //
-                            // So let's assume we have:
-                            // - op
-                            // - op
-                            // - ctor
-                            // - op
-                            //
-                            // We will have two chunks
-                            //
-                            // chunk 0:
-                            // - op
-                            // - op
-                            // - ctor
-                            //
-                            // chunk 1:
-                            // - op
-                            //
-                            // We will process things as before:
-                            //
-                            // let operand = input.operand(); // gives an index
-                            //
-                            // We could have "constructor" set as an array of functions:
-                            //
-                            //     &'static [fn(input: &mut ParserInput) -> Option<()>]
-                            //
-                            // Then we'd do this:
-                            //
-                            // let operand = input.operand();
-                            // let operands = input.constructor();
-                            //
-                            // operands[operand](input)?;
-                            //
-                            // Alternatively, we could have N resolve operand functions that are
-                            // dispatched via resolve_operands(n) which again resolves to a chunk.
-                            //
-                            // Why do this?
-                            //
-                            // This will eliminate stack growth during operand resolution, which
-                            // will match the original Ghidra implementation; it should also
-                            // reduce the size of functions.
-                            //
-
-                            // println!("operand {} for ({}, {}) / {}", #oid, #ctor_id1, #ctor_id2, #symn);
-
-                            // NOTE: resolve will resolve the ctor, we don't need to splice
-                            // clean_up as we do for all other cases.
-                            {
-                                // NOTE: we could avoid the dynamic dispatch here?
-                                // #stname.resolve(input)?;
-
-                                let op_ctor = #stname.resolve(input)?;
-
-                                /*
-                                for pp in op_ctor.print_pieces() {
-                                    print!("{pp}");
-                                }
-                                println!();
-                                */
-
-                                op_ctor.resolve_operands(input)?;
-                            }
-                        }
-                    }
-                    Symbol::ValueMap {
-                        table_is_filled,
-                        pattern_value,
-                        value_table,
-                        ..
-                    } => {
-                        if !*table_is_filled {
-                            let bad_indices = value_table
-                                .iter()
-                                .enumerate()
-                                .filter_map(|(i, v)| if *v == 0xbadbeef { Some(i) } else { None });
-
-                            let pattern_resolver = self.generate_pattern_resolver(pattern_value);
-                            let limit = value_table.len();
-
-                            quote! {
-                                let index = #pattern_resolver as usize;
-                                if index >= #limit || [#(#bad_indices),*].contains(&index) {
-                                    return None;
-                                }
-                                #clean_up
-                            }
-                        } else {
-                            clean_up
-                        }
-                    }
-                    Symbol::VarnodeList {
-                        table_is_filled,
-                        pattern_value,
-                        varnode_table,
-                        ..
-                    } => {
-                        if !*table_is_filled {
-                            let bad_indices = varnode_table
-                                .iter()
-                                .enumerate()
-                                .filter_map(|(i, v)| if v.is_none() { Some(i) } else { None });
-
-                            let pattern_resolver = self.generate_pattern_resolver(pattern_value);
-                            let limit = varnode_table.len();
-
-                            quote! {
-                                let index = #pattern_resolver as usize;
-                                if index >= #limit || [#(#bad_indices),*].contains(&index) {
-                                    return None;
-                                }
-                                #clean_up
-                            }
-                        } else {
-                            clean_up
-                        }
-                    }
-                    Symbol::Name {
-                        table_is_filled,
-                        pattern_value,
-                        name_table,
-                        ..
-                    } => {
-                        if !*table_is_filled {
-                            let bad_indices = name_table.iter().enumerate().filter_map(|(i, v)| {
-                                if v == "\t" {
-                                    Some(i)
-                                } else {
-                                    None
-                                }
-                            });
-
-                            let pattern_resolver = self.generate_pattern_resolver(pattern_value);
-                            let limit = name_table.len();
-
-                            quote! {
-                                let index = #pattern_resolver as usize;
-                                if index >= #limit || [#(#bad_indices),*].contains(&index) {
-                                    return None;
-                                }
-                                #clean_up
-                            }
-                        } else {
-                            clean_up
-                        }
-                    }
-                    _ => clean_up,
-                }
-            } else {
-                clean_up
-            };
-
-            quote! {
-                #part1
-                #part2
-            }
-        });
-
-        // TODO: pre/post-actions based on context updates...
-
-        // NOTE: INIT and FINI would be factored into functions on the
-        // constructor, and we'd have a method `resolve_operand_chunk(N)`
-        // that will resolve the operand chunk indicated by input.operand().
-        //
-        // This function may return an invalid handle (in the case of no
-        // remaining operands), and in that case, we will call FINI.
-        //
-        // Thus, the function would look like:
-        //
-        // #id.begin_operand_resolution(input)?;
-        //
-        // while (input.is_state()) {
-        //     let ctor = input.constructor();
-        //     let opnd = input.operand();
-        //
-        //     if opnd == fugue_lifter::utils::input::INVALID_HANDLE {
-        //         ctor.end_operand_resolution(input)?;
-        //         continue;
-        //     }
-        //
-        //     ctor.resolve_operand_chunk(ctor)?;
-        // }
-        //
-        // It could also be possible to handle invalid, i.e., "we are done",
-        // sentinel values so we actually perform finalisation on the very
-        // final chunk.
-        //
-        // Within resolve_operand_chunk(N), where we deal with a constructor:
-        //
-        // ...
-        //
-        // // Perform regular operand handling
-        //
-        // let offset = #offset_base + #offset_rela;
-        // input.push_operand(#oid);
-        // input.set_offset(offset);
-        //
-        // // For a regular operand we perform the following:
-        // input.set_current_length(#min_length);
-        // input.pop_operand();
-        //
-        // // For a constructor we begin resolution
-        // let ctor = #stname.resolve(input)?;
-        // ctor.begin_operand_resolution(input)?;
-        //
-        // // NOTE: this return corresponds to the inner break in the original
-        // // implementation.
-        // //
-        // return Some(())
-        //
-
-        quote! {
-            // INIT: this part would correspond to ctor allocation
-            input.set_constructor(#id);
-            #id.apply_context(input)?;
-
-            // we allocate all operands upfront, then push each one
-            input.allocate_operands(#count);
-            // INIT (end)
-
-            #(#operands)*
-
-            // FINI: this part would correspond to ctor finalisation
-            input.calculate_length(#minimum_length, #count);
-            input.pop_operand(); // the ctor
-
-            #delay_slot
-            // FINI (end)
-
-            Some(())
-        }
-    }
-    */
 
     pub fn generate_constructor_context_actions(
         &self,
@@ -1728,20 +1008,287 @@ impl<'a> LifterGenerator<'a> {
         (fcns, quote! { Some(#ctor_pre_apply_context) })
     }
 
+    pub fn generate_const_template(&self, tmpl: &ConstTpl) -> TokenStream {
+        match tmpl {
+            ConstTpl::Start => quote! { input.context.address() },
+            ConstTpl::Next => quote! { input.context.next_address() },
+            ConstTpl::Next2 => quote! { unimplemented!("next2 not supported") },
+            ConstTpl::CurrentSpaceSize => {
+                let size = self.translator.manager().default_space_ref().address_size() as u64;
+                quote! { #size }
+            }
+            ConstTpl::CurrentSpace => {
+                let index = self.translator.manager().default_space_ref().index() as u64;
+                quote! { #index }
+            }
+            ConstTpl::Relative(value) | ConstTpl::Real(value) => {
+                let value = *value;
+                quote! { #value }
+            }
+            ConstTpl::SpaceId(space) => {
+                let index = space.index() as u64;
+                quote! { #index }
+            }
+            ConstTpl::Handle(index, kind) => {
+                let index = *index;
+                let handle = quote! {
+                    let handle = {
+                        let opnds = input
+                            .context
+                            .constructors[input.point as usize].operands as usize;
+
+                        input.context.constructors[opnds + #index].handle.as_ref().unwrap()
+                    };
+                };
+
+                let action = match kind {
+                    HandleKind::Space => quote! {
+                        if handle.offset_space == fugue_lifter::utils::input::INVALID_HANDLE {
+                            handle.space as u64
+                        } else {
+                            handle.temporary_space as u64
+                        }
+                    },
+                    HandleKind::Offset => quote! {
+                        if handle.offset_space == fugue_lifter::utils::input::INVALID_HANDLE {
+                            handle.offset_offset
+                        } else {
+                            handle.temporary_offset
+                        }
+                    },
+                    HandleKind::Size => quote! {
+                        handle.size as u64
+                    },
+                    HandleKind::OffsetPlus(value) => {
+                        let value = *value;
+                        let value_short = value & 0xffff;
+                        let value_shift = 8 * (value >> 16) as u32;
+
+                        quote! {
+                            if handle.space == 0 { // constant space
+                                let val = if handle.offset_space == fugue_lifter::utils::input::INVALID_HANDLE {
+                                    handle.offset_offset
+                                } else {
+                                    handle.temporary_offset
+                                };
+                                val.checked_shr(#value_shift).unwrap_or(0)
+                            } else {
+                                if handle.offset_space == fugue_lifter::utils::input::INVALID_HANDLE {
+                                    handle.offset_offset + #value_short
+                                } else {
+                                    handle.temporary_offset + #value_short
+                                }
+                            }
+                        }
+                    }
+                };
+
+                quote! {
+                    {
+                        #handle
+                        #action
+                    }
+                }
+            }
+            _ => unimplemented!("flow operations not supported"),
+        }
+    }
+
+    pub fn generate_const_template_offset(&self, tmpl: &ConstTpl) -> TokenStream {
+        match tmpl {
+            ConstTpl::Handle(index, _) => {
+                let index = *index;
+                quote! {
+                    {
+                        let h = {
+                            let opnds = input
+                                .context
+                                .constructors[input.point as usize].operands as usize;
+
+                            input.context.constructors[opnds + #index].handle.as_ref().unwrap()
+                        };
+
+                        handle.offset_space = h.offset_space;
+                        handle.offset_offset = h.offset_offset;
+                        handle.offset_size = h.offset_size;
+                        handle.temporary_space = h.temporary_space;
+                        handle.temporary_offset = h.temporary_offset;
+                    }
+                }
+            }
+            _ => {
+                let wrap_cases = self.translator.manager().spaces().iter().enumerate().map(|(i, spc)| {
+                    let i = i as u8;
+                    let highest = spc.highest_offset();
+                    quote! { #i => #highest }
+                });
+
+                let wrap_match = quote! {
+                    match handle.space {
+                        #(#wrap_cases,)*
+                        _ => unreachable!("invalid space"),
+                    }
+                };
+
+                let value = self.generate_const_template(tmpl);
+
+                quote! {
+                    handle.offset_space = fugue_lifter::utils::input::INVALID_HANDLE;
+                    handle.offset_offset = fugue_lifter::utils::wrap_offset(#wrap_match, #value);
+                }
+            }
+        }
+    }
+
+    pub fn generate_const_template_space(&self, tmpl: &ConstTpl) -> TokenStream {
+        match tmpl {
+            ConstTpl::CurrentSpace => {
+                let space = self.translator.manager().default_space_ref().index() as u8;
+                quote! { #space }
+            },
+            ConstTpl::Handle(index, HandleKind::Space) => {
+                let index = *index;
+                quote! {
+                    {
+                        let h = {
+                            let opnds = input
+                                .context
+                                .constructors[input.point as usize].operands as usize;
+
+                            input.context.constructors[opnds + #index].handle.as_ref().unwrap()
+                        };
+
+                        if h.offset_space == fugue_lifter::utils::input::INVALID_HANDLE {
+                            h.space
+                        } else {
+                            h.temporary_space
+                        }
+                    }
+                }
+            }
+            ConstTpl::SpaceId(id) => {
+                let space = self.translator.manager().space_by_id(*id).index() as u8;
+                quote! { #space }
+            }
+            _ => unreachable!()
+        }
+    }
+
+    pub fn generate_handle_template(&self, tmpl: &HandleTpl) -> TokenStream {
+        if tmpl.ptr_space().is_real() {
+            let size = self.generate_const_template(tmpl.size());
+            let offset_upd = self.generate_const_template_offset(tmpl.ptr_offset());
+
+            return quote! {
+                {
+                    let mut handle = fugue_lifter::utils::FixedHandle {
+                        size: #size as u8,
+                        ..Default::default()
+                    };
+
+                    #offset_upd
+
+                    handle
+                }
+            };
+        }
+
+        let space = self.generate_const_template_space(tmpl.space());
+        let size = self.generate_const_template(tmpl.size());
+
+        let offset_offset = self.generate_const_template(tmpl.ptr_offset());
+        let offset_space = self.generate_const_template_space(tmpl.ptr_space());
+        let offset_size = self.generate_const_template(tmpl.ptr_size());
+
+        let temporary_offset = self.generate_const_template(tmpl.tmp_offset());
+        let temporary_space = self.generate_const_template_space(tmpl.tmp_space());
+
+        let space_cases = self.translator.manager().spaces().iter().enumerate().map(|(i, spc)| {
+            let i = i as u8;
+            let highest = spc.highest_offset();
+            let word_size = spc.word_size() as u64;
+            quote! { #i => (#highest, #word_size) }
+        });
+
+        let space_match = quote! {
+            match handle.space {
+                #(#space_cases,)*
+                _ => unreachable!("invalid space"),
+            }
+        };
+
+        quote! {
+            {
+                let mut handle = fugue_lifter::utils::FixedHandle {
+                    space: #space,
+                    size: #size as u8,
+                    offset_offset: #offset_offset,
+                    ..Default::default()
+                };
+
+                let offset_space = #offset_space;
+
+                if offset_space == 0 { // constant
+                    let (hoffset, word_size) = #space_match;
+
+                    handle.offset_offset =
+                        fugue_lifter::utils::wrap_offset(hoffset, handle.offset_offset * word_size);
+                } else {
+                    handle.offset_space = offset_space;
+                    handle.offset_size = #offset_size as u8;
+
+                    handle.temporary_offset = #temporary_offset;
+                    handle.temporary_space = #temporary_space as u8;
+                }
+
+                handle
+            }
+        }
+    }
+
+    pub fn generate_constructor_template_resolvers(
+        &self,
+        id: usize,
+        scope: usize,
+        cid: usize,
+        ctor: &Constructor,
+    ) -> (TokenStream, TokenStream) {
+        let mut helpers = TokenStream::new();
+
+        let Some(templ) = ctor.template() else {
+            return (helpers, quote! { None });
+        };
+
+        let result_resolver = if let Some(result) = templ.result() {
+            let resolver = format_ident!("tmpl_result_resolver_{id}_{scope}_{cid}");
+            let resolver_body = self.generate_handle_template(result);
+
+            helpers.append_all(quote! {
+                fn #resolver(input: &mut fugue_lifter::utils::ParserInput) -> fugue_lifter::utils::FixedHandle {
+                    #resolver_body
+                }
+            });
+
+            quote! { Some(#resolver) }
+        } else {
+            quote! { None }
+        };
+
+        if templ.operations().is_empty() {
+            return (helpers, result_resolver);
+        }
+
+        (helpers, result_resolver)
+    }
+
     pub fn generate_constructors<'b>(
         &'b self,
         id: usize,
         scope: usize,
         ctors: &'a [Constructor],
-        // variants: &'b mut Vec<Ident>,
     ) -> impl Iterator<Item = TokenStream> + 'b {
         ctors.iter().enumerate().map(move |(cid, ctor)| {
-            // let ctor_tname = format_ident!("SubTable{id}In{scope}Constructor{cid}");
             let ctor_vname = Self::ctor_vname(id, scope, cid);
-
-            // let ctor_vname_id = format_ident!("{ctor_vname}_ID");
-            // let ctor_vname_impl = format_ident!("{ctor_vname}_IMPL");
-            // let ctor_vname_pimpl = format_ident!("{ctor_vname}_CTOR");
 
             let (ctor_id1, ctor_id2) = ctor.id();
             let ctor_id = (ctor_id1 as u32 & 0xffff) << 16 | (ctor_id2 as u32 & 0xffff);
@@ -1750,55 +1297,18 @@ impl<'a> LifterGenerator<'a> {
             let minimum_length = ctor.minimum_length();
 
             let pieces = ctor.print_pieces();
-            let (operand_helpers, operands) = self.generate_constructor_operand_resolvers(id, scope, cid, ctor);
 
+            let (operand_helpers, operands) = self.generate_constructor_operand_resolvers(id, scope, cid, ctor);
             let (context_helpers, apply_context) = self.generate_constructor_context_actions(id, scope, cid, ctor);
 
-            // let resolver_body = self.generate_constructor_operand_resolver(&ctor_vname, ctor);
-            // variants.push(ctor_tname.clone());
-
-            // procedure:
-            //
-            // 1. apply context for current constructor
-            // 2. iterate over operands for current constructor;
-            //  2.1. compute offset of operand (relative)
-            //  2.2. if the operand has a defining symbol and it is a sub-table,
-            //       then we set the current constructor (relative) and go to 1
-            //  2.3. if there is no sub-table, the current (relative) length is
-            //       updated based on the minimum length of the operand.
-            //  2.4. we proceed as if we're at the state of the parent of the
-            //       operand (set via the operand itself or relative to the ctor).
-            //  2.5. if we have processed all operands (counted), we calculate the
-            //       length of all operands (instruction length)
-            //   2.5.1. if the current constructor has a template with delay, then
-            //          set the current delay slot.
-            //
-
-            // operand will have:
-            // - offset (calculated relative to current position or previous operand)
-            // - (optional) parent
-            // - ...
-
-            // We could build the tree more easily?
-            //
-            // Unroll such that:
-            // - process operand1
-            // - process operand2
-            //   - process operand2.1
-            //   - process operand2.2
-            // - process operand3
+            let (template_helpers, template_result) = self.generate_constructor_template_resolvers(id, scope, cid, ctor);
 
             quote! {
-                // #[derive(Debug, Clone, Copy)]
-                // pub struct #ctor_tname;
-                // pub const #ctor_vname_id: u32 = #ctor_id;
-                // pub const #ctor_vname_impl: #ctor_tname = #ctor_tname;
-                // pub const #ctor_vname: ConstructorT = ConstructorT::#ctor_tname(#ctor_vname_impl);
-
                 pub const #ctor_vname: &'static fugue_lifter::utils::Constructor = &fugue_lifter::utils::Constructor {
                     id: #ctor_id,
                     context_actions: #apply_context,
                     operands: &[#(#operands),*],
+                    result: #template_result,
                     print_pieces: &[#(#pieces),*],
                     delay_slots: #delay_slots,
                     minimum_length: #minimum_length,
@@ -1808,37 +1318,7 @@ impl<'a> LifterGenerator<'a> {
 
                 #(#operand_helpers)*
 
-                /*
-                impl #ctor_tname {
-                    #[inline]
-                    fn id(&self) -> u32 {
-                        #ctor_id
-                    }
-
-                    #[inline]
-                    fn apply_context(&self, input: &mut ParserInput) -> Option<()> {
-                        #apply_context
-                        Some(())
-                    }
-
-                    #[inline]
-                    fn print_pieces(&self) -> &'static [&'static str] {
-                        &[#(#pieces),*]
-
-                    #[inline]
-                    fn resolve_operands(&self, input: &mut ParserInput) -> Option<()> {
-                        #resolver_body
-                    }
-
-                    #resolver_body
-
-
-                    #[inline]
-                    fn resolve_operand_handles(&self, input: &mut ParserInput) -> Option<()> {
-                        todo!()
-                    }
-                }
-                */
+                #template_helpers
             }
         })
     }
@@ -1925,12 +1405,9 @@ impl<'a> LifterGenerator<'a> {
                 let cid = pat.id();
                 let ctor = Self::ctor_vname(id, scope, cid);
                 let cond = self.generate_dtree_pmatch_insn(ipat);
-                // let body = self.generate_inner_dtree_aux(id, scope, cid);
 
                 quote! {
                     if #cond {
-                        // NOTE: calling this here might be more efficient
-                        // #ctor.resolve_operands(input)?;
                         return Some(#ctor);
                     }
                 }
@@ -1939,11 +1416,9 @@ impl<'a> LifterGenerator<'a> {
                 let cid = pat.id();
                 let ctor = Self::ctor_vname(id, scope, cid);
                 let cond = self.generate_dtree_pmatch_ctxt(cpat);
-                // let body = self.generate_inner_dtree_aux(id, scope, cid);
 
                 quote! {
                     if #cond {
-                        // #ctor.resolve_operands(input)?;
                         return Some(#ctor);
                     }
                 }
@@ -1954,14 +1429,12 @@ impl<'a> LifterGenerator<'a> {
             } => {
                 let cid = pat.id();
                 let ctor = Self::ctor_vname(id, scope, cid);
-                // let body = self.generate_inner_dtree_aux(id, scope, cid);
 
                 let ccond = self.generate_dtree_pmatch_ctxt(cpat);
                 let icond = self.generate_dtree_pmatch_insn(ipat);
 
                 quote! {
                     if #icond && #ccond {
-                        // #ctor.resolve_operands(input)?;
                         return Some(#ctor);
                     }
                 }
@@ -2009,11 +1482,6 @@ impl<'a> LifterGenerator<'a> {
                     quote! {
                         (#tree_fn as fn(&mut fugue_lifter::utils::ParserInput) -> Option<&'static fugue_lifter::utils::Constructor>)
                     }
-                    /*
-                    quote! {
-                        #bitn => { #tree_fn(input) }
-                    }
-                    */
                 })
                 .collect::<Vec<_>>();
 
@@ -2042,15 +1510,6 @@ impl<'a> LifterGenerator<'a> {
             quote! {
                 (#table.get(#check as usize)?)(input)
             }
-
-            /*
-            quote! {
-                match #check {
-                    #(#parts),*
-                    _ => { return None },
-                }
-            }
-            */
         }
     }
 
@@ -2079,12 +1538,11 @@ impl<'a> LifterGenerator<'a> {
         name: &str,
         ctors: &[Constructor],
         dtree: &DecisionNode,
-        // variants: &mut Vec<Ident>,
     ) -> Result<TokenStream, LifterGeneratorError> {
         let tname = format_ident!("SubTable{id}In{scope}");
         let mut trees = Vec::new();
 
-        let ctor_tokens = self.generate_constructors(id, scope, ctors); // , variants);
+        let ctor_tokens = self.generate_constructors(id, scope, ctors);
         let dtree_tokens = self.generate_dtree(id, scope, dtree, &mut trees);
 
         let tokens = quote! {
@@ -2111,72 +1569,6 @@ impl<'a> LifterGenerator<'a> {
 
 impl<'a> ToTokens for LifterGenerator<'a> {
     fn to_tokens(&self, tokens: &mut TokenStream) {
-        /*
-        let cname = &self.ctor_names;
-
-        // This is the main impl for all constructors
-        let ctor = quote! {
-            // use fugue_lifter::utils::input::*;
-
-            #[derive(Debug, Clone, Copy)]
-            pub enum ConstructorT {
-                #(#cname(#cname)),*
-            }
-
-            impl ConstructorT {
-                #[inline]
-                pub fn id(&self) -> u32 {
-                    match self {
-                        #(Self::#cname(ref v) => v.id()),*
-                    }
-                }
-
-                #[inline]
-                pub fn apply_context(&self, input: &mut ParserInput) -> Option<()> {
-                    match self {
-                        #(Self::#cname(ref v) => v.apply_context(input)),*
-                    }
-                }
-
-                #[inline]
-                pub fn print_pieces(&self) -> &'static [&'static str] {
-                    match self {
-                        #(Self::#cname(ref v) => v.print_pieces()),*
-                    }
-                }
-
-                #[inline]
-                pub fn resolve_operands(&self, input: &mut ParserInput) -> Option<()> {
-                    match self {
-                        #(Self::#cname(ref v) => v.resolve_operands(input)),*
-                    }
-                }
-
-                #[inline]
-                pub fn resolve_operand_constructor(&self, input: &mut ParserInput) -> Option<()> {
-                    match self {
-                        #(Self::#cname(ref v) => v.resolve_operand_constructor(input)),*
-                    }
-                }
-
-                #[inline]
-                pub fn resolve_operand_chunk(&self, input: &mut ParserInput, operand: usize) -> Option<()> {
-                    match self {
-                        #(Self::#cname(ref v) => v.resolve_operand_chunk(input, operand)),*
-                    }
-                }
-
-                #[inline]
-                pub fn resolve_operand_handles(&self, input: &mut ParserInput) -> Option<()> {
-                    match self {
-                        #(Self::#cname(ref v) => v.resolve_operand_handles(input)),*
-                    }
-                }
-            }
-        };
-
-        tokens.append_all(ctor);
-        */
         tokens.append_all(&self.symbols);
     }
 }

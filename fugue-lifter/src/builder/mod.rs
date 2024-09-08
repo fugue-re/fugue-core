@@ -14,7 +14,7 @@ pub use self::error::LifterGeneratorError;
 
 #[derive(Debug, Error)]
 pub enum CodegenError {
-    #[error("cannot format generated lifter: {0}")]
+    #[error("cannot format generated lifter: {0:#?}")]
     Format(anyhow::Error),
     #[error("cannot generate lifter: {0}")]
     Generate(LifterGeneratorError),
@@ -31,6 +31,14 @@ pub fn from_translator(translator: &Translator) -> Result<TokenStream, LifterGen
 }
 
 pub fn build(root: impl AsRef<Path>, language: impl AsRef<str>) -> Result<String, CodegenError> {
+    build_with(root, language, false)
+}
+
+pub fn build_with(
+    root: impl AsRef<Path>,
+    language: impl AsRef<str>,
+    pretty: bool,
+) -> Result<String, CodegenError> {
     let builder = LanguageDB::from_directory_with(root.as_ref(), true)
         .map_err(|e| CodegenError::LanguageDB(e.into()))?;
 
@@ -47,8 +55,12 @@ pub fn build(root: impl AsRef<Path>, language: impl AsRef<str>) -> Result<String
 
     let tokens = from_translator(&translator).map_err(CodegenError::Generate)?;
     let output = tokens.to_string();
-    let pretty = unparse(&syn::parse_file(&output).map_err(|e| CodegenError::Format(e.into()))?);
 
-    Ok(pretty)
+    if pretty {
+        Ok(unparse(
+            &syn::parse_file(&output).map_err(|e| CodegenError::Format(e.into()))?,
+        ))
+    } else {
+        Ok(output)
+    }
 }
-

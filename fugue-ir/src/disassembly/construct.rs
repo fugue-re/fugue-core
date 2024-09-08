@@ -267,6 +267,34 @@ pub struct HandleTpl {
 }
 
 impl HandleTpl {
+    pub fn space(&self) -> &ConstTpl {
+        &self.space
+    }
+
+    pub fn size(&self) -> &ConstTpl {
+        &self.size
+    }
+
+    pub fn ptr_space(&self) -> &ConstTpl {
+        &self.ptr_space
+    }
+
+    pub fn ptr_offset(&self) -> &ConstTpl {
+        &self.ptr_offset
+    }
+
+    pub fn ptr_size(&self) -> &ConstTpl {
+        &self.ptr_size
+    }
+
+    pub fn tmp_space(&self) -> &ConstTpl {
+        &self.tmp_space
+    }
+
+    pub fn tmp_offset(&self) -> &ConstTpl {
+        &self.tmp_offset
+    }
+
     pub fn fix<'a, 'b, 'c, 'z>(
         &'b self,
         walker: &mut ParserWalker<'b, 'c, 'z>,

@@ -1,6 +1,6 @@
 use std::fmt::Debug;
 
-use crate::utils::input::ParserInput;
+use crate::utils::input::{FixedHandle, ParserInput};
 
 pub type ContextActionSet = fn(&mut ParserInput) -> Option<()>;
 
@@ -10,24 +10,23 @@ pub enum OperandResolver {
     Filter(fn(&mut ParserInput) -> Option<()>),
 }
 
-pub enum OperandHandleResolver {
-    None,
-    Attach(fn(&mut ParserInput) -> Option<()>),
-    Template,
-}
+pub type OperandHandleResolver = fn(&mut ParserInput) -> Option<()>;
 
 pub struct Operand {
     pub resolver: OperandResolver,
-    pub handle_resolver: OperandHandleResolver,
+    pub handle_resolver: Option<OperandHandleResolver>,
     pub offset_base: Option<usize>,
     pub offset_rela: usize,
     pub minimum_length: usize,
 }
 
+pub type ConstructorResult = fn(&mut ParserInput) -> FixedHandle;
+
 pub struct Constructor {
     pub id: u32,
     pub context_actions: Option<ContextActionSet>,
     pub operands: &'static [Operand],
+    pub result: Option<ConstructorResult>,
     pub print_pieces: &'static [&'static str],
     pub delay_slots: usize,
     pub minimum_length: usize,
