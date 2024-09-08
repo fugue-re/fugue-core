@@ -12,7 +12,7 @@ use fugue_ir::disassembly::PatternExpression;
 use fugue_ir::Translator;
 
 // use itertools::Itertools as _;
-use proc_macro2::TokenStream;
+use proc_macro2::{Literal, TokenStream};
 use quote::{format_ident, quote, ToTokens, TokenStreamExt};
 use syn::Ident;
 
@@ -20,7 +20,6 @@ use crate::LifterGeneratorError;
 
 pub struct LifterGenerator<'a> {
     symbols: Vec<TokenStream>,
-    // ctor_names: Vec<Ident>,
     lifter: TokenStream,
     translator: &'a Translator,
 }
@@ -29,7 +28,6 @@ impl<'a> LifterGenerator<'a> {
     pub fn new(translator: &'a Translator) -> Result<Self, LifterGeneratorError> {
         let mut slf = Self {
             symbols: Vec::new(),
-            // ctor_names: Vec::new(),
             lifter: Default::default(),
             translator,
         };
@@ -1588,6 +1586,42 @@ impl<'a> LifterGenerator<'a> {
 
 impl<'a> ToTokens for LifterGenerator<'a> {
     fn to_tokens(&self, tokens: &mut TokenStream) {
+        // TODO: we should make a mapping for registers to compute
+        // overlaps, etc.
+
+        let userops = self.translator.user_ops().iter().map(|op| op.as_str());
+        let userops_to_ids = self.translator.user_ops().iter().enumerate().map(|(i, op)| {
+            let id = i as u16;
+            let name = op.as_str();
+            let name_bytes = Literal::byte_string(name.as_bytes());
+
+            quote! { #name_bytes => #id }
+        });
+        let n_userops = self.translator.user_ops().len();
+
+
+        // TODO: this should be a string-like type that can allow easier
+        // comparisons.
+
+        tokens.append_all(quote! {
+            pub const USER_OPS: [&'static str; #n_userops] = [
+                #(#userops),*
+            ];
+
+            #[inline]
+            pub const fn user_op_by_name(name: &'static str) -> u16 {
+                match name.as_bytes() {
+                    #(#userops_to_ids,)*
+                    _ => panic!("unknown user op"),
+                }
+            }
+
+            #[inline]
+            pub const fn user_op_by_id(id: u16) -> &'static str {
+                USER_OPS[id as usize]
+            }
+        });
+
         tokens.append_all(&self.symbols);
     }
 }
