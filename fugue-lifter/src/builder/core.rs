@@ -174,6 +174,23 @@ impl<'a> LifterGenerator<'a> {
                 varnode_table,
                 ..
             } => {
+                // NOTE: it's possible to sometimes compress such lists; for example,
+                // we often see something like:
+                //
+                // match index {
+                //     0usize => FixedHandle { ... },
+                //     1usize => FixedHandle { ... },
+                //     2usize => FixedHandle { ... },
+                //     3usize => FixedHandle { ... },
+                //     ...
+                // }
+                //
+                // Where the FixedHandle differs in only a single field, and the fields
+                // set are all constant and known at build time. We could compress these
+                // cases, by matching for the field assignment, or, if possible, compute
+                // the target value from the index.
+                //
+
                 let index = self.generate_pattern_resolver(pattern_value);
                 let cases = varnode_table.iter().enumerate().map(|(i, symid)| {
                     if let Some(symid) = symid {
@@ -1176,12 +1193,14 @@ impl<'a> LifterGenerator<'a> {
 
     pub fn generate_handle_template(&self, tmpl: &HandleTpl) -> TokenStream {
         if tmpl.ptr_space().is_real() {
+            let space = self.generate_const_template_space(tmpl.space());
             let size = self.generate_const_template(tmpl.size());
             let offset_upd = self.generate_const_template_offset(tmpl.ptr_offset());
 
             return quote! {
                 {
                     let mut handle = fugue_lifter::utils::FixedHandle {
+                        space: #space,
                         size: #size as u8,
                         ..Default::default()
                     };

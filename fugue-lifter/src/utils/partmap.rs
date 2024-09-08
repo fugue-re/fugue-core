@@ -42,7 +42,7 @@ pub struct PartMap<K: Ord, V> {
 
 impl<K, V> PartMap<K, V>
 where
-    K: Clone + Ord,
+    K: Copy + Clone + Ord,
     V: Clone,
 {
     pub fn new(default: V) -> Self {
@@ -64,12 +64,12 @@ where
         self.mapping.is_empty()
     }
 
-    pub fn bounds<'a>(&self, point: &'a K) -> BoundKind<K, V> {
+    pub fn bounds(&self, point: K) -> BoundKind<K, V> {
         let lb = self.mapping.range(..=point).rev().next();
         let ub = self
             .mapping
             .range(point..)
-            .find_map(|(k, _)| if k > point { Some(k) } else { None });
+            .find_map(|(k, _)| if *k > point { Some(k) } else { None });
 
         match (lb, ub) {
             (None, None) => BoundKind::None(self.default_value()),
@@ -83,28 +83,28 @@ where
         self.mapping = Map::new();
     }
 
-    pub fn clear_range<'a>(&mut self, start: &'a K, end: &'a K) -> &mut V {
+    pub fn clear_range(&mut self, start: K, end: K) -> &mut V {
         self.split(start);
         self.split(end);
 
         let keys = self
             .mapping
             .range((Excluded(start), Excluded(end)))
-            .map(|(k, _)| k.clone())
+            .map(|(&k, _)| k)
             .collect::<Vec<K>>();
 
         for key in keys {
             self.mapping.remove(&key);
         }
 
-        self.mapping.get_mut(start).unwrap()
+        self.mapping.get_mut(&start).unwrap()
     }
 
-    pub fn get<'a>(&self, point: &'a K) -> Option<&V> {
+    pub fn get(&self, point: K) -> Option<&V> {
         self.mapping.range(..=point).rev().next().map(|(_, v)| v)
     }
 
-    pub fn get_or_default<'a>(&self, point: &'a K) -> &V {
+    pub fn get_or_default(&self, point: K) -> &V {
         self.get(point).unwrap_or_else(|| self.default_value())
     }
 
@@ -138,13 +138,13 @@ where
         self.mapping.range_mut(range)
     }
 
-    pub fn split<'a>(&'a mut self, at: &'a K) -> &'a V {
+    pub fn split<'a>(&'a mut self, at: K) -> &'a V {
         self.split_mut(at)
     }
 
-    pub fn split_mut<'a>(&'a mut self, at: &'a K) -> &'a mut V {
+    pub fn split_mut<'a>(&'a mut self, at: K) -> &'a mut V {
         let value = if let Some(point) = self.mapping.range(..=at).rev().next() {
-            if point.0 == at {
+            if *point.0 == at {
                 None
             } else {
                 Some(point.1.clone())
@@ -154,7 +154,7 @@ where
         };
 
         if let Some(value) = value {
-            self.mapping.entry(at.clone()).or_insert(value)
+            self.mapping.entry(at).or_insert(value)
         } else {
             self.mapping.get_mut(&at).unwrap()
         }
@@ -169,14 +169,14 @@ mod test {
     fn simple_partmap() {
         let mut map = PartMap::<isize, usize>::new(0);
 
-        *map.split_mut(&5) = 5;
-        *map.split_mut(&2) = 2;
-        *map.split_mut(&3) = 4;
-        *map.split_mut(&3) = 3;
+        *map.split_mut(5) = 5;
+        *map.split_mut(2) = 2;
+        *map.split_mut(3) = 4;
+        *map.split_mut(3) = 3;
 
-        assert_eq!(map.get(&6), Some(&5));
-        assert_eq!(map.get(&8), Some(&5));
-        assert_eq!(map.get(&4), Some(&3));
-        assert_eq!(map.get(&1), None);
+        assert_eq!(map.get(6), Some(&5));
+        assert_eq!(map.get(8), Some(&5));
+        assert_eq!(map.get(4), Some(&3));
+        assert_eq!(map.get(1), None);
     }
 }

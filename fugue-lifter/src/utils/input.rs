@@ -88,14 +88,9 @@ pub struct ParserInput {
 }
 
 impl ParserInput {
-    pub fn new(address: u64, bytes: &[u8]) -> Self {
-        let mut buffer = [0u8; 16];
-
-        let view_len = bytes.len().min(buffer.len());
-        buffer[..view_len].copy_from_slice(&bytes[..view_len]);
-
+    pub fn new(address: u64, bytes: &[u8], db: &ContextDatabase) -> Self {
         let context = ParserContext {
-            buffer,
+            buffer: Default::default(),
             context: Default::default(),
             constructors: [ConstructorNode::default(); MAX_CTOR_STATES],
             commits: Default::default(),
@@ -105,12 +100,30 @@ impl ParserInput {
             alloc: 1,
         };
 
-        Self {
+        let mut input = Self {
             context,
             breadcrumb: [0u8; MAX_PARSER_DEPTH + 1],
             depth: 0,
             point: 0,
-        }
+        };
+
+        input.set_buffer(bytes);
+        input.set_context(db);
+        input
+    }
+
+    #[inline]
+    pub fn reinitialise(&mut self, address: u64, bytes: &[u8], db: &ContextDatabase) {
+        self.context.address = address;
+        self.context.delay_slot = 0;
+
+        self.context.alloc = 1;
+        self.context.constructors[0] = Default::default();
+        self.context.commits.clear();
+
+        self.base_state();
+        self.set_buffer(bytes);
+        self.set_context(db);
     }
 
     #[inline(always)]
@@ -149,6 +162,16 @@ impl ParserInput {
                 .constructor
                 .unwrap_unchecked()
         }
+    }
+
+    #[inline]
+    pub fn set_buffer(&mut self, bytes: &[u8]) {
+        let mut buffer = [0u8; 16];
+
+        let view_len = bytes.len().min(buffer.len());
+        buffer[..view_len].copy_from_slice(&bytes[..view_len]);
+
+        self.context.buffer = buffer;
     }
 
     #[inline]

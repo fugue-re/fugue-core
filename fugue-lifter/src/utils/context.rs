@@ -218,13 +218,13 @@ impl ContextDatabase {
     }
 
     pub fn new_tracked_set(&mut self, addr1: u64, addr2: u64) -> &mut TrackedSet {
-        let range = self.trackbase.clear_range(&addr1, &addr2);
+        let range = self.trackbase.clear_range(addr1, addr2);
         range.clear();
         range
     }
 
     pub fn tracked_set(&self, address: u64) -> &TrackedSet {
-        self.trackbase.get_or_default(&address)
+        self.trackbase.get_or_default(address)
     }
 
     pub fn tracked_default(&self) -> &TrackedSet {
@@ -245,7 +245,7 @@ impl ContextDatabase {
 
     pub fn get_variable<S: Borrow<str>>(&self, name: S, address: u64) -> Option<u32> {
         self.variable(name.borrow())
-            .map(|context| context.get(&self.database.get_or_default(&address).values))
+            .map(|context| context.get(&self.database.get_or_default(address).values))
     }
 
     pub fn set_variable<S: Borrow<str>>(
@@ -302,11 +302,11 @@ impl ContextDatabase {
     }
 
     pub fn get_context(&self, address: u64) -> &[u32] {
-        &self.database.get_or_default(&address).values
+        &self.database.get_or_default(address).values
     }
 
     pub fn get_context_bounds(&self, address: u64) -> (&[u32], u64, u64) {
-        match self.database.bounds(&address) {
+        match self.database.bounds(address) {
             BoundKind::None(fa) => (&fa.values, 0, self.address_limit),
             BoundKind::Lower(l, fa) => (&fa.values, *l, self.address_limit),
             BoundKind::Upper(u, fa) => (&fa.values, 0, *u - 1),
@@ -326,7 +326,7 @@ impl ContextDatabase {
         mask: u32,
         value: u32,
     ) {
-        self.database.split(&current_address);
+        self.database.split(current_address);
 
         get_region_to_change_point(&mut self.database, commit_address, num, mask, |change| {
             let val = &mut change[num];
@@ -368,6 +368,7 @@ impl ContextDatabase {
     }
 }
 
+#[inline(always)]
 fn get_region_to_change_point<'a, F>(
     db: &'a mut PartMap<u64, FreeArray>,
     addr: u64,
@@ -379,7 +380,7 @@ fn get_region_to_change_point<'a, F>(
 {
     use itertools::Position;
 
-    db.split(&addr);
+    db.split(addr);
 
     for change in db
         .range_mut(addr..)
@@ -400,6 +401,7 @@ fn get_region_to_change_point<'a, F>(
     }
 }
 
+#[inline(always)]
 fn get_region_for_set<'a, F>(
     db: &'a mut PartMap<u64, FreeArray>,
     addr1: u64,
@@ -410,10 +412,10 @@ fn get_region_for_set<'a, F>(
 ) where
     F: FnMut(&'a mut Vec<u32>),
 {
-    db.split(&addr1);
+    db.split(addr1);
 
     let ranges = if let Some(addr2) = addr2 {
-        db.split(&addr2);
+        db.split(addr2);
         db.range_mut(addr1..addr2)
     } else {
         db.range_mut(addr1..)

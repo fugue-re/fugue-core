@@ -118,4 +118,35 @@ impl Constructor {
 
         Some(())
     }
+
+    #[inline]
+    pub fn resolve_handles(&'static self, input: &mut ParserInput) -> Option<()> {
+        input.base_state();
+
+        'outer: while !input.resolved() {
+            let ctor = input.constructor();
+            let opid = input.operand();
+
+            for (i, opnd) in ctor.operands.iter().enumerate().skip(opid) {
+                input.push_operand(i);
+
+                if let Some(resolver) = opnd.handle_resolver {
+                    (resolver)(input)?;
+                } else {
+                    continue 'outer;
+                }
+
+                input.pop_operand();
+            }
+
+            if let Some(resolver) = ctor.result {
+                let handle = (resolver)(input);
+                input.set_parent_handle(handle);
+            }
+
+            input.pop_operand();
+        }
+
+        Some(())
+    }
 }
