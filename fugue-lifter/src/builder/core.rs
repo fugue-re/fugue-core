@@ -1,14 +1,13 @@
 use std::mem::size_of;
 
-use fugue_ir::disassembly::construct::ConstTpl;
-use fugue_ir::disassembly::construct::HandleKind;
-use fugue_ir::disassembly::construct::HandleTpl;
-use fugue_ir::disassembly::symbol::sub_table::Context;
+use fugue_ir::disassembly::construct::{
+    ConstTpl, ConstructTpl, HandleKind, HandleTpl, OpTpl, VarnodeTpl,
+};
 use fugue_ir::disassembly::symbol::sub_table::{
-    ContextPattern, DecisionPair, DisjointPattern, InstructionPattern,
+    Context, ContextPattern, DecisionPair, DisjointPattern, InstructionPattern,
 };
 use fugue_ir::disassembly::symbol::{Constructor, DecisionNode, Symbol};
-use fugue_ir::disassembly::PatternExpression;
+use fugue_ir::disassembly::{Opcode, PatternExpression};
 use fugue_ir::Translator;
 
 // use itertools::Itertools as _;
@@ -16,6 +15,7 @@ use proc_macro2::{Literal, TokenStream};
 use quote::{format_ident, quote, ToTokens, TokenStreamExt};
 use syn::Ident;
 
+use crate::utils::pcode::Op;
 use crate::LifterGeneratorError;
 
 pub struct LifterGenerator<'a> {
@@ -598,7 +598,8 @@ impl<'a> LifterGenerator<'a> {
             {
                 match tsym {
                     Symbol::Subtable { id, scope, .. } => {
-                        // The subtable to perform resolution
+                        // NOTE: this is where we should perform construction of inner resolvers
+                        //
                         let stname = format_ident!("SubTable{id}In{scope}");
                         let resolver = quote! { fugue_lifter::utils::OperandResolver::Constructor(<#stname>::resolve) };
                         let handle_resolver = quote! { None };
@@ -1132,11 +1133,17 @@ impl<'a> LifterGenerator<'a> {
                 }
             }
             _ => {
-                let wrap_cases = self.translator.manager().spaces().iter().enumerate().map(|(i, spc)| {
-                    let i = i as u8;
-                    let highest = spc.highest_offset();
-                    quote! { #i => #highest }
-                });
+                let wrap_cases =
+                    self.translator
+                        .manager()
+                        .spaces()
+                        .iter()
+                        .enumerate()
+                        .map(|(i, spc)| {
+                            let i = i as u8;
+                            let highest = spc.highest_offset();
+                            quote! { #i => #highest }
+                        });
 
                 let wrap_match = quote! {
                     match handle.space {
@@ -1160,7 +1167,7 @@ impl<'a> LifterGenerator<'a> {
             ConstTpl::CurrentSpace => {
                 let space = self.translator.manager().default_space_ref().index() as u8;
                 quote! { #space }
-            },
+            }
             ConstTpl::Handle(index, HandleKind::Space) => {
                 let index = *index;
                 quote! {
@@ -1185,7 +1192,7 @@ impl<'a> LifterGenerator<'a> {
                 let space = self.translator.manager().space_by_id(*id).index() as u8;
                 quote! { #space }
             }
-            _ => unreachable!()
+            _ => unreachable!(),
         }
     }
 
@@ -1220,12 +1227,18 @@ impl<'a> LifterGenerator<'a> {
         let temporary_offset = self.generate_const_template(tmpl.tmp_offset());
         let temporary_space = self.generate_const_template_space(tmpl.tmp_space());
 
-        let space_cases = self.translator.manager().spaces().iter().enumerate().map(|(i, spc)| {
-            let i = i as u8;
-            let highest = spc.highest_offset();
-            let word_size = spc.word_size() as u64;
-            quote! { #i => (#highest, #word_size) }
-        });
+        let space_cases = self
+            .translator
+            .manager()
+            .spaces()
+            .iter()
+            .enumerate()
+            .map(|(i, spc)| {
+                let i = i as u8;
+                let highest = spc.highest_offset();
+                let word_size = spc.word_size() as u64;
+                quote! { #i => (#highest, #word_size) }
+            });
 
         let space_match = quote! {
             match handle.space {
@@ -1298,6 +1311,389 @@ impl<'a> LifterGenerator<'a> {
         (helpers, result_resolver)
     }
 
+    pub fn generate_build_action_location(&self, tmpl: &VarnodeTpl) -> TokenStream {
+        let space = self.generate_const_template_space(tmpl.space());
+        let offset = self.generate_const_template_offset(tmpl.offset());
+        let size = self.generate_const_template(tmpl.size());
+
+        let space_cases = self
+            .translator
+            .manager()
+            .spaces()
+            .iter()
+            .enumerate()
+            .map(|(i, spc)| {
+                let i = i as u8;
+                if i == 0 {
+                    // constant
+                    quote! { #i => offset & fugue_lifter::utils::calculate_mask(size as usize) }
+                } else if spc.id().is_unique() {
+                    quote! { #i => offset | builder.unique_offset }
+                } else {
+                    let highest = spc.highest_offset();
+                    quote! { #i => fugue_lifter::utils::wrap_offset(#highest, offset) }
+                }
+            });
+
+        let space_match = quote! {
+            match space {
+                #(#space_cases,)*
+                _ => unreachable!("invalid space"),
+            }
+        };
+
+        quote! {
+            {
+                let space = #space;
+                let size = #size as u8;
+
+                let mut offset = #offset;
+
+                offset = #space_match;
+
+                fugue_lifter::utils::pcode::Varnode {
+                    space,
+                    offset,
+                    size,
+                }
+            }
+        }
+    }
+
+    pub fn generate_build_action_pointer(&self, tmpl: &VarnodeTpl) -> TokenStream {
+        let index = tmpl.offset().handle_index().unwrap();
+
+        let handle = quote! {
+            {
+                let opnds = builder
+                    .input
+                    .context
+                    .constructors[input.point as usize].operands as usize;
+
+                input
+                    .context
+                    .constructors[opnds + #index]
+                    .handle.as_ref()?
+            }
+        };
+
+        let space_cases = self
+            .translator
+            .manager()
+            .spaces()
+            .iter()
+            .enumerate()
+            .map(|(i, spc)| {
+                let i = i as u8;
+                if i == 0 {
+                    // constant
+                    quote! { #i => offset & fugue_lifter::utils::calculate_mask(size as usize) }
+                } else if spc.id().is_unique() {
+                    quote! { #i => offset | builder.unique_offset }
+                } else {
+                    let highest = spc.highest_offset();
+                    quote! { #i => fugue_lifter::utils::wrap_offset(#highest, offset) }
+                }
+            });
+
+        let space_match = quote! {
+            match space {
+                #(#space_cases,)*
+                _ => unreachable!("invalid space"),
+            }
+        };
+
+        quote! {
+            {
+                let handle = #handle;
+
+                let space = handle.offset_space;
+                let size = handle.offset_size;
+                let mut offset = handle.offset_offset;
+
+                offset = #space_match;
+
+                (
+                    handle.space,
+                    fugue_lifter::utils::pcode::Varnode {
+                        space,
+                        offset,
+                        size,
+                    }
+                )
+            }
+        }
+    }
+
+    pub fn generate_build_action_is_dymamic(&self, index: usize) -> TokenStream {
+        quote! {
+            {
+                let opnds = builder
+                    .input
+                    .context
+                    .constructors[input.point as usize].operands as usize;
+
+                let space = input
+                    .context
+                    .constructors[opnds + #index]
+                    .handle.as_ref()?
+                    .offset_space;
+
+                space != fugue_lifter::utils::input::INVALID_HANDLE
+            }
+        }
+    }
+
+    pub fn generate_constructor_op_append_build_action(&self, tmpl: &OpTpl) -> TokenStream {
+        let index = tmpl.input(0).offset().real() as usize;
+        quote! {
+            {
+                let opnds = input
+                    .context
+                    .constructors[input.point as usize].operands as usize;
+
+                if let Some(ctor) = input.context.constructors[opnds + #index].constructor {
+                    // Yes.
+                    input.push_operand(#index);
+
+                    if let Some(action) = ctor.build_action {
+                        (action)(builder);
+                    }
+
+                    input.pop_operand(#index);
+                }
+            }
+        }
+    }
+
+    pub fn generate_constructor_op_inlined_input(&self, input: &VarnodeTpl) -> TokenStream {
+        let offset = self.generate_const_template_offset(input.offset());
+        quote! {
+            { #offset }
+        }
+    }
+
+    pub fn generate_constructor_op_input(&self, input: &VarnodeTpl) -> TokenStream {
+        // is_dynamic check
+        if let ConstTpl::Handle(index, _) = input.offset() {
+            let is_dynamic = self.generate_build_action_is_dymamic(*index);
+            let location = self.generate_build_action_location(input);
+            let pointer = self.generate_build_action_pointer(input);
+
+            quote! {
+                {
+                    let varnode = #location;
+                    if #is_dynamic {
+                        let (space, pointer) = #pointer;
+                        // NOTE: is this really worth it? We build it into the Load...
+                        /*
+                        let index = fugue_lifter::utils::pcode::Varnode {
+                            space: 0,
+                            offset: space as u64,
+                            size: 0,
+                        };
+                        */
+                        builder.context.issue_with(
+                            fugue_lifter::utils::pcode::Op::Load(space),
+                            fugue_lifter::utils::pcode::Inputs::one(pointer),
+                            varnode,
+                        );
+                        builder.context.push_input(varnode);
+                    } else {
+                        builder.context.push_input(varnode);
+                    }
+                }
+            }
+        } else {
+            let location = self.generate_build_action_location(input);
+            quote! {
+                {
+                    builder.context.push_input(#location);
+                }
+            }
+        }
+    }
+
+    pub fn generate_constructor_op_dump_action(&self, tmpl: &OpTpl) -> TokenStream {
+        let (index, opcode) = match tmpl.opcode() {
+            Opcode::Load => {
+                let spc = self.generate_constructor_op_inlined_input(tmpl.input(0));
+                (
+                    1,
+                    quote! {
+                        fugue_lifter::utils::pcode::Load(#spc as u8)
+                    },
+                )
+            }
+            Opcode::Store => {
+                let spc = self.generate_constructor_op_inlined_input(tmpl.input(0));
+                (
+                    1,
+                    quote! {
+                        fugue_lifter::utils::pcode::Store(#spc as u8)
+                    },
+                )
+            }
+            Opcode::CallOther => {
+                let uop = self.generate_constructor_op_inlined_input(tmpl.input(0));
+                (
+                    1,
+                    quote! {
+                        fugue_lifter::utils::pcode::UserOp(#uop as u16)
+                    },
+                )
+            }
+            opcode => {
+                let op = Op::try_from(opcode).unwrap();
+                let tokens = quote! {
+                    #op
+                };
+                (0, tokens)
+            }
+        };
+
+        let inputs = tmpl.input_count();
+        let input_operations = (index..inputs).map(|i| {
+            let input = tmpl.input(i);
+            self.generate_constructor_op_input(input)
+        });
+
+        let relative_label = (inputs > 0).then(|| {
+            quote! {
+                builder.context.inputs.0[0].offset += builder.context.label_base as u64;
+                builder.context.label_refs.push(fugue_lifter::utils::pcode::RelativeRecord {
+                    operation: builder.context.issued.len() as u8,
+                    index: 0,
+                });
+            }
+        });
+
+        let output = if let Some(output) = tmpl.output() {
+            let outp = self.generate_build_action_location(output);
+            let store = if let ConstTpl::Handle(index, _) = output.offset() {
+                let is_dynamic = self.generate_build_action_is_dymamic(*index);
+                let pointer = self.generate_build_action_pointer(output);
+
+                quote! {
+                    if #is_dynamic {
+                        let (space, pointer) = #pointer;
+                        builder.context.issue_with(
+                            fugue_lifter::utils::pcode::Op::Store(space),
+                            fugue_lifter::utils::pcode::Inputs::two(pointer, output),
+                            fugue_lifter::utils::pcode::Varnode::INVALID,
+                        );
+                    }
+                }
+            } else {
+                TokenStream::new()
+            };
+
+            quote! {
+                {
+                    let output = #outp;
+                    builder.context.issue(
+                        op,
+                        output,
+                    );
+                    #store
+                }
+            }
+        } else {
+            quote! {
+                builder.context.issue(
+                    op,
+                    fugue_lifter::utils::pcode::Varnode::INVALID
+                );
+            }
+        };
+
+        quote! {
+            {
+                let op = #opcode;
+
+                #(#input_operations)*
+
+                #relative_label
+
+                #output
+            }
+        }
+    }
+
+    pub fn generate_constructor_op_build_action(&self, tmpl: &OpTpl) -> TokenStream {
+        match tmpl.opcode() {
+            Opcode::Build => self.generate_constructor_op_append_build_action(tmpl),
+            Opcode::DelaySlot => {
+                // TODO!!
+                todo!()
+            }
+            Opcode::Label => {
+                // NOTE: the original logic here checks if the index exceeds the current
+                // size of the allocated labels, and if so, then creates a range of invalid
+                // labels. Since we have a fixed allocation, we get this by default, so we
+                // can just set the label value.
+                //
+                let offset = tmpl.input(0).offset().real() as usize;
+                quote! {
+                    builder.context.labels[#offset + builder.context.label_base as usize] =
+                        builder.context.issued.len();
+                }
+            }
+            Opcode::CrossBuild => {
+                unimplemented!("cross-build is not supported")
+            }
+            _ => self.generate_constructor_op_dump_action(tmpl),
+        }
+    }
+
+    pub fn generate_constructor_build_action(
+        &self,
+        id: usize,
+        scope: usize,
+        cid: usize,
+        tmpl: &ConstructTpl,
+    ) -> (Ident, TokenStream) {
+        let action_name = format_ident!("tmpl_build_action_{id}_{scope}_{cid}");
+        let label_count = tmpl.labels() as u8;
+
+        let operations = tmpl
+            .operations()
+            .iter()
+            .map(|op| self.generate_constructor_op_build_action(op));
+
+        let action_fcn = quote! {
+            fn #action_name<'a>(builder: &mut fugue_lifter::utils::pcode::PCodeBuilder<'a>) -> Option<()> {
+                let old_base = builder.context.label_base;
+
+                builder.context.label_base = builder.context.label_count;
+                builder.context.label_count += #label_count;
+
+                #(#operations)*
+
+                builder.context.label_base = old_base;
+            }
+        };
+
+        (action_name, action_fcn)
+    }
+
+    pub fn generate_constructor_lifting_actions(
+        &self,
+        id: usize,
+        scope: usize,
+        cid: usize,
+        ctor: &Constructor,
+    ) -> (Option<TokenStream>, TokenStream) {
+        let (action_name, action_fcn) = if let Some(tmpl) = ctor.template() {
+            let (nm, fcn) = self.generate_constructor_build_action(id, scope, cid, tmpl);
+            (quote! { Some(#nm) }, Some(fcn))
+        } else {
+            (quote! { None }, None)
+        };
+
+        (action_fcn, action_name)
+    }
+
     pub fn generate_constructors<'b>(
         &'b self,
         id: usize,
@@ -1319,6 +1715,7 @@ impl<'a> LifterGenerator<'a> {
             let (context_helpers, apply_context) = self.generate_constructor_context_actions(id, scope, cid, ctor);
 
             let (template_helpers, template_result) = self.generate_constructor_template_resolvers(id, scope, cid, ctor);
+            let (lifter_helper, lifter_action) = self.generate_constructor_lifting_actions(id, scope, cid, ctor);
 
             quote! {
                 pub const #ctor_vname: &'static fugue_lifter::utils::Constructor = &fugue_lifter::utils::Constructor {
@@ -1326,6 +1723,7 @@ impl<'a> LifterGenerator<'a> {
                     context_actions: #apply_context,
                     operands: &[#(#operands),*],
                     result: #template_result,
+                    build_action: #lifter_action,
                     print_pieces: &[#(#pieces),*],
                     delay_slots: #delay_slots,
                     minimum_length: #minimum_length,
@@ -1336,6 +1734,8 @@ impl<'a> LifterGenerator<'a> {
                 #(#operand_helpers)*
 
                 #template_helpers
+
+                #lifter_helper
             }
         })
     }
@@ -1590,15 +1990,19 @@ impl<'a> ToTokens for LifterGenerator<'a> {
         // overlaps, etc.
 
         let userops = self.translator.user_ops().iter().map(|op| op.as_str());
-        let userops_to_ids = self.translator.user_ops().iter().enumerate().map(|(i, op)| {
-            let id = i as u16;
-            let name = op.as_str();
-            let name_bytes = Literal::byte_string(name.as_bytes());
+        let userops_to_ids = self
+            .translator
+            .user_ops()
+            .iter()
+            .enumerate()
+            .map(|(i, op)| {
+                let id = i as u16;
+                let name = op.as_str();
+                let name_bytes = Literal::byte_string(name.as_bytes());
 
-            quote! { #name_bytes => #id }
-        });
+                quote! { #name_bytes => #id }
+            });
         let n_userops = self.translator.user_ops().len();
-
 
         // TODO: this should be a string-like type that can allow easier
         // comparisons.

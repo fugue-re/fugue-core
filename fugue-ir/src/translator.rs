@@ -606,6 +606,12 @@ impl Translator {
         let mut walker = ParserWalker::new(context, self);
 
         Translator::resolve(&mut walker, self.root.id(), &self.symbol_table)?;
+        Translator::resolve_handles(&mut walker, &self.manager, &self.symbol_table)?;
+
+        walker.base_state();
+        walker
+            .apply_commits(db, &self.manager, &self.symbol_table)
+            .map_err(Error::from)?;
 
         let t2 = std::time::Instant::now();
 
@@ -615,13 +621,6 @@ impl Translator {
         let micros = diff.as_micros();
 
         println!("{micros}us / {nanos}ns");
-
-        Translator::resolve_handles(&mut walker, &self.manager, &self.symbol_table)?;
-
-        walker.base_state();
-        walker
-            .apply_commits(db, &self.manager, &self.symbol_table)
-            .map_err(Error::from)?;
 
         let delay_slots = walker.delay_slot();
         let length = walker.length();

@@ -1,6 +1,7 @@
 use std::fmt::Debug;
 
 use crate::utils::input::{FixedHandle, ParserInput};
+use crate::utils::pcode::PCodeBuilder;
 
 pub type ContextActionSet = fn(&mut ParserInput) -> Option<()>;
 
@@ -21,12 +22,14 @@ pub struct Operand {
 }
 
 pub type ConstructorResult = fn(&mut ParserInput) -> FixedHandle;
+pub type PCodeBuildAction = fn(&mut PCodeBuilder<'_>);
 
 pub struct Constructor {
     pub id: u32,
     pub context_actions: Option<ContextActionSet>,
     pub operands: &'static [Operand],
     pub result: Option<ConstructorResult>,
+    pub build_action: Option<PCodeBuildAction>,
     pub print_pieces: &'static [&'static str],
     pub delay_slots: usize,
     pub minimum_length: usize,

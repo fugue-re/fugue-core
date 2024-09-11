@@ -2,20 +2,33 @@ use std::mem;
 
 use arrayvec::ArrayVec;
 
-use crate::utils::input::INVALID_HANDLE;
+use crate::utils::input::{ParserInput, INVALID_HANDLE};
 
-pub const MAX_LABELS: usize = 256;
+use super::calculate_mask;
+
+pub const MAX_LABELS: usize = 192;
 pub const MAX_INPUTS_SPILL: usize = 8;
+pub const MAX_DELAY_CTXTS: usize = 8;
 
-pub struct PCodeBuilder {
+const INVALID_LABEL: i16 = -1;
+
+pub struct PCodeBuilderContext {
     pub inputs: Inputs,
     pub inputs_count: u8,
     pub inputs_spill: ArrayVec<Inputs, MAX_INPUTS_SPILL>,
     pub label_base: u8,
     pub label_count: u8,
-    pub labels: ArrayVec<i16, MAX_LABELS>,
+    pub labels: [i16; MAX_LABELS],
     pub label_refs: ArrayVec<RelativeRecord, MAX_LABELS>,
     pub issued: Vec<PCodeOp>,
+    pub unique_mask: u64, // this is constant from the translator
+}
+
+pub struct PCodeBuilder<'a> {
+    pub context: &'a mut PCodeBuilderContext,
+    pub input: &'a mut ParserInput,
+    pub delay_slots: &'a mut [ParserInput],
+    pub unique_offset: u64,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -24,17 +37,18 @@ pub struct RelativeRecord {
     pub index: u8,
 }
 
-impl PCodeBuilder {
-    pub fn new() -> Self {
+impl PCodeBuilderContext {
+    pub fn new(unique_mask: u64) -> Self {
         Self {
             inputs: Default::default(),
             inputs_count: 0,
             inputs_spill: Default::default(),
             label_base: 0,
             label_count: 0,
-            labels: Default::default(),
+            labels: [INVALID_LABEL; MAX_LABELS],
             label_refs: Default::default(),
             issued: Default::default(),
+            unique_mask,
         }
     }
 
@@ -43,8 +57,30 @@ impl PCodeBuilder {
         mem::take(&mut self.issued)
     }
 
-    fn resolve_relatives(&mut self) {
-        todo!()
+    fn resolve_relatives(&mut self) -> Option<()> {
+        for rel in self.label_refs.iter() {
+            // we need to recalculate the operation number since we emit args
+            // spilled as Op::Arg(_) when we have > 2 inputs.
+
+            let op_index = rel.operation + (rel.index >> 2);
+            let in_index = rel.index & 1;
+
+            let varnode = &mut self.issued[op_index as usize].inputs.0[in_index as usize];
+
+            let label_index = varnode.offset as usize;
+            let label = *self.labels.get(label_index)?;
+
+            if label == INVALID_LABEL {
+                return None;
+            } else {
+                let label = label as u64;
+                let fixed = label.wrapping_sub(rel.operation as u64)
+                    & calculate_mask(varnode.size as usize);
+                varnode.offset = fixed;
+            }
+        }
+
+        Some(())
     }
 
     #[inline]
@@ -155,22 +191,10 @@ impl Inputs {
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Instruction {
-    pub op: Op,
-    pub inputs: (Varnode, Varnode),
-    pub output: Varnode,
-}
-
-#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Op {
     Copy,
-    Subpiece,
-    ZeroExtend,
-    SignExtend,
-
-    IntToFloat,
-    FloatToFloat,
-    FloatToInt,
+    Load(u8),
+    Store(u8),
 
     IntAdd,
     IntSub,
@@ -183,26 +207,30 @@ pub enum Op {
     IntRem,
     IntSignedRem,
 
-    IntLeft,
-    IntRotateLeft,
-    IntRight,
-    IntSignedRight,
-    IntRotateRight,
+    IntLeftShift,
+    IntRightShift,
+    IntSignedRightShift,
 
-    IntEqual,
-    IntNotEqual,
+    IntEq,
+    IntNotEq,
     IntLess,
     IntSignedLess,
-    IntLessEqual,
-    IntSignedLessEqual,
+    IntLessEq,
+    IntSignedLessEq,
     IntCarry,
     IntSignedCarry,
     IntSignedBorrow,
 
     IntNot,
-    IntNegate,
-    IntCountOnes,
-    IntCountZeros,
+    IntNeg,
+
+    CountOnes,
+    CountZeros,
+
+    ZeroExt,
+    SignExt,
+
+    IntToFloat,
 
     BoolAnd,
     BoolOr,
@@ -214,25 +242,33 @@ pub enum Op {
     FloatMul,
     FloatDiv,
 
-    FloatNegate,
+    FloatNeg,
     FloatAbs,
     FloatSqrt,
-    FloatCeil,
+    FloatCeiling,
     FloatFloor,
     FloatRound,
-    FloatIsNan,
+    FloatTruncate,
+    FloatIsNaN,
 
-    FloatEqual,
-    FloatNotEqual,
+    FloatEq,
+    FloatNotEq,
     FloatLess,
-    FloatLessEqual,
+    FloatLessEq,
 
-    Load(u8),
-    Store(u8),
+    FloatToInt,
+    FloatToFloat,
 
     Branch,
+    CBranch,
+    IBranch,
+
     Call,
+    ICall,
+
     Return,
+
+    Subpiece,
 
     Arg(u16),
 

@@ -8,6 +8,7 @@ use thiserror::Error;
 
 pub mod core;
 pub mod error;
+pub mod types;
 
 pub use self::core::LifterGenerator;
 pub use self::error::LifterGeneratorError;
