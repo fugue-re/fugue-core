@@ -475,7 +475,7 @@ impl<'b, 'c, 'cz, 'z> IRBuilder<'b, 'c, 'cz, 'z> {
     ) -> Self {
         base.reinitialise();
         Self {
-            unique_offset: (walker.address().offset() & base.unique_mask) >> 4,
+            unique_offset: (walker.address().offset() & base.unique_mask) << 4,
             issued: ArenaVec::with_capacity_in(16, arena),
             base,
             arena,

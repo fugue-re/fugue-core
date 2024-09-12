@@ -2,9 +2,6 @@ use paste::paste;
 
 use crate::order::Order;
 
-#[cfg(feature = "extra-integer-types")]
-use crate::primitives::*;
-
 pub trait ByteCast: Copy {
     const SIZEOF: usize;
     const SIGNED: bool;
@@ -50,20 +47,6 @@ impl ByteCast for bool {
 
     fn into_bytes<O: Order>(&self, buf: &mut [u8]) {
         O::write_u8(buf, if *self { 1 } else { 0 })
-    }
-}
-
-#[cfg(feature = "extra-integer-types")]
-impl ByteCast for u24 {
-    const SIZEOF: usize = 3;
-    const SIGNED: bool = false;
-
-    fn from_bytes<O: Order>(buf: &[u8]) -> Self {
-        <O as Order>::read_u24(buf)
-    }
-
-    fn into_bytes<O: Order>(&self, buf: &mut [u8]) {
-        <O as Order>::write_u24(buf, *self)
     }
 }
 

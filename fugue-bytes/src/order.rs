@@ -4,9 +4,6 @@ use std::cmp::Ordering;
 use crate::{BE, LE};
 use crate::endian::Endian;
 
-#[cfg(feature = "extra-integer-types")]
-use crate::primitives::*;
-
 pub trait Order: ByteOrder + Send + Sync + 'static {
     const ENDIAN: Endian;
     const NATIVE: bool;
@@ -39,12 +36,6 @@ pub trait Order: ByteOrder + Send + Sync + 'static {
         }
     }
 
-    #[cfg(feature = "extra-integer-types")]
-    fn read_u24(buf: &[u8]) -> u24;
-
-    #[cfg(feature = "extra-integer-types")]
-    fn write_u24(buf: &mut [u8], n: u24);
-
     fn read_isize(buf: &[u8]) -> isize;
     fn write_isize(buf: &mut [u8], n: isize);
 
@@ -58,20 +49,6 @@ impl Order for BE {
     const ENDIAN: Endian = Endian::Big;
     const NATIVE: bool = cfg!(target_endian = "big");
 
-
-    #[cfg(feature = "extra-integer-types")]
-    fn read_u24(buf: &[u8]) -> u24 {
-        let temp_u32 = u32::from_be_bytes([0, buf[0], buf[1], buf[2]]);
-        u24::new(temp_u32)
-    }
-
-    #[cfg(feature = "extra-integer-types")]
-    fn write_u24(buf: &mut [u8], n: u24) {
-        let temp = u32::from(n).to_be_bytes();
-        buf[0] = temp[1];
-        buf[1] = temp[2];
-        buf[2] = temp[3];
-    }
 
     #[cfg(target_pointer_width = "32")]
     fn read_isize(buf: &[u8]) -> isize {
@@ -134,20 +111,6 @@ impl Order for BE {
 impl Order for LE {
     const ENDIAN: Endian = Endian::Little;
     const NATIVE: bool = cfg!(target_endian = "little");
-
-    #[cfg(feature = "extra-integer-types")]
-    fn read_u24(buf: &[u8]) -> u24 {
-        let temp_u32 = u32::from_le_bytes([buf[0], buf[1], buf[2], 0]);
-        u24::new(temp_u32)
-    }
-
-    #[cfg(feature = "extra-integer-types")]
-    fn write_u24(buf: &mut [u8], n: u24) {
-        let temp = u32::from(n).to_le_bytes();
-        buf[0] = temp[0];
-        buf[1] = temp[1];
-        buf[2] = temp[2];
-    }
 
     #[cfg(target_pointer_width = "32")]
     fn read_isize(buf: &[u8]) -> isize {

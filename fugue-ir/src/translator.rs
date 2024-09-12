@@ -600,8 +600,6 @@ impl Translator {
             }
         }
 
-        let t1 = std::time::Instant::now();
-
         context.reinitialise(db, address.clone(), bytes);
         let mut walker = ParserWalker::new(context, self);
 
@@ -612,15 +610,6 @@ impl Translator {
         walker
             .apply_commits(db, &self.manager, &self.symbol_table)
             .map_err(Error::from)?;
-
-        let t2 = std::time::Instant::now();
-
-        let diff = t2.duration_since(t1);
-
-        let nanos = diff.as_nanos();
-        let micros = diff.as_micros();
-
-        println!("{micros}us / {nanos}ns");
 
         let delay_slots = walker.delay_slot();
         let length = walker.length();
