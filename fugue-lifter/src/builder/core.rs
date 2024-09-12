@@ -1026,8 +1026,8 @@ impl<'a> LifterGenerator<'a> {
 
     pub fn generate_const_template(&self, tmpl: &ConstTpl) -> TokenStream {
         match tmpl {
-            ConstTpl::Start => quote! { input.context.address() },
-            ConstTpl::Next => quote! { input.context.next_address() },
+            ConstTpl::Start => quote! { input.address() },
+            ConstTpl::Next => quote! { input.next_address() },
             ConstTpl::Next2 => quote! { unimplemented!("next2 not supported") },
             ConstTpl::CurrentSpaceSize => {
                 let size = self.translator.manager().default_space_ref().address_size() as u64;
@@ -1048,13 +1048,7 @@ impl<'a> LifterGenerator<'a> {
             ConstTpl::Handle(index, kind) => {
                 let index = *index;
                 let handle = quote! {
-                    let handle = {
-                        let opnds = input
-                            .context
-                            .constructors[input.point as usize].operands as usize;
-
-                        input.context.constructors[opnds + #index].handle.as_ref().unwrap()
-                    };
+                    let handle = input.operand_handle(#index);
                 };
 
                 let action = match kind {
@@ -1116,13 +1110,7 @@ impl<'a> LifterGenerator<'a> {
                 let index = *index;
                 quote! {
                     {
-                        let h = {
-                            let opnds = input
-                                .context
-                                .constructors[input.point as usize].operands as usize;
-
-                            input.context.constructors[opnds + #index].handle.as_ref().unwrap()
-                        };
+                        let h = input.operand_handle(#index);
 
                         handle.offset_space = h.offset_space;
                         handle.offset_offset = h.offset_offset;
@@ -1133,30 +1121,14 @@ impl<'a> LifterGenerator<'a> {
                 }
             }
             _ => {
-                let wrap_cases =
-                    self.translator
-                        .manager()
-                        .spaces()
-                        .iter()
-                        .enumerate()
-                        .map(|(i, spc)| {
-                            let i = i as u8;
-                            let highest = spc.highest_offset();
-                            quote! { #i => #highest }
-                        });
-
-                let wrap_match = quote! {
-                    match handle.space {
-                        #(#wrap_cases,)*
-                        _ => unreachable!("invalid space"),
-                    }
-                };
-
                 let value = self.generate_const_template(tmpl);
 
                 quote! {
                     handle.offset_space = fugue_lifter::utils::input::INVALID_HANDLE;
-                    handle.offset_offset = fugue_lifter::utils::wrap_offset(#wrap_match, #value);
+                    handle.offset_offset = fugue_lifter::utils::wrap_offset(
+                        SPACE_UPPER_BOUND[handle.space as usize],
+                        #value
+                    );
                 }
             }
         }
@@ -1172,14 +1144,7 @@ impl<'a> LifterGenerator<'a> {
                 let index = *index;
                 quote! {
                     {
-                        let h = {
-                            let opnds = input
-                                .context
-                                .constructors[input.point as usize].operands as usize;
-
-                            input.context.constructors[opnds + #index].handle.as_ref().unwrap()
-                        };
-
+                        let h = input.operand_handle(#index);
                         if h.offset_space == fugue_lifter::utils::input::INVALID_HANDLE {
                             h.space
                         } else {
@@ -1227,26 +1192,6 @@ impl<'a> LifterGenerator<'a> {
         let temporary_offset = self.generate_const_template(tmpl.tmp_offset());
         let temporary_space = self.generate_const_template_space(tmpl.tmp_space());
 
-        let space_cases = self
-            .translator
-            .manager()
-            .spaces()
-            .iter()
-            .enumerate()
-            .map(|(i, spc)| {
-                let i = i as u8;
-                let highest = spc.highest_offset();
-                let word_size = spc.word_size() as u64;
-                quote! { #i => (#highest, #word_size) }
-            });
-
-        let space_match = quote! {
-            match handle.space {
-                #(#space_cases,)*
-                _ => unreachable!("invalid space"),
-            }
-        };
-
         quote! {
             {
                 let mut handle = fugue_lifter::utils::FixedHandle {
@@ -1259,7 +1204,8 @@ impl<'a> LifterGenerator<'a> {
                 let offset_space = #offset_space;
 
                 if offset_space == 0 { // constant
-                    let (hoffset, word_size) = #space_match;
+                    let hoffset = SPACE_UPPER_BOUND[handle.space as usize];
+                    let word_size = SPACE_WORD_SIZE[handle.space as usize] as u64;
 
                     handle.offset_offset =
                         fugue_lifter::utils::wrap_offset(hoffset, handle.offset_offset * word_size);
@@ -1313,34 +1259,8 @@ impl<'a> LifterGenerator<'a> {
 
     pub fn generate_build_action_location(&self, tmpl: &VarnodeTpl) -> TokenStream {
         let space = self.generate_const_template_space(tmpl.space());
-        let offset = self.generate_const_template_offset(tmpl.offset());
+        let offset = self.generate_const_template(tmpl.offset());
         let size = self.generate_const_template(tmpl.size());
-
-        let space_cases = self
-            .translator
-            .manager()
-            .spaces()
-            .iter()
-            .enumerate()
-            .map(|(i, spc)| {
-                let i = i as u8;
-                if i == 0 {
-                    // constant
-                    quote! { #i => offset & fugue_lifter::utils::calculate_mask(size as usize) }
-                } else if spc.id().is_unique() {
-                    quote! { #i => offset | builder.unique_offset }
-                } else {
-                    let highest = spc.highest_offset();
-                    quote! { #i => fugue_lifter::utils::wrap_offset(#highest, offset) }
-                }
-            });
-
-        let space_match = quote! {
-            match space {
-                #(#space_cases,)*
-                _ => unreachable!("invalid space"),
-            }
-        };
 
         quote! {
             {
@@ -1349,7 +1269,7 @@ impl<'a> LifterGenerator<'a> {
 
                 let mut offset = #offset;
 
-                offset = #space_match;
+                offset = fixup_location_offset(input, space, offset, size);
 
                 fugue_lifter::utils::pcode::Varnode {
                     space,
@@ -1362,56 +1282,15 @@ impl<'a> LifterGenerator<'a> {
 
     pub fn generate_build_action_pointer(&self, tmpl: &VarnodeTpl) -> TokenStream {
         let index = tmpl.offset().handle_index().unwrap();
-
-        let handle = quote! {
-            {
-                let opnds = builder
-                    .input
-                    .context
-                    .constructors[input.point as usize].operands as usize;
-
-                input
-                    .context
-                    .constructors[opnds + #index]
-                    .handle.as_ref()?
-            }
-        };
-
-        let space_cases = self
-            .translator
-            .manager()
-            .spaces()
-            .iter()
-            .enumerate()
-            .map(|(i, spc)| {
-                let i = i as u8;
-                if i == 0 {
-                    // constant
-                    quote! { #i => offset & fugue_lifter::utils::calculate_mask(size as usize) }
-                } else if spc.id().is_unique() {
-                    quote! { #i => offset | builder.unique_offset }
-                } else {
-                    let highest = spc.highest_offset();
-                    quote! { #i => fugue_lifter::utils::wrap_offset(#highest, offset) }
-                }
-            });
-
-        let space_match = quote! {
-            match space {
-                #(#space_cases,)*
-                _ => unreachable!("invalid space"),
-            }
-        };
-
         quote! {
             {
-                let handle = #handle;
+                let handle = input.operand_handle(#index);
 
                 let space = handle.offset_space;
                 let size = handle.offset_size;
                 let mut offset = handle.offset_offset;
 
-                offset = #space_match;
+                offset = fixup_location_offset(input, space, offset, size);
 
                 (
                     handle.space,
@@ -1425,49 +1304,15 @@ impl<'a> LifterGenerator<'a> {
         }
     }
 
-    pub fn generate_build_action_is_dymamic(&self, index: usize) -> TokenStream {
-        quote! {
-            {
-                let opnds = builder
-                    .input
-                    .context
-                    .constructors[input.point as usize].operands as usize;
-
-                let space = input
-                    .context
-                    .constructors[opnds + #index]
-                    .handle.as_ref()?
-                    .offset_space;
-
-                space != fugue_lifter::utils::input::INVALID_HANDLE
-            }
-        }
-    }
-
     pub fn generate_constructor_op_append_build_action(&self, tmpl: &OpTpl) -> TokenStream {
         let index = tmpl.input(0).offset().real() as usize;
         quote! {
-            {
-                let opnds = input
-                    .context
-                    .constructors[input.point as usize].operands as usize;
-
-                if let Some(ctor) = input.context.constructors[opnds + #index].constructor {
-                    // Yes.
-                    input.push_operand(#index);
-
-                    if let Some(action) = ctor.build_action {
-                        (action)(builder);
-                    }
-
-                    input.pop_operand(#index);
-                }
-            }
+            append_build(input, #index);
         }
     }
 
     pub fn generate_constructor_op_inlined_input(&self, input: &VarnodeTpl) -> TokenStream {
-        let offset = self.generate_const_template_offset(input.offset());
+        let offset = self.generate_const_template(input.offset());
         quote! {
             { #offset }
         }
@@ -1476,14 +1321,14 @@ impl<'a> LifterGenerator<'a> {
     pub fn generate_constructor_op_input(&self, input: &VarnodeTpl) -> TokenStream {
         // is_dynamic check
         if let ConstTpl::Handle(index, _) = input.offset() {
-            let is_dynamic = self.generate_build_action_is_dymamic(*index);
+            let index = *index;
             let location = self.generate_build_action_location(input);
             let pointer = self.generate_build_action_pointer(input);
 
             quote! {
                 {
                     let varnode = #location;
-                    if #is_dynamic {
+                    if is_dynamic(input, #index) {
                         let (space, pointer) = #pointer;
                         // NOTE: is this really worth it? We build it into the Load...
                         /*
@@ -1493,14 +1338,14 @@ impl<'a> LifterGenerator<'a> {
                             size: 0,
                         };
                         */
-                        builder.context.issue_with(
+                        input.context.issue_with(
                             fugue_lifter::utils::pcode::Op::Load(space),
                             fugue_lifter::utils::pcode::Inputs::one(pointer),
                             varnode,
                         );
-                        builder.context.push_input(varnode);
+                        input.context.push_input(varnode);
                     } else {
-                        builder.context.push_input(varnode);
+                        input.context.push_input(varnode);
                     }
                 }
             }
@@ -1508,7 +1353,7 @@ impl<'a> LifterGenerator<'a> {
             let location = self.generate_build_action_location(input);
             quote! {
                 {
-                    builder.context.push_input(#location);
+                    input.context.push_input(#location);
                 }
             }
         }
@@ -1521,7 +1366,7 @@ impl<'a> LifterGenerator<'a> {
                 (
                     1,
                     quote! {
-                        fugue_lifter::utils::pcode::Load(#spc as u8)
+                        fugue_lifter::utils::pcode::Op::Load(#spc as u8)
                     },
                 )
             }
@@ -1530,7 +1375,7 @@ impl<'a> LifterGenerator<'a> {
                 (
                     1,
                     quote! {
-                        fugue_lifter::utils::pcode::Store(#spc as u8)
+                        fugue_lifter::utils::pcode::Op::Store(#spc as u8)
                     },
                 )
             }
@@ -1539,7 +1384,7 @@ impl<'a> LifterGenerator<'a> {
                 (
                     1,
                     quote! {
-                        fugue_lifter::utils::pcode::UserOp(#uop as u16)
+                        fugue_lifter::utils::pcode::Op::UserOp(#uop as u16)
                     },
                 )
             }
@@ -1560,9 +1405,9 @@ impl<'a> LifterGenerator<'a> {
 
         let relative_label = (inputs > 0).then(|| {
             quote! {
-                builder.context.inputs.0[0].offset += builder.context.label_base as u64;
-                builder.context.label_refs.push(fugue_lifter::utils::pcode::RelativeRecord {
-                    operation: builder.context.issued.len() as u8,
+                input.context.inputs.0[0].offset += input.context.label_base as u64;
+                input.context.label_refs.push(fugue_lifter::utils::pcode::RelativeRecord {
+                    operation: input.context.issued.len() as u8,
                     index: 0,
                 });
             }
@@ -1571,13 +1416,13 @@ impl<'a> LifterGenerator<'a> {
         let output = if let Some(output) = tmpl.output() {
             let outp = self.generate_build_action_location(output);
             let store = if let ConstTpl::Handle(index, _) = output.offset() {
-                let is_dynamic = self.generate_build_action_is_dymamic(*index);
+                let index = *index;
                 let pointer = self.generate_build_action_pointer(output);
 
                 quote! {
-                    if #is_dynamic {
+                    if is_dynamic(input, #index) {
                         let (space, pointer) = #pointer;
-                        builder.context.issue_with(
+                        input.context.issue_with(
                             fugue_lifter::utils::pcode::Op::Store(space),
                             fugue_lifter::utils::pcode::Inputs::two(pointer, output),
                             fugue_lifter::utils::pcode::Varnode::INVALID,
@@ -1591,7 +1436,7 @@ impl<'a> LifterGenerator<'a> {
             quote! {
                 {
                     let output = #outp;
-                    builder.context.issue(
+                    input.context.issue(
                         op,
                         output,
                     );
@@ -1600,7 +1445,7 @@ impl<'a> LifterGenerator<'a> {
             }
         } else {
             quote! {
-                builder.context.issue(
+                input.context.issue(
                     op,
                     fugue_lifter::utils::pcode::Varnode::INVALID
                 );
@@ -1625,7 +1470,7 @@ impl<'a> LifterGenerator<'a> {
             Opcode::Build => self.generate_constructor_op_append_build_action(tmpl),
             Opcode::DelaySlot => {
                 // TODO!!
-                todo!()
+                TokenStream::new()
             }
             Opcode::Label => {
                 // NOTE: the original logic here checks if the index exceeds the current
@@ -1635,8 +1480,8 @@ impl<'a> LifterGenerator<'a> {
                 //
                 let offset = tmpl.input(0).offset().real() as usize;
                 quote! {
-                    builder.context.labels[#offset + builder.context.label_base as usize] =
-                        builder.context.issued.len();
+                    input.context.labels[#offset + input.context.label_base as usize] =
+                        input.context.issued.len() as _;
                 }
             }
             Opcode::CrossBuild => {
@@ -1662,15 +1507,15 @@ impl<'a> LifterGenerator<'a> {
             .map(|op| self.generate_constructor_op_build_action(op));
 
         let action_fcn = quote! {
-            fn #action_name<'a>(builder: &mut fugue_lifter::utils::pcode::PCodeBuilder<'a>) -> Option<()> {
-                let old_base = builder.context.label_base;
+            fn #action_name<'a>(input: &mut fugue_lifter::utils::pcode::PCodeBuilder<'a>) {
+                let old_base = input.context.label_base;
 
-                builder.context.label_base = builder.context.label_count;
-                builder.context.label_count += #label_count;
+                input.context.label_base = input.context.label_count;
+                input.context.label_count += #label_count;
 
                 #(#operations)*
 
-                builder.context.label_base = old_base;
+                input.context.label_base = old_base;
             }
         };
 
@@ -1715,7 +1560,7 @@ impl<'a> LifterGenerator<'a> {
             let (context_helpers, apply_context) = self.generate_constructor_context_actions(id, scope, cid, ctor);
 
             let (template_helpers, template_result) = self.generate_constructor_template_resolvers(id, scope, cid, ctor);
-            let (lifter_helper, lifter_action) = self.generate_constructor_lifting_actions(id, scope, cid, ctor);
+            let (lifting_helper, lifting_action) = self.generate_constructor_lifting_actions(id, scope, cid, ctor);
 
             quote! {
                 pub const #ctor_vname: &'static fugue_lifter::utils::Constructor = &fugue_lifter::utils::Constructor {
@@ -1723,7 +1568,7 @@ impl<'a> LifterGenerator<'a> {
                     context_actions: #apply_context,
                     operands: &[#(#operands),*],
                     result: #template_result,
-                    build_action: #lifter_action,
+                    build_action: #lifting_action,
                     print_pieces: &[#(#pieces),*],
                     delay_slots: #delay_slots,
                     minimum_length: #minimum_length,
@@ -1735,7 +1580,7 @@ impl<'a> LifterGenerator<'a> {
 
                 #template_helpers
 
-                #lifter_helper
+                #lifting_helper
             }
         })
     }
@@ -1989,6 +1834,17 @@ impl<'a> ToTokens for LifterGenerator<'a> {
         // TODO: we should make a mapping for registers to compute
         // overlaps, etc.
 
+        let alignment = self.translator.alignment();
+        let unique_mask = self.translator.unique_mask();
+
+        let default_space = self.translator.manager().default_space_ref();
+
+        let address_size = default_space.address_size();
+        let address_bits = address_size as u32 * 8;
+
+        let register_space_size = self.translator.register_space_size();
+        let unique_space_size = self.translator.unique_space_size();
+
         let userops = self.translator.user_ops().iter().map(|op| op.as_str());
         let userops_to_ids = self
             .translator
@@ -2004,12 +1860,67 @@ impl<'a> ToTokens for LifterGenerator<'a> {
             });
         let n_userops = self.translator.user_ops().len();
 
-        // TODO: this should be a string-like type that can allow easier
-        // comparisons.
+        let space_word_sizes = self
+            .translator
+            .manager()
+            .spaces()
+            .iter()
+            .map(|spc| spc.word_size());
+
+        let space_upper_bounds = self
+            .translator
+            .manager()
+            .spaces()
+            .iter()
+            .map(|spc| spc.highest_offset());
+
+        let n_spaces = self.translator.manager().spaces().len();
+
+        let space_cases = self
+            .translator
+            .manager()
+            .spaces()
+            .iter()
+            .enumerate()
+            .map(|(i, spc)| {
+                let i = i as u8;
+                if i == 0 {
+                    // constant
+                    quote! { #i => offset & fugue_lifter::utils::calculate_mask(size as usize) }
+                } else if spc.id().is_unique() {
+                    quote! { #i => offset | builder.unique_offset }
+                } else {
+                    let highest = spc.highest_offset();
+                    quote! { #i => fugue_lifter::utils::wrap_offset(#highest, offset) }
+                }
+            });
+
+        let space_match = quote! {
+            match space {
+                #(#space_cases,)*
+                _ => unreachable!("invalid space"),
+            }
+        };
 
         tokens.append_all(quote! {
+            pub const ADDRESS_ALIGNMENT: usize = #alignment;
+            pub const ADDRESS_BITS: u32 = #address_bits;
+            pub const ADDRESS_SIZE: usize = #address_size;
+
+            pub const REGISTER_SPACE_SIZE: usize = #register_space_size;
+
+            pub const UNIQUE_MASK: u64 = #unique_mask;
+            pub const UNIQUE_SPACE_SIZE: usize = #unique_space_size;
+
             pub const USER_OPS: [&'static str; #n_userops] = [
                 #(#userops),*
+            ];
+
+            pub const SPACE_WORD_SIZE: [usize; #n_spaces] = [
+                #(#space_word_sizes),*
+            ];
+            pub const SPACE_UPPER_BOUND: [u64; #n_spaces] = [
+                #(#space_upper_bounds),*
             ];
 
             #[inline]
@@ -2023,6 +1934,58 @@ impl<'a> ToTokens for LifterGenerator<'a> {
             #[inline]
             pub const fn user_op_by_id(id: u16) -> &'static str {
                 USER_OPS[id as usize]
+            }
+
+            // Helpers below
+
+            #[inline]
+            fn fixup_location_offset(
+                builder: &fugue_lifter::utils::pcode::PCodeBuilder,
+                space: u8,
+                offset: u64,
+                size: u8,
+            ) -> u64 {
+                #space_match
+            }
+
+            #[inline]
+            fn is_dynamic(
+                builder: &fugue_lifter::utils::pcode::PCodeBuilder,
+                index: usize,
+            ) -> bool {
+                let opnds = builder
+                    .input
+                    .context
+                    .constructors[builder.input.point as usize].operands as usize;
+
+                let space = builder.input.context.constructors[opnds + index]
+                    .handle
+                    .as_ref()
+                    .unwrap()
+                    .offset_space;
+
+                space != fugue_lifter::utils::input::INVALID_HANDLE
+            }
+
+            #[inline]
+            fn append_build(
+                builder: &mut fugue_lifter::utils::pcode::PCodeBuilder,
+                index: usize,
+            ) {
+                let opnds = builder
+                    .input
+                    .context
+                    .constructors[builder.input.point as usize].operands as usize;
+
+                if let Some(ctor) = builder.input.context.constructors[opnds + index].constructor {
+                    builder.input.push_operand(index);
+
+                    if let Some(action) = ctor.build_action {
+                        (action)(builder);
+                    }
+
+                    builder.input.pop_operand();
+                }
             }
         });
 

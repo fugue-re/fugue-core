@@ -490,6 +490,23 @@ impl ParserInput {
         }
     }
 
+    #[inline(always)]
+    pub fn operand_constructor(&self, index: usize) -> &Constructor {
+        let opnds = self.context.constructors[self.point as usize].operands as usize;
+        self.context.constructors[opnds + index]
+            .constructor
+            .unwrap()
+    }
+
+    #[inline(always)]
+    pub fn operand_handle(&self, index: usize) -> &FixedHandle {
+        let opnds = self.context.constructors[self.point as usize].operands as usize;
+        self.context.constructors[opnds + index]
+            .handle
+            .as_ref()
+            .unwrap()
+    }
+
     #[inline]
     pub fn len(&self) -> usize {
         self.context.constructors[0].length as _

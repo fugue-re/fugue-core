@@ -4,9 +4,9 @@ use arrayvec::ArrayVec;
 
 use crate::utils::input::{ParserInput, INVALID_HANDLE};
 
-use super::calculate_mask;
+use super::{calculate_mask, FixedHandle};
 
-pub const MAX_LABELS: usize = 192;
+pub const MAX_LABELS: usize = 32;
 pub const MAX_INPUTS_SPILL: usize = 8;
 pub const MAX_DELAY_CTXTS: usize = 8;
 
@@ -31,6 +31,44 @@ pub struct PCodeBuilder<'a> {
     pub unique_offset: u64,
 }
 
+impl<'a> PCodeBuilder<'a> {
+    pub fn new(context: &'a mut PCodeBuilderContext, input: &'a mut ParserInput) -> Self {
+        input.base_state();
+        Self {
+            unique_offset: (input.address() & context.unique_mask()) << 4,
+            context,
+            input,
+            delay_slots: Default::default(),
+        }
+    }
+
+    pub fn address(&self) -> u64 {
+        self.input.address()
+    }
+
+    pub fn next_address(&self) -> u64 {
+        self.input.next_address()
+    }
+
+    pub fn emit(&mut self) -> Vec<PCodeOp> {
+        if let Some(builder) = self.input.constructor().build_action {
+            (builder)(self)
+        }
+        self.context.emit()
+    }
+
+    #[doc(hidden)]
+    #[inline]
+    pub fn operand_handle(&self, index: usize) -> &FixedHandle {
+        let opnds = self.input.context.constructors[self.input.point as usize].operands as usize;
+
+        self.input.context.constructors[opnds + index]
+            .handle
+            .as_ref()
+            .unwrap()
+    }
+}
+
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct RelativeRecord {
     pub operation: u8,
@@ -52,8 +90,19 @@ impl PCodeBuilderContext {
         }
     }
 
+    pub fn unique_mask(&self) -> u64 {
+        self.unique_mask
+    }
+
     pub fn emit(&mut self) -> Vec<PCodeOp> {
         self.resolve_relatives();
+
+        // reset
+        self.inputs_count = 0;
+        self.label_count = 0;
+        self.labels.fill(0);
+        self.label_refs.clear();
+
         mem::take(&mut self.issued)
     }
 
@@ -116,7 +165,7 @@ impl PCodeBuilderContext {
     }
 
     #[inline]
-    pub fn issue_with(&mut self, op: Op, output: Varnode, inputs: Inputs) {
+    pub fn issue_with(&mut self, op: Op, inputs: Inputs, output: Varnode) {
         self.issued.push(PCodeOp { op, inputs, output });
     }
 }
@@ -164,7 +213,7 @@ impl Default for Varnode {
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(transparent)]
-pub struct Inputs([Varnode; 2]);
+pub struct Inputs(pub [Varnode; 2]);
 
 impl Default for Inputs {
     fn default() -> Self {
