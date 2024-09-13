@@ -1338,14 +1338,14 @@ impl<'a> LifterGenerator<'a> {
                             size: 0,
                         };
                         */
-                        input.context.issue_with(
+                        input.issue_with(
                             fugue_lifter::utils::pcode::Op::Load(space),
                             fugue_lifter::utils::pcode::Inputs::one(pointer),
                             varnode,
                         );
-                        input.context.push_input(varnode);
+                        input.push_input(varnode);
                     } else {
-                        input.context.push_input(varnode);
+                        input.push_input(varnode);
                     }
                 }
             }
@@ -1353,7 +1353,7 @@ impl<'a> LifterGenerator<'a> {
             let location = self.generate_build_action_location(input);
             quote! {
                 {
-                    input.context.push_input(#location);
+                    input.push_input(#location);
                 }
             }
         }
@@ -1407,7 +1407,7 @@ impl<'a> LifterGenerator<'a> {
             quote! {
                 input.context.inputs.0[0].offset += input.context.label_base as u64;
                 input.context.label_refs.push(fugue_lifter::utils::pcode::RelativeRecord {
-                    operation: input.context.issued.len() as u8,
+                    operation: input.issued.len() as u8,
                     index: 0,
                 });
             }
@@ -1422,7 +1422,7 @@ impl<'a> LifterGenerator<'a> {
                 quote! {
                     if is_dynamic(input, #index) {
                         let (space, pointer) = #pointer;
-                        input.context.issue_with(
+                        input.issue_with(
                             fugue_lifter::utils::pcode::Op::Store(space),
                             fugue_lifter::utils::pcode::Inputs::two(pointer, output),
                             fugue_lifter::utils::pcode::Varnode::INVALID,
@@ -1436,7 +1436,7 @@ impl<'a> LifterGenerator<'a> {
             quote! {
                 {
                     let output = #outp;
-                    input.context.issue(
+                    input.issue(
                         op,
                         output,
                     );
@@ -1445,7 +1445,7 @@ impl<'a> LifterGenerator<'a> {
             }
         } else {
             quote! {
-                input.context.issue(
+                input.issue(
                     op,
                     fugue_lifter::utils::pcode::Varnode::INVALID
                 );
@@ -1480,8 +1480,12 @@ impl<'a> LifterGenerator<'a> {
                 //
                 let offset = tmpl.input(0).offset().real() as usize;
                 quote! {
-                    input.context.labels[#offset + input.context.label_base as usize] =
-                        input.context.issued.len() as _;
+                    unsafe {
+                        *input
+                            .context
+                            .labels
+                            .get_unchecked_mut(#offset + input.context.label_base as usize) = input.issued.len() as i16;
+                    }
                 }
             }
             Opcode::CrossBuild => {
@@ -1953,18 +1957,21 @@ impl<'a> ToTokens for LifterGenerator<'a> {
                 builder: &fugue_lifter::utils::pcode::PCodeBuilder,
                 index: usize,
             ) -> bool {
-                let opnds = builder
-                    .input
-                    .context
-                    .constructors[builder.input.point as usize].operands as usize;
+                unsafe {
+                    let opnds = builder
+                        .input
+                        .context
+                        .constructors
+                        .get_unchecked(builder.input.point as usize).operands as usize;
 
-                let space = builder.input.context.constructors[opnds + index]
-                    .handle
-                    .as_ref()
-                    .unwrap()
-                    .offset_space;
+                    let space = builder.input.context.constructors.get_unchecked(opnds + index)
+                        .handle
+                        .as_ref()
+                        .unwrap_unchecked()
+                        .offset_space;
 
-                space != fugue_lifter::utils::input::INVALID_HANDLE
+                    space != fugue_lifter::utils::input::INVALID_HANDLE
+                }
             }
 
             #[inline]
@@ -1972,20 +1979,48 @@ impl<'a> ToTokens for LifterGenerator<'a> {
                 builder: &mut fugue_lifter::utils::pcode::PCodeBuilder,
                 index: usize,
             ) {
-                let opnds = builder
-                    .input
-                    .context
-                    .constructors[builder.input.point as usize].operands as usize;
+                unsafe {
+                    let opnds = builder
+                        .input
+                        .context
+                        .constructors.get_unchecked(builder.input.point as usize).operands as usize;
 
-                if let Some(ctor) = builder.input.context.constructors[opnds + index].constructor {
-                    builder.input.push_operand(index);
+                    if let Some(ctor) = builder.input.context.constructors.get_unchecked(opnds + index).constructor {
+                        builder.input.push_operand(index);
 
-                    if let Some(action) = ctor.build_action {
-                        (action)(builder);
+                        if let Some(action) = ctor.build_action {
+                            (action)(builder);
+                        }
+
+                        builder.input.pop_operand();
                     }
-
-                    builder.input.pop_operand();
                 }
+            }
+
+            #[inline]
+            pub fn resolve_constructor(input: &mut fugue_lifter::utils::ParserInput) -> Option<&'static fugue_lifter::utils::Constructor> {
+                let ctor = SubTable0In0::resolve(input)?;
+                ctor.resolve_operands(input)?;
+                Some(ctor)
+            }
+
+            #[inline]
+            pub fn resolve(
+                input: &mut fugue_lifter::utils::ParserInput,
+                context: &mut fugue_lifter::utils::ContextDatabase,
+            ) -> Option<&'static fugue_lifter::utils::Constructor> {
+                let ctor = resolve_constructor(input)?;
+                ctor.resolve_handles(input)?;
+
+                input.base_state();
+                input.apply_commits(context);
+
+                Some(ctor)
+            }
+
+            #[inline]
+            pub fn lifting_context() -> fugue_lifter::utils::pcode::PCodeBuilderContext {
+                fugue_lifter::utils::pcode::PCodeBuilderContext::new(UNIQUE_MASK)
             }
         });
 

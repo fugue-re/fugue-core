@@ -20,7 +20,6 @@ pub struct PCodeBuilderContext {
     pub label_count: u8,
     pub labels: [i16; MAX_LABELS],
     pub label_refs: ArrayVec<RelativeRecord, MAX_LABELS>,
-    pub issued: Vec<PCodeOp>,
     pub unique_mask: u64, // this is constant from the translator
 }
 
@@ -28,17 +27,23 @@ pub struct PCodeBuilder<'a> {
     pub context: &'a mut PCodeBuilderContext,
     pub input: &'a mut ParserInput,
     pub delay_slots: &'a mut [ParserInput],
+    pub issued: &'a mut Vec<PCodeOp>,
     pub unique_offset: u64,
 }
 
 impl<'a> PCodeBuilder<'a> {
-    pub fn new(context: &'a mut PCodeBuilderContext, input: &'a mut ParserInput) -> Self {
+    pub fn new(
+        context: &'a mut PCodeBuilderContext,
+        input: &'a mut ParserInput,
+        issued: &'a mut Vec<PCodeOp>,
+    ) -> Self {
         input.base_state();
         Self {
-            unique_offset: (input.address() & context.unique_mask()) << 4,
+            unique_offset: (input.address() & context.unique_mask) << 4,
             context,
             input,
             delay_slots: Default::default(),
+            issued,
         }
     }
 
@@ -50,22 +55,123 @@ impl<'a> PCodeBuilder<'a> {
         self.input.next_address()
     }
 
-    pub fn emit(&mut self) -> Vec<PCodeOp> {
+    pub fn emit(&mut self) {
+        self.input.base_state();
+        self.issued.clear();
+
         if let Some(builder) = self.input.constructor().build_action {
             (builder)(self)
         }
-        self.context.emit()
+
+        self.resolve_relatives();
+
+        // reset
+        self.context.inputs_count = 0;
+        self.context.label_count = 0;
+        self.context.labels.fill(INVALID_LABEL);
+        self.context.label_refs.clear();
     }
 
     #[doc(hidden)]
     #[inline]
     pub fn operand_handle(&self, index: usize) -> &FixedHandle {
-        let opnds = self.input.context.constructors[self.input.point as usize].operands as usize;
+        unsafe {
+            let opnds = self
+                .input
+                .context
+                .constructors
+                .get_unchecked(self.input.point as usize)
+                .operands as usize;
 
-        self.input.context.constructors[opnds + index]
-            .handle
-            .as_ref()
-            .unwrap()
+            self.input
+                .context
+                .constructors
+                .get_unchecked(opnds + index)
+                .handle
+                .as_ref()
+                .unwrap_unchecked()
+        }
+    }
+
+    #[inline]
+    #[doc(hidden)]
+    pub fn unique_mask(&self) -> u64 {
+        self.context.unique_mask
+    }
+
+    #[inline]
+    #[doc(hidden)]
+    pub fn push_input(&mut self, vnd: Varnode) {
+        unsafe {
+            if self.context.inputs_count < 2 {
+                self.context
+                    .inputs
+                    .set_input_unchecked(self.context.inputs_count as _, vnd);
+            } else if self.context.inputs_count & 1 == 0 {
+                self.context.inputs_spill.push_unchecked(Inputs::one(vnd));
+            } else {
+                let last_posn = self.context.inputs_spill.len();
+                self.context
+                    .inputs_spill
+                    .get_unchecked_mut(last_posn)
+                    .set_input(1, vnd);
+            }
+            self.context.inputs_count += 1;
+        }
+    }
+
+    #[inline]
+    #[doc(hidden)]
+    pub fn issue(&mut self, op: Op, output: Varnode) {
+        let pcode = PCodeOp {
+            op,
+            inputs: mem::take(&mut self.context.inputs),
+            output,
+        };
+
+        self.issued.reserve(1 + self.context.inputs_spill.len());
+        self.issued.push(pcode);
+        self.issued
+            .extend(self.context.inputs_spill.drain(..).map(|inputs| PCodeOp {
+                op: Op::Arg(1 + inputs.is_full() as u16),
+                output: Varnode::INVALID,
+                inputs,
+            }));
+
+        self.context.inputs_count = 0;
+    }
+
+    #[inline]
+    #[doc(hidden)]
+    pub fn issue_with(&mut self, op: Op, inputs: Inputs, output: Varnode) {
+        self.issued.push(PCodeOp { op, inputs, output });
+    }
+
+    #[inline]
+    fn resolve_relatives(&mut self) -> Option<()> {
+        for rel in self.context.label_refs.iter() {
+            // we need to recalculate the operation number since we emit args
+            // spilled as Op::Arg(_) when we have > 2 inputs.
+
+            let op_index = rel.operation + (rel.index >> 2);
+            let in_index = rel.index & 1;
+
+            let varnode = &mut self.issued[op_index as usize].inputs.0[in_index as usize];
+
+            let label_index = varnode.offset as usize;
+            let label = *self.context.labels.get(label_index)?;
+
+            if label == INVALID_LABEL {
+                return None;
+            } else {
+                let label = label as u64;
+                let fixed = label.wrapping_sub(rel.operation as u64)
+                    & calculate_mask(varnode.size as usize);
+                varnode.offset = fixed;
+            }
+        }
+
+        Some(())
     }
 }
 
@@ -85,88 +191,8 @@ impl PCodeBuilderContext {
             label_count: 0,
             labels: [INVALID_LABEL; MAX_LABELS],
             label_refs: Default::default(),
-            issued: Default::default(),
             unique_mask,
         }
-    }
-
-    pub fn unique_mask(&self) -> u64 {
-        self.unique_mask
-    }
-
-    pub fn emit(&mut self) -> Vec<PCodeOp> {
-        self.resolve_relatives();
-
-        // reset
-        self.inputs_count = 0;
-        self.label_count = 0;
-        self.labels.fill(0);
-        self.label_refs.clear();
-
-        mem::take(&mut self.issued)
-    }
-
-    fn resolve_relatives(&mut self) -> Option<()> {
-        for rel in self.label_refs.iter() {
-            // we need to recalculate the operation number since we emit args
-            // spilled as Op::Arg(_) when we have > 2 inputs.
-
-            let op_index = rel.operation + (rel.index >> 2);
-            let in_index = rel.index & 1;
-
-            let varnode = &mut self.issued[op_index as usize].inputs.0[in_index as usize];
-
-            let label_index = varnode.offset as usize;
-            let label = *self.labels.get(label_index)?;
-
-            if label == INVALID_LABEL {
-                return None;
-            } else {
-                let label = label as u64;
-                let fixed = label.wrapping_sub(rel.operation as u64)
-                    & calculate_mask(varnode.size as usize);
-                varnode.offset = fixed;
-            }
-        }
-
-        Some(())
-    }
-
-    #[inline]
-    pub fn push_input(&mut self, vnd: Varnode) {
-        if self.inputs_count < 2 {
-            self.inputs.set_input(self.inputs_count as _, vnd);
-        } else if self.inputs_count % 2 == 0 {
-            self.inputs_spill.push(Inputs::one(vnd));
-        } else {
-            self.inputs_spill.last_mut().unwrap().set_input(1, vnd);
-        }
-        self.inputs_count += 1;
-    }
-
-    #[inline]
-    pub fn issue(&mut self, op: Op, output: Varnode) {
-        let pcode = PCodeOp {
-            op,
-            inputs: mem::take(&mut self.inputs),
-            output,
-        };
-
-        self.issued.reserve(1 + self.inputs_spill.len());
-        self.issued.push(pcode);
-        self.issued
-            .extend(self.inputs_spill.drain(..).map(|inputs| PCodeOp {
-                op: Op::Arg(if inputs.is_full() { 2 } else { 1 }),
-                output: Varnode::INVALID,
-                inputs,
-            }));
-
-        self.inputs_count = 0;
-    }
-
-    #[inline]
-    pub fn issue_with(&mut self, op: Op, inputs: Inputs, output: Varnode) {
-        self.issued.push(PCodeOp { op, inputs, output });
     }
 }
 
@@ -222,16 +248,24 @@ impl Default for Inputs {
 }
 
 impl Inputs {
+    #[inline]
     pub fn one(vnd: Varnode) -> Self {
         Self([vnd, Varnode::INVALID])
     }
 
+    #[inline]
     pub fn two(vnd1: Varnode, vnd2: Varnode) -> Self {
         Self([vnd1, vnd2])
     }
 
+    #[inline]
     pub fn set_input(&mut self, index: usize, vnd: Varnode) {
         self.0[index] = vnd;
+    }
+
+    #[inline]
+    pub unsafe fn set_input_unchecked(&mut self, index: usize, vnd: Varnode) {
+        *self.0.get_unchecked_mut(index) = vnd;
     }
 
     pub fn is_full(&self) -> bool {

@@ -84,7 +84,13 @@ pub struct ParserInput {
     pub context: ParserContext,
     pub breadcrumb: [u8; BREADCRUMBS],
     pub depth: i8,
-    pub point: u8,
+    pub point: u8, // TODO: make this a pointer into ParserContext
+}
+
+impl Default for ParserInput {
+    fn default() -> Self {
+        Self::empty()
+    }
 }
 
 impl ParserInput {
@@ -112,8 +118,28 @@ impl ParserInput {
         input
     }
 
+    pub fn empty() -> Self {
+        let context = ParserContext {
+            buffer: Default::default(),
+            context: Default::default(),
+            constructors: [ConstructorNode::default(); MAX_CTOR_STATES],
+            commits: Default::default(),
+            address: 0,
+            offset: 0,
+            delay_slot: 0,
+            alloc: 1,
+        };
+
+        Self {
+            context,
+            breadcrumb: [0u8; MAX_PARSER_DEPTH + 1],
+            depth: 0,
+            point: 0,
+        }
+    }
+
     #[inline]
-    pub fn reinitialise(&mut self, address: u64, bytes: &[u8], db: &ContextDatabase) {
+    pub fn initialise(&mut self, address: u64, bytes: &[u8], db: &ContextDatabase) {
         self.context.address = address;
         self.context.delay_slot = 0;
 
@@ -500,11 +526,19 @@ impl ParserInput {
 
     #[inline(always)]
     pub fn operand_handle(&self, index: usize) -> &FixedHandle {
-        let opnds = self.context.constructors[self.point as usize].operands as usize;
-        self.context.constructors[opnds + index]
-            .handle
-            .as_ref()
-            .unwrap()
+        unsafe {
+            let opnds = self
+                .context
+                .constructors
+                .get_unchecked(self.point as usize)
+                .operands as usize;
+            self.context
+                .constructors
+                .get_unchecked(opnds + index)
+                .handle
+                .as_ref()
+                .unwrap_unchecked()
+        }
     }
 
     #[inline]
