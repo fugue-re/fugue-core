@@ -1997,7 +1997,7 @@ impl<'a> ToTokens for LifterGenerator<'a> {
                 bytes: &[u8],
                 builder: &mut fugue_lifter::utils::pcode::PCodeBuilder,
                 context: &mut fugue_lifter::utils::ContextDatabase,
-            ) -> Option<()> {
+            ) -> Option<usize> {
                 builder.input.initialise(address, bytes, context);
 
                 resolve(builder.input, context)?;
@@ -2006,7 +2006,7 @@ impl<'a> ToTokens for LifterGenerator<'a> {
 
                 if delay_slot_bytes == 0 {
                     builder.emit();
-                    return Some(());
+                    return Some(builder.input.len());
                 }
 
                 let mut fall_offset = builder.input.len();
@@ -2034,10 +2034,9 @@ impl<'a> ToTokens for LifterGenerator<'a> {
                     index += 1;
                 }
 
-                builder.input.set_next_address(address + fall_offset as u64);
                 builder.emit();
 
-                Some(())
+                Some(fall_offset)
             }
 
             #[inline]

@@ -119,8 +119,6 @@ impl Constructor {
             }
         }
 
-        input.set_next_address(input.address() + input.len() as u64);
-
         Some(())
     }
 
