@@ -31,7 +31,7 @@ pub struct Constructor {
     pub result: Option<ConstructorResult>,
     pub build_action: Option<PCodeBuildAction>,
     pub print_pieces: &'static [&'static str],
-    pub delay_slots: usize,
+    pub delay_slot_length: usize,
     pub minimum_length: usize,
 }
 
@@ -63,8 +63,8 @@ impl Constructor {
             input.calculate_length(self.minimum_length, self.operands.len());
             input.pop_operand();
 
-            if self.delay_slots > 0 {
-                input.set_delay_slot(self.delay_slots);
+            if self.delay_slot_length > 0 {
+                input.set_delay_slot_length(self.delay_slot_length);
             }
 
             return Some(());
@@ -114,10 +114,12 @@ impl Constructor {
             input.calculate_length(ctor.minimum_length, ctor.operands.len());
             input.pop_operand();
 
-            if ctor.delay_slots > 0 {
-                input.set_delay_slot(ctor.delay_slots);
+            if ctor.delay_slot_length > 0 {
+                input.set_delay_slot_length(ctor.delay_slot_length);
             }
         }
+
+        input.set_next_address(input.address() + input.len() as u64);
 
         Some(())
     }

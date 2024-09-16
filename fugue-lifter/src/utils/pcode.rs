@@ -35,6 +35,7 @@ impl<'a> PCodeBuilder<'a> {
     pub fn new(
         context: &'a mut PCodeBuilderContext,
         input: &'a mut ParserInput,
+        delay_slots: &'a mut [ParserInput],
         issued: &'a mut Vec<PCodeOp>,
     ) -> Self {
         input.base_state();
@@ -42,19 +43,32 @@ impl<'a> PCodeBuilder<'a> {
             unique_offset: (input.address() & context.unique_mask) << 4,
             context,
             input,
-            delay_slots: Default::default(),
+            delay_slots,
             issued,
         }
     }
 
+    #[inline]
     pub fn address(&self) -> u64 {
         self.input.address()
     }
 
+    #[inline]
     pub fn next_address(&self) -> u64 {
         self.input.next_address()
     }
 
+    #[inline]
+    pub fn delay_slot_length(&self) -> usize {
+        self.input.delay_slot_length()
+    }
+
+    #[inline]
+    pub fn len(&self) -> usize {
+        self.input.len()
+    }
+
+    #[inline]
     pub fn emit(&mut self) {
         self.input.base_state();
         self.issued.clear();
@@ -70,6 +84,48 @@ impl<'a> PCodeBuilder<'a> {
         self.context.label_count = 0;
         self.context.labels.fill(INVALID_LABEL);
         self.context.label_refs.clear();
+    }
+
+    #[doc(hidden)]
+    #[inline]
+    pub fn emit_delay_slots(&mut self) {
+        let unique_offset = self.unique_offset;
+
+        let base_address = self.address();
+        let delay_slot_bytes = self.delay_slot_length();
+
+        let mut fall_offset = self.len();
+        let mut bytes = 0usize;
+        let mut index = 0usize;
+
+        loop {
+            let address = base_address + fall_offset as u64;
+
+            self.set_unique_offset(address);
+
+            std::mem::swap(self.input, &mut self.delay_slots[index]);
+
+            let length = self.len();
+
+            self.input.base_state();
+
+            if let Some(builder) = self.input.constructor().build_action {
+                (builder)(self)
+            }
+
+            std::mem::swap(self.input, &mut self.delay_slots[index]);
+
+            fall_offset += length;
+            bytes += length;
+
+            if bytes >= delay_slot_bytes {
+                break;
+            }
+
+            index += 1;
+        }
+
+        self.unique_offset = unique_offset;
     }
 
     #[doc(hidden)]
@@ -97,6 +153,12 @@ impl<'a> PCodeBuilder<'a> {
     #[doc(hidden)]
     pub fn unique_mask(&self) -> u64 {
         self.context.unique_mask
+    }
+
+    #[inline]
+    #[doc(hidden)]
+    pub fn set_unique_offset(&mut self, address: u64) {
+        self.unique_offset = (address & self.context.unique_mask) << 4;
     }
 
     #[inline]

@@ -20,7 +20,6 @@ use crate::LifterGeneratorError;
 
 pub struct LifterGenerator<'a> {
     symbols: Vec<TokenStream>,
-    lifter: TokenStream,
     translator: &'a Translator,
 }
 
@@ -28,64 +27,35 @@ impl<'a> LifterGenerator<'a> {
     pub fn new(translator: &'a Translator) -> Result<Self, LifterGeneratorError> {
         let mut slf = Self {
             symbols: Vec::new(),
-            lifter: Default::default(),
             translator,
         };
 
-        slf.build_symbols()?;
-        slf.build_lifter()?;
+        slf.build()?;
 
         Ok(slf)
     }
 
-    pub fn build_lifter(&mut self) -> Result<(), LifterGeneratorError> {
-        self.lifter = quote! {
-            pub struct Lifter;
-
-            impl Lifter {
-                pub fn lift(addr: u64, bytes: &[u8], context: &mut ::fugue_ir::ContextDatabase) {
-                    todo!()
-                }
-            }
-        };
-
-        Ok(())
-    }
-
-    pub fn build_symbols(&mut self) -> Result<(), LifterGeneratorError> {
+    pub fn build(&mut self) -> Result<(), LifterGeneratorError> {
         let symtab = self.translator.symbol_table();
-        // let mut variants = Vec::new();
 
         for symbol in symtab.symbols().iter() {
-            match symbol {
-                /*
-                Symbol::Operand {
-                    id, scope, name, handle_index, offset, base, min_length, subsym_id, is_code, local_expr, def_expr
-                } => {
-                   self.symbols.push(self.generate_operand(id, scope, handle_index, offset, base, min_length, subsym_id, is_code, local_expr, def_expr));
-                }
-                */
-                Symbol::Subtable {
-                    id,
-                    scope,
+            if let Symbol::Subtable {
+                id,
+                scope,
+                name,
+                constructors,
+                decision_tree,
+            } = symbol
+            {
+                self.symbols.push(self.generate_subtable(
+                    *id,
+                    *scope,
                     name,
                     constructors,
                     decision_tree,
-                } => {
-                    self.symbols.push(self.generate_subtable(
-                        *id,
-                        *scope,
-                        name,
-                        constructors,
-                        decision_tree,
-                        // &mut variants,
-                    )?);
-                }
-                _ => (),
+                )?);
             }
         }
-
-        // self.ctor_names = variants;
 
         Ok(())
     }
@@ -1465,13 +1435,16 @@ impl<'a> LifterGenerator<'a> {
         }
     }
 
+    pub fn generate_constructor_op_delay_slot_action(&self) -> TokenStream {
+        quote! {
+            input.emit_delay_slots();
+        }
+    }
+
     pub fn generate_constructor_op_build_action(&self, tmpl: &OpTpl) -> TokenStream {
         match tmpl.opcode() {
             Opcode::Build => self.generate_constructor_op_append_build_action(tmpl),
-            Opcode::DelaySlot => {
-                // TODO!!
-                TokenStream::new()
-            }
+            Opcode::DelaySlot => self.generate_constructor_op_delay_slot_action(),
             Opcode::Label => {
                 // NOTE: the original logic here checks if the index exceeds the current
                 // size of the allocated labels, and if so, then creates a range of invalid
@@ -1555,7 +1528,7 @@ impl<'a> LifterGenerator<'a> {
             let (ctor_id1, ctor_id2) = ctor.id();
             let ctor_id = (ctor_id1 as u32 & 0xffff) << 16 | (ctor_id2 as u32 & 0xffff);
 
-            let delay_slots = ctor.template().map(|tpl| tpl.delay_slot()).unwrap_or_default();
+            let delay_slot_length = ctor.template().map(|tpl| tpl.delay_slot()).unwrap_or_default();
             let minimum_length = ctor.minimum_length();
 
             let pieces = ctor.print_pieces();
@@ -1574,7 +1547,7 @@ impl<'a> LifterGenerator<'a> {
                     result: #template_result,
                     build_action: #lifting_action,
                     print_pieces: &[#(#pieces),*],
-                    delay_slots: #delay_slots,
+                    delay_slot_length: #delay_slot_length,
                     minimum_length: #minimum_length,
                 };
 
@@ -1997,14 +1970,14 @@ impl<'a> ToTokens for LifterGenerator<'a> {
                 }
             }
 
-            #[inline]
+            #[inline(always)]
             pub fn resolve_constructor(input: &mut fugue_lifter::utils::ParserInput) -> Option<&'static fugue_lifter::utils::Constructor> {
                 let ctor = SubTable0In0::resolve(input)?;
                 ctor.resolve_operands(input)?;
                 Some(ctor)
             }
 
-            #[inline]
+            #[inline(always)]
             pub fn resolve(
                 input: &mut fugue_lifter::utils::ParserInput,
                 context: &mut fugue_lifter::utils::ContextDatabase,
@@ -2016,6 +1989,55 @@ impl<'a> ToTokens for LifterGenerator<'a> {
                 input.apply_commits(context);
 
                 Some(ctor)
+            }
+
+            #[inline]
+            pub fn lift(
+                address: u64,
+                bytes: &[u8],
+                builder: &mut fugue_lifter::utils::pcode::PCodeBuilder,
+                context: &mut fugue_lifter::utils::ContextDatabase,
+            ) -> Option<()> {
+                builder.input.initialise(address, bytes, context);
+
+                resolve(builder.input, context)?;
+
+                let delay_slot_bytes = builder.input.delay_slot_length();
+
+                if delay_slot_bytes == 0 {
+                    builder.emit();
+                    return Some(());
+                }
+
+                let mut fall_offset = builder.input.len();
+                let mut delay_count = 0usize;
+                let mut index = 0usize;
+
+                loop {
+                    let address = address + fall_offset as u64;
+
+                    let dinput = &mut builder.delay_slots[index];
+
+                    dinput.initialise(address, &bytes[fall_offset..], context);
+
+                    resolve(dinput, context)?;
+
+                    let length = dinput.len();
+
+                    fall_offset += length;
+                    delay_count += length;
+
+                    if delay_count >= delay_slot_bytes {
+                        break;
+                    }
+
+                    index += 1;
+                }
+
+                builder.input.set_next_address(address + fall_offset as u64);
+                builder.emit();
+
+                Some(())
             }
 
             #[inline]

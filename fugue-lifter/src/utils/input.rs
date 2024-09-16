@@ -75,8 +75,9 @@ pub struct ParserContext {
     pub constructors: [ConstructorNode; MAX_CTOR_STATES],
     pub commits: ArrayVec<ContextCommit, MAX_CTOR_STATES>,
     pub address: u64,
+    pub next_address: u64,
     pub offset: u8,
-    pub delay_slot: u8,
+    pub delay_slot_length: u8,
     pub alloc: u8,
 }
 
@@ -101,8 +102,9 @@ impl ParserInput {
             constructors: [ConstructorNode::default(); MAX_CTOR_STATES],
             commits: Default::default(),
             address,
+            next_address: 0xffff_ffff_ffff_ffff,
             offset: 0,
-            delay_slot: 0,
+            delay_slot_length: 0,
             alloc: 1,
         };
 
@@ -125,8 +127,9 @@ impl ParserInput {
             constructors: [ConstructorNode::default(); MAX_CTOR_STATES],
             commits: Default::default(),
             address: 0,
+            next_address: 0xffff_ffff_ffff_ffff,
             offset: 0,
-            delay_slot: 0,
+            delay_slot_length: 0,
             alloc: 1,
         };
 
@@ -141,7 +144,8 @@ impl ParserInput {
     #[inline]
     pub fn initialise(&mut self, address: u64, bytes: &[u8], db: &ContextDatabase) {
         self.context.address = address;
-        self.context.delay_slot = 0;
+        self.context.next_address = 0xffff_ffff_ffff_ffff;
+        self.context.delay_slot_length = 0;
 
         self.context.alloc = 1;
         self.context.constructors[0] = Default::default();
@@ -166,7 +170,13 @@ impl ParserInput {
 
     #[inline(always)]
     pub fn next_address(&self) -> u64 {
-        self.context.address + self.context.constructors[0].length as u64
+        // self.context.address + self.context.constructors[0].length as u64
+        self.context.next_address
+    }
+
+    #[inline(always)]
+    pub fn set_next_address(&mut self, address: u64) {
+        self.context.next_address = address;
     }
 
     #[inline(always)]
@@ -406,8 +416,13 @@ impl ParserInput {
     }
 
     #[inline(always)]
-    pub fn set_delay_slot(&mut self, count: usize) {
-        self.context.delay_slot = count as _;
+    pub fn set_delay_slot_length(&mut self, size: usize) {
+        self.context.delay_slot_length = size as _;
+    }
+
+    #[inline(always)]
+    pub fn delay_slot_length(&self) -> usize {
+        self.context.delay_slot_length as _
     }
 
     #[inline(always)]
