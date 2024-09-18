@@ -2,7 +2,7 @@ use std::mem;
 
 use arrayvec::ArrayVec;
 
-use crate::utils::input::{ParserInput, INVALID_HANDLE};
+use crate::runtime::input::{ParserInput, INVALID_HANDLE};
 
 use super::{calculate_mask, FixedHandle};
 

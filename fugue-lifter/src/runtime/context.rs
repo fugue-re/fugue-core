@@ -6,8 +6,8 @@ use std::ops::{Deref, DerefMut};
 use fugue_ir::Translator;
 use itertools::Itertools;
 
-use crate::utils::partmap::{BoundKind, PartMap};
-use crate::utils::varnode::VarnodeData;
+use crate::runtime::partmap::{BoundKind, PartMap};
+use crate::runtime::varnode::VarnodeData;
 
 #[derive(Debug, Clone)]
 pub struct ContextBitRange {

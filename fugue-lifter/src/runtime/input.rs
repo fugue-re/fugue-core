@@ -2,8 +2,8 @@ use std::mem::size_of;
 
 use arrayvec::ArrayVec;
 
-use crate::utils::constructor::Constructor;
-use crate::utils::context::ContextDatabase;
+use crate::runtime::constructor::Constructor;
+use crate::runtime::context::ContextDatabase;
 
 const MAX_CTOR_STATES: usize = 128;
 const MAX_CTXT_CHUNKS: usize = 2;

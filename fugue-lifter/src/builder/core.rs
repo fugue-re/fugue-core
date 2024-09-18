@@ -10,15 +10,15 @@ use fugue_ir::disassembly::symbol::{Constructor, DecisionNode, Symbol};
 use fugue_ir::disassembly::{Opcode, PatternExpression};
 use fugue_ir::Translator;
 
-// use itertools::Itertools as _;
 use proc_macro2::{Literal, TokenStream};
 use quote::{format_ident, quote, ToTokens, TokenStreamExt};
 use syn::Ident;
 
-use crate::utils::pcode::Op;
+use crate::runtime::pcode::Op;
 use crate::LifterGeneratorError;
 
 pub struct LifterGenerator<'a> {
+    context_variables: Vec<(&'a str, usize, usize)>,
     symbols: Vec<TokenStream>,
     translator: &'a Translator,
 }
@@ -26,6 +26,7 @@ pub struct LifterGenerator<'a> {
 impl<'a> LifterGenerator<'a> {
     pub fn new(translator: &'a Translator) -> Result<Self, LifterGeneratorError> {
         let mut slf = Self {
+            context_variables: Vec::new(),
             symbols: Vec::new(),
             translator,
         };
@@ -57,6 +58,24 @@ impl<'a> LifterGenerator<'a> {
             }
         }
 
+        for &sym_id in symtab.global_scope().unwrap().iter() {
+            let Symbol::Context {
+                ref name,
+                ref pattern_value,
+                ..
+            } = symtab.unchecked_symbol(sym_id)
+            else {
+                continue;
+            };
+
+            if let PatternExpression::ContextField {
+                bit_start, bit_end, ..
+            } = pattern_value
+            {
+                self.context_variables.push((name, *bit_start, *bit_end));
+            }
+        }
+
         Ok(())
     }
 
@@ -64,7 +83,7 @@ impl<'a> LifterGenerator<'a> {
         match symbol {
             Symbol::Epsilon { .. } => {
                 quote! {
-                    fugue_lifter::utils::FixedHandle {
+                    fugue_lifter::runtime::FixedHandle {
                         space: 0,
                         ..Default::default()
                     }
@@ -73,7 +92,7 @@ impl<'a> LifterGenerator<'a> {
             Symbol::Name { pattern_value, .. } | Symbol::Value { pattern_value, .. } => {
                 let expr = self.generate_pattern_resolver(pattern_value);
                 quote! {
-                    fugue_lifter::utils::FixedHandle {
+                    fugue_lifter::runtime::FixedHandle {
                         space: 0,
                         offset_offset: #expr as u64,
                         ..Default::default()
@@ -91,7 +110,7 @@ impl<'a> LifterGenerator<'a> {
                 let size = *size as u8;
 
                 quote! {
-                    fugue_lifter::utils::FixedHandle {
+                    fugue_lifter::runtime::FixedHandle {
                         space: #space,
                         size: #size,
                         offset_offset: #offset,
@@ -113,7 +132,7 @@ impl<'a> LifterGenerator<'a> {
                 let space_id = space.id().index() as u8;
                 let size = space.address_size() as u8;
                 quote! {
-                    fugue_lifter::utils::FixedHandle {
+                    fugue_lifter::runtime::FixedHandle {
                         space: #space_id,
                         size: #size,
                         offset_offset: input.context.address,
@@ -126,7 +145,7 @@ impl<'a> LifterGenerator<'a> {
                 let space_id = space.id().index() as u8;
                 let size = space.address_size() as u8;
                 quote! {
-                    fugue_lifter::utils::FixedHandle {
+                    fugue_lifter::runtime::FixedHandle {
                         space: #space_id,
                         size: #size,
                         offset_offset: input.next_address(),
@@ -194,7 +213,7 @@ impl<'a> LifterGenerator<'a> {
                 });
 
                 quote! {
-                    fugue_lifter::utils::FixedHandle {
+                    fugue_lifter::runtime::FixedHandle {
                         space: 0,
                         offset_offset: match #index as usize {
                             #(#cases,)*
@@ -255,7 +274,7 @@ impl<'a> LifterGenerator<'a> {
 
                 if !*big_endian {
                     parts.push(quote! {
-                        res = fugue_lifter::utils::byte_swap(res, #size);
+                        res = fugue_lifter::runtime::byte_swap(res, #size);
                     });
                 }
 
@@ -266,9 +285,9 @@ impl<'a> LifterGenerator<'a> {
                 let range = bit_end - bit_start;
 
                 parts.push(if *sign_bit {
-                    quote! { fugue_lifter::utils::sign_extend(res, #range) }
+                    quote! { fugue_lifter::runtime::sign_extend(res, #range) }
                 } else {
-                    quote! { fugue_lifter::utils::zero_extend(res, #range) }
+                    quote! { fugue_lifter::runtime::zero_extend(res, #range) }
                 });
 
                 quote! {
@@ -318,9 +337,9 @@ impl<'a> LifterGenerator<'a> {
                 let range = bit_end - bit_start;
 
                 parts.push(if *sign_bit {
-                    quote! { fugue_lifter::utils::sign_extend(res, #range) }
+                    quote! { fugue_lifter::runtime::sign_extend(res, #range) }
                 } else {
-                    quote! { fugue_lifter::utils::zero_extend(res, #range) }
+                    quote! { fugue_lifter::runtime::zero_extend(res, #range) }
                 });
 
                 quote! {
@@ -387,7 +406,7 @@ impl<'a> LifterGenerator<'a> {
 
                 quote! {
                     {
-                        let operand_value = |input: &mut fugue_lifter::utils::ParserInput| -> Option<i64> {
+                        let operand_value = |input: &mut fugue_lifter::runtime::ParserInput| -> Option<i64> {
                             let mut cur_depth = input.depth;
                             let mut point = &input.context.constructors[input.point as usize];
 
@@ -396,7 +415,7 @@ impl<'a> LifterGenerator<'a> {
                                     // preserve old and init new state
                                     let old_point = input.point;
                                     let old_depth = std::mem::take(&mut input.depth);
-                                    let old_breadcrumb = std::mem::replace(&mut input.breadcrumb, [0u8; fugue_lifter::utils::input::BREADCRUMBS]);
+                                    let old_breadcrumb = std::mem::replace(&mut input.breadcrumb, [0u8; fugue_lifter::runtime::input::BREADCRUMBS]);
 
                                     input.point = input.context.alloc;
                                     {
@@ -404,8 +423,8 @@ impl<'a> LifterGenerator<'a> {
 
                                         state.constructor = Some(#ctor_vname);
                                         state.handle = None;
-                                        state.parent = fugue_lifter::utils::input::INVALID_HANDLE;
-                                        state.operands = fugue_lifter::utils::input::INVALID_HANDLE;
+                                        state.parent = fugue_lifter::runtime::input::INVALID_HANDLE;
+                                        state.operands = fugue_lifter::runtime::input::INVALID_HANDLE;
                                         state.offset = 0;
                                         state.length = 0;
                                     }
@@ -419,8 +438,8 @@ impl<'a> LifterGenerator<'a> {
 
                                         state.constructor = None;
                                         state.handle = None;
-                                        state.parent = fugue_lifter::utils::input::INVALID_HANDLE;
-                                        state.operands = fugue_lifter::utils::input::INVALID_HANDLE;
+                                        state.parent = fugue_lifter::runtime::input::INVALID_HANDLE;
+                                        state.operands = fugue_lifter::runtime::input::INVALID_HANDLE;
                                         state.offset = 0;
                                         state.length = 0;
                                     }
@@ -443,7 +462,7 @@ impl<'a> LifterGenerator<'a> {
                             // preserve old and init new state
                             let old_point = input.point;
                             let old_depth = std::mem::take(&mut input.depth);
-                            let old_breadcrumb = std::mem::replace(&mut input.breadcrumb, [0u8; fugue_lifter::utils::input::BREADCRUMBS]);
+                            let old_breadcrumb = std::mem::replace(&mut input.breadcrumb, [0u8; fugue_lifter::runtime::input::BREADCRUMBS]);
 
                             input.point = input.context.alloc;
                             {
@@ -451,8 +470,8 @@ impl<'a> LifterGenerator<'a> {
 
                                 state.constructor = Some(#ctor_vname);
                                 state.handle = None;
-                                state.parent = fugue_lifter::utils::input::INVALID_HANDLE;
-                                state.operands = fugue_lifter::utils::input::INVALID_HANDLE;
+                                state.parent = fugue_lifter::runtime::input::INVALID_HANDLE;
+                                state.operands = fugue_lifter::runtime::input::INVALID_HANDLE;
                                 state.offset = offset;
                                 state.length = length;
                             }
@@ -466,8 +485,8 @@ impl<'a> LifterGenerator<'a> {
 
                                 state.constructor = None;
                                 state.handle = None;
-                                state.parent = fugue_lifter::utils::input::INVALID_HANDLE;
-                                state.operands = fugue_lifter::utils::input::INVALID_HANDLE;
+                                state.parent = fugue_lifter::runtime::input::INVALID_HANDLE;
+                                state.operands = fugue_lifter::runtime::input::INVALID_HANDLE;
                                 state.offset = 0;
                                 state.length = 0;
                             }
@@ -571,7 +590,7 @@ impl<'a> LifterGenerator<'a> {
                         // NOTE: this is where we should perform construction of inner resolvers
                         //
                         let stname = format_ident!("SubTable{id}In{scope}");
-                        let resolver = quote! { fugue_lifter::utils::OperandResolver::Constructor(<#stname>::resolve) };
+                        let resolver = quote! { fugue_lifter::runtime::OperandResolver::Constructor(<#stname>::resolve) };
                         let handle_resolver = quote! { None };
 
                         (resolver, handle_resolver)
@@ -596,7 +615,7 @@ impl<'a> LifterGenerator<'a> {
 
                             helpers.push(quote! {
                                 #[inline]
-                                fn #ctor_opnd_resolver(input: &mut fugue_lifter::utils::ParserInput) -> Option<()> {
+                                fn #ctor_opnd_resolver(input: &mut fugue_lifter::runtime::ParserInput) -> Option<()> {
                                     let index = #pattern_resolver as usize;
                                     if index >= #limit || [#(#bad_indices),*].contains(&index) {
                                         None
@@ -606,9 +625,9 @@ impl<'a> LifterGenerator<'a> {
                                 }
                             });
 
-                            quote! { fugue_lifter::utils::OperandResolver::Filter(#ctor_opnd_resolver) }
+                            quote! { fugue_lifter::runtime::OperandResolver::Filter(#ctor_opnd_resolver) }
                         } else {
-                            quote! { fugue_lifter::utils::OperandResolver::None }
+                            quote! { fugue_lifter::runtime::OperandResolver::None }
                         };
 
                         let ctor_opnd_handle_resolver =
@@ -618,7 +637,7 @@ impl<'a> LifterGenerator<'a> {
 
                         helpers.push(quote! {
                             #[inline]
-                            fn #ctor_opnd_handle_resolver(input: &mut fugue_lifter::utils::ParserInput) -> Option<()> {
+                            fn #ctor_opnd_handle_resolver(input: &mut fugue_lifter::runtime::ParserInput) -> Option<()> {
                                 let handle = #handle_resolver;
                                 input.set_parent_handle(handle);
                                 Some(())
@@ -651,7 +670,7 @@ impl<'a> LifterGenerator<'a> {
 
                             helpers.push(quote! {
                                 #[inline]
-                                fn #ctor_opnd_resolver(input: &mut fugue_lifter::utils::ParserInput) -> Option<()> {
+                                fn #ctor_opnd_resolver(input: &mut fugue_lifter::runtime::ParserInput) -> Option<()> {
                                     let index = #pattern_resolver as usize;
                                     if index >= #limit || [#(#bad_indices),*].contains(&index) {
                                         None
@@ -661,9 +680,9 @@ impl<'a> LifterGenerator<'a> {
                                 }
                             });
 
-                            quote! { fugue_lifter::utils::OperandResolver::Filter(#ctor_opnd_resolver) }
+                            quote! { fugue_lifter::runtime::OperandResolver::Filter(#ctor_opnd_resolver) }
                         } else {
-                            quote! { fugue_lifter::utils::OperandResolver::None }
+                            quote! { fugue_lifter::runtime::OperandResolver::None }
                         };
 
                         let ctor_opnd_handle_resolver =
@@ -673,7 +692,7 @@ impl<'a> LifterGenerator<'a> {
 
                         helpers.push(quote! {
                             #[inline]
-                            fn #ctor_opnd_handle_resolver(input: &mut fugue_lifter::utils::ParserInput) -> Option<()> {
+                            fn #ctor_opnd_handle_resolver(input: &mut fugue_lifter::runtime::ParserInput) -> Option<()> {
                                 let handle = #handle_resolver;
                                 input.set_parent_handle(handle);
                                 Some(())
@@ -709,7 +728,7 @@ impl<'a> LifterGenerator<'a> {
 
                             helpers.push(quote! {
                                 #[inline]
-                                fn #ctor_opnd_resolver(input: &mut fugue_lifter::utils::ParserInput) -> Option<()> {
+                                fn #ctor_opnd_resolver(input: &mut fugue_lifter::runtime::ParserInput) -> Option<()> {
                                     let index = #pattern_resolver as usize;
                                     if index >= #limit || [#(#bad_indices),*].contains(&index) {
                                         None
@@ -719,9 +738,9 @@ impl<'a> LifterGenerator<'a> {
                                 }
                             });
 
-                            quote! { fugue_lifter::utils::OperandResolver::Filter(#ctor_opnd_resolver) }
+                            quote! { fugue_lifter::runtime::OperandResolver::Filter(#ctor_opnd_resolver) }
                         } else {
-                            quote! { fugue_lifter::utils::OperandResolver::None }
+                            quote! { fugue_lifter::runtime::OperandResolver::None }
                         };
 
                         let ctor_opnd_handle_resolver =
@@ -731,7 +750,7 @@ impl<'a> LifterGenerator<'a> {
 
                         helpers.push(quote! {
                             #[inline]
-                            fn #ctor_opnd_handle_resolver(input: &mut fugue_lifter::utils::ParserInput) -> Option<()> {
+                            fn #ctor_opnd_handle_resolver(input: &mut fugue_lifter::runtime::ParserInput) -> Option<()> {
                                 let handle = #handle_resolver;
                                 input.set_parent_handle(handle);
                                 Some(())
@@ -752,7 +771,7 @@ impl<'a> LifterGenerator<'a> {
 
                         helpers.push(quote! {
                             #[inline]
-                            fn #ctor_opnd_handle_resolver(input: &mut fugue_lifter::utils::ParserInput) -> Option<()> {
+                            fn #ctor_opnd_handle_resolver(input: &mut fugue_lifter::runtime::ParserInput) -> Option<()> {
                                 let handle = #handle_resolver;
                                 input.set_parent_handle(handle);
                                 Some(())
@@ -763,7 +782,7 @@ impl<'a> LifterGenerator<'a> {
                             Some(#ctor_opnd_handle_resolver)
                         };
 
-                        let resolver = quote! { fugue_lifter::utils::OperandResolver::None };
+                        let resolver = quote! { fugue_lifter::runtime::OperandResolver::None };
 
                         (resolver, handle_resolver)
                     }
@@ -777,15 +796,15 @@ impl<'a> LifterGenerator<'a> {
 
                 helpers.push(quote! {
                     #[inline]
-                    fn #ctor_opnd_handle_resolver(input: &mut fugue_lifter::utils::ParserInput) -> Option<()> {
+                    fn #ctor_opnd_handle_resolver(input: &mut fugue_lifter::runtime::ParserInput) -> Option<()> {
                         let offset = #value as u64;
                         if let Some(handle) = input.parent_handle_mut() {
                             handle.space = 0;
-                            handle.offset_space = fugue_lifter::utils::input::INVALID_HANDLE;
+                            handle.offset_space = fugue_lifter::runtime::input::INVALID_HANDLE;
                             handle.offset_offset = offset;
                             handle.size = 0;
                         } else {
-                            input.set_parent_handle(fugue_lifter::utils::FixedHandle {
+                            input.set_parent_handle(fugue_lifter::runtime::FixedHandle {
                                 space: 0,
                                 offset_offset: offset,
                                 ..Default::default()
@@ -799,13 +818,13 @@ impl<'a> LifterGenerator<'a> {
                     Some(#ctor_opnd_handle_resolver)
                 };
 
-                let resolver = quote! { fugue_lifter::utils::OperandResolver::None };
+                let resolver = quote! { fugue_lifter::runtime::OperandResolver::None };
 
                 (resolver, handle_resolver)
             };
 
             operands.push(quote! {
-                fugue_lifter::utils::Operand {
+                fugue_lifter::runtime::Operand {
                     resolver: #resolver,
                     handle_resolver: #handle_resolver,
                     offset_base: #offset_base,
@@ -901,7 +920,7 @@ impl<'a> LifterGenerator<'a> {
                         // we wrap the address with respect to the space
                         let highest = space.highest_offset();
                         quote! {
-                            let noffset = fugue_lifter::utils::wrap_offset(#highest, offset.wrapping_add(1u64));
+                            let noffset = fugue_lifter::runtime::wrap_offset(#highest, offset.wrapping_add(1u64));
                             if noffset < offset {
                                 context
                                     .set_context_change_point(
@@ -944,9 +963,9 @@ impl<'a> LifterGenerator<'a> {
             let post_fcn = quote! {
                 #[inline]
                 fn #ctor_post_apply_context(
-                    input: &fugue_lifter::utils::ParserInput,
-                    context: &mut fugue_lifter::utils::ContextDatabase,
-                    commit: &fugue_lifter::utils::ContextCommit,
+                    input: &fugue_lifter::runtime::ParserInput,
+                    context: &mut fugue_lifter::runtime::ContextDatabase,
+                    commit: &fugue_lifter::runtime::ContextCommit,
                 ) -> Option<()> {
                     let point = commit.point;
 
@@ -964,7 +983,7 @@ impl<'a> LifterGenerator<'a> {
 
         let post_register = post_field.as_ref().map(|fcn| {
             quote! {
-                let commit = fugue_lifter::utils::ContextCommit {
+                let commit = fugue_lifter::runtime::ContextCommit {
                     applier: #fcn,
                     point: input.point,
                     values: [
@@ -977,7 +996,7 @@ impl<'a> LifterGenerator<'a> {
 
         let pre_fcn = quote! {
             #[inline]
-            fn #ctor_pre_apply_context(input: &mut fugue_lifter::utils::ParserInput) -> Option<()> {
+            fn #ctor_pre_apply_context(input: &mut fugue_lifter::runtime::ParserInput) -> Option<()> {
                 #(#pre_actions)*
 
                 #post_register
@@ -1023,14 +1042,14 @@ impl<'a> LifterGenerator<'a> {
 
                 let action = match kind {
                     HandleKind::Space => quote! {
-                        if handle.offset_space == fugue_lifter::utils::input::INVALID_HANDLE {
+                        if handle.offset_space == fugue_lifter::runtime::input::INVALID_HANDLE {
                             handle.space as u64
                         } else {
                             handle.temporary_space as u64
                         }
                     },
                     HandleKind::Offset => quote! {
-                        if handle.offset_space == fugue_lifter::utils::input::INVALID_HANDLE {
+                        if handle.offset_space == fugue_lifter::runtime::input::INVALID_HANDLE {
                             handle.offset_offset
                         } else {
                             handle.temporary_offset
@@ -1046,14 +1065,14 @@ impl<'a> LifterGenerator<'a> {
 
                         quote! {
                             if handle.space == 0 { // constant space
-                                let val = if handle.offset_space == fugue_lifter::utils::input::INVALID_HANDLE {
+                                let val = if handle.offset_space == fugue_lifter::runtime::input::INVALID_HANDLE {
                                     handle.offset_offset
                                 } else {
                                     handle.temporary_offset
                                 };
                                 val.checked_shr(#value_shift).unwrap_or(0)
                             } else {
-                                if handle.offset_space == fugue_lifter::utils::input::INVALID_HANDLE {
+                                if handle.offset_space == fugue_lifter::runtime::input::INVALID_HANDLE {
                                     handle.offset_offset + #value_short
                                 } else {
                                     handle.temporary_offset + #value_short
@@ -1094,8 +1113,8 @@ impl<'a> LifterGenerator<'a> {
                 let value = self.generate_const_template(tmpl);
 
                 quote! {
-                    handle.offset_space = fugue_lifter::utils::input::INVALID_HANDLE;
-                    handle.offset_offset = fugue_lifter::utils::wrap_offset(
+                    handle.offset_space = fugue_lifter::runtime::input::INVALID_HANDLE;
+                    handle.offset_offset = fugue_lifter::runtime::wrap_offset(
                         SPACE_UPPER_BOUND[handle.space as usize],
                         #value
                     );
@@ -1115,7 +1134,7 @@ impl<'a> LifterGenerator<'a> {
                 quote! {
                     {
                         let h = input.operand_handle(#index);
-                        if h.offset_space == fugue_lifter::utils::input::INVALID_HANDLE {
+                        if h.offset_space == fugue_lifter::runtime::input::INVALID_HANDLE {
                             h.space
                         } else {
                             h.temporary_space
@@ -1139,7 +1158,7 @@ impl<'a> LifterGenerator<'a> {
 
             return quote! {
                 {
-                    let mut handle = fugue_lifter::utils::FixedHandle {
+                    let mut handle = fugue_lifter::runtime::FixedHandle {
                         space: #space,
                         size: #size as u8,
                         ..Default::default()
@@ -1164,7 +1183,7 @@ impl<'a> LifterGenerator<'a> {
 
         quote! {
             {
-                let mut handle = fugue_lifter::utils::FixedHandle {
+                let mut handle = fugue_lifter::runtime::FixedHandle {
                     space: #space,
                     size: #size as u8,
                     offset_offset: #offset_offset,
@@ -1178,7 +1197,7 @@ impl<'a> LifterGenerator<'a> {
                     let word_size = SPACE_WORD_SIZE[handle.space as usize] as u64;
 
                     handle.offset_offset =
-                        fugue_lifter::utils::wrap_offset(hoffset, handle.offset_offset * word_size);
+                        fugue_lifter::runtime::wrap_offset(hoffset, handle.offset_offset * word_size);
                 } else {
                     handle.offset_space = offset_space;
                     handle.offset_size = #offset_size as u8;
@@ -1210,7 +1229,7 @@ impl<'a> LifterGenerator<'a> {
             let resolver_body = self.generate_handle_template(result);
 
             helpers.append_all(quote! {
-                fn #resolver(input: &mut fugue_lifter::utils::ParserInput) -> fugue_lifter::utils::FixedHandle {
+                fn #resolver(input: &mut fugue_lifter::runtime::ParserInput) -> fugue_lifter::runtime::FixedHandle {
                     #resolver_body
                 }
             });
@@ -1241,7 +1260,7 @@ impl<'a> LifterGenerator<'a> {
 
                 offset = fixup_location_offset(input, space, offset, size);
 
-                fugue_lifter::utils::pcode::Varnode {
+                fugue_lifter::runtime::pcode::Varnode {
                     space,
                     offset,
                     size,
@@ -1264,7 +1283,7 @@ impl<'a> LifterGenerator<'a> {
 
                 (
                     handle.space,
-                    fugue_lifter::utils::pcode::Varnode {
+                    fugue_lifter::runtime::pcode::Varnode {
                         space,
                         offset,
                         size,
@@ -1302,15 +1321,15 @@ impl<'a> LifterGenerator<'a> {
                         let (space, pointer) = #pointer;
                         // NOTE: is this really worth it? We build it into the Load...
                         /*
-                        let index = fugue_lifter::utils::pcode::Varnode {
+                        let index = fugue_lifter::runtime::pcode::Varnode {
                             space: 0,
                             offset: space as u64,
                             size: 0,
                         };
                         */
                         input.issue_with(
-                            fugue_lifter::utils::pcode::Op::Load(space),
-                            fugue_lifter::utils::pcode::Inputs::one(pointer),
+                            fugue_lifter::runtime::pcode::Op::Load(space),
+                            fugue_lifter::runtime::pcode::Inputs::one(pointer),
                             varnode,
                         );
                         input.push_input(varnode);
@@ -1336,7 +1355,7 @@ impl<'a> LifterGenerator<'a> {
                 (
                     1,
                     quote! {
-                        fugue_lifter::utils::pcode::Op::Load(#spc as u8)
+                        fugue_lifter::runtime::pcode::Op::Load(#spc as u8)
                     },
                 )
             }
@@ -1345,7 +1364,7 @@ impl<'a> LifterGenerator<'a> {
                 (
                     1,
                     quote! {
-                        fugue_lifter::utils::pcode::Op::Store(#spc as u8)
+                        fugue_lifter::runtime::pcode::Op::Store(#spc as u8)
                     },
                 )
             }
@@ -1354,7 +1373,7 @@ impl<'a> LifterGenerator<'a> {
                 (
                     1,
                     quote! {
-                        fugue_lifter::utils::pcode::Op::UserOp(#uop as u16)
+                        fugue_lifter::runtime::pcode::Op::UserOp(#uop as u16)
                     },
                 )
             }
@@ -1376,7 +1395,7 @@ impl<'a> LifterGenerator<'a> {
         let relative_label = (inputs > 0).then(|| {
             quote! {
                 input.context.inputs.0[0].offset += input.context.label_base as u64;
-                input.context.label_refs.push(fugue_lifter::utils::pcode::RelativeRecord {
+                input.context.label_refs.push(fugue_lifter::runtime::pcode::RelativeRecord {
                     operation: input.issued.len() as u8,
                     index: 0,
                 });
@@ -1393,9 +1412,9 @@ impl<'a> LifterGenerator<'a> {
                     if is_dynamic(input, #index) {
                         let (space, pointer) = #pointer;
                         input.issue_with(
-                            fugue_lifter::utils::pcode::Op::Store(space),
-                            fugue_lifter::utils::pcode::Inputs::two(pointer, output),
-                            fugue_lifter::utils::pcode::Varnode::INVALID,
+                            fugue_lifter::runtime::pcode::Op::Store(space),
+                            fugue_lifter::runtime::pcode::Inputs::two(pointer, output),
+                            fugue_lifter::runtime::pcode::Varnode::INVALID,
                         );
                     }
                 }
@@ -1417,7 +1436,7 @@ impl<'a> LifterGenerator<'a> {
             quote! {
                 input.issue(
                     op,
-                    fugue_lifter::utils::pcode::Varnode::INVALID
+                    fugue_lifter::runtime::pcode::Varnode::INVALID
                 );
             }
         };
@@ -1484,7 +1503,7 @@ impl<'a> LifterGenerator<'a> {
             .map(|op| self.generate_constructor_op_build_action(op));
 
         let action_fcn = quote! {
-            fn #action_name<'a>(input: &mut fugue_lifter::utils::pcode::PCodeBuilder<'a>) {
+            fn #action_name<'a>(input: &mut fugue_lifter::runtime::pcode::PCodeBuilder<'a>) {
                 let old_base = input.context.label_base;
 
                 input.context.label_base = input.context.label_count;
@@ -1540,7 +1559,7 @@ impl<'a> LifterGenerator<'a> {
             let (lifting_helper, lifting_action) = self.generate_constructor_lifting_actions(id, scope, cid, ctor);
 
             quote! {
-                pub const #ctor_vname: &'static fugue_lifter::utils::Constructor = &fugue_lifter::utils::Constructor {
+                pub const #ctor_vname: &'static fugue_lifter::runtime::Constructor = &fugue_lifter::runtime::Constructor {
                     id: #ctor_id,
                     context_actions: #apply_context,
                     operands: &[#(#operands),*],
@@ -1713,13 +1732,13 @@ impl<'a> LifterGenerator<'a> {
 
                     trees.push(quote! {
                         #[inline]
-                        fn #tree_fn(input: &mut fugue_lifter::utils::ParserInput) -> Option<&'static fugue_lifter::utils::Constructor> {
+                        fn #tree_fn(input: &mut fugue_lifter::runtime::ParserInput) -> Option<&'static fugue_lifter::runtime::Constructor> {
                             #body
                         }
                     });
 
                     quote! {
-                        (#tree_fn as fn(&mut fugue_lifter::utils::ParserInput) -> Option<&'static fugue_lifter::utils::Constructor>)
+                        (#tree_fn as fn(&mut fugue_lifter::runtime::ParserInput) -> Option<&'static fugue_lifter::runtime::Constructor>)
                     }
                 })
                 .collect::<Vec<_>>();
@@ -1741,7 +1760,7 @@ impl<'a> LifterGenerator<'a> {
             );
 
             trees.push(quote! {
-                const #table: [fn(&mut fugue_lifter::utils::ParserInput) -> Option<&'static fugue_lifter::utils::Constructor>; #nodes] = [
+                const #table: [fn(&mut fugue_lifter::runtime::ParserInput) -> Option<&'static fugue_lifter::runtime::Constructor>; #nodes] = [
                     #(#parts),*
                 ];
             });
@@ -1764,7 +1783,7 @@ impl<'a> LifterGenerator<'a> {
         let body = self.generate_dtree_aux(id, scope, dtree, &tree_fn, trees);
         quote! {
             #[inline]
-            pub fn resolve(input: &mut fugue_lifter::utils::ParserInput) -> Option<&'static fugue_lifter::utils::Constructor> {
+            pub fn resolve(input: &mut fugue_lifter::runtime::ParserInput) -> Option<&'static fugue_lifter::runtime::Constructor> {
                 #body
             }
         }
@@ -1818,6 +1837,7 @@ impl<'a> ToTokens for LifterGenerator<'a> {
 
         let address_size = default_space.address_size();
         let address_bits = address_size as u32 * 8;
+        let max_address = default_space.highest_offset();
 
         let register_space_size = self.translator.register_space_size();
         let unique_space_size = self.translator.unique_space_size();
@@ -1863,12 +1883,12 @@ impl<'a> ToTokens for LifterGenerator<'a> {
                 let i = i as u8;
                 if i == 0 {
                     // constant
-                    quote! { #i => offset & fugue_lifter::utils::calculate_mask(size as usize) }
+                    quote! { #i => offset & fugue_lifter::runtime::calculate_mask(size as usize) }
                 } else if spc.id().is_unique() {
                     quote! { #i => offset | builder.unique_offset }
                 } else {
                     let highest = spc.highest_offset();
-                    quote! { #i => fugue_lifter::utils::wrap_offset(#highest, offset) }
+                    quote! { #i => fugue_lifter::runtime::wrap_offset(#highest, offset) }
                 }
             });
 
@@ -1879,10 +1899,18 @@ impl<'a> ToTokens for LifterGenerator<'a> {
             }
         };
 
+        let context_variables = self.context_variables.iter().map(|(name, start, end)| {
+            quote! {
+                context.register_variable(#name, #start, #end);
+            }
+        });
+
         tokens.append_all(quote! {
             pub const ADDRESS_ALIGNMENT: usize = #alignment;
             pub const ADDRESS_BITS: u32 = #address_bits;
             pub const ADDRESS_SIZE: usize = #address_size;
+
+            pub const ADDRESS_UPPER_BOUND: u64 = #max_address;
 
             pub const REGISTER_SPACE_SIZE: usize = #register_space_size;
 
@@ -1900,7 +1928,7 @@ impl<'a> ToTokens for LifterGenerator<'a> {
                 #(#space_upper_bounds),*
             ];
 
-            #[inline]
+            #[inline(always)]
             pub const fn user_op_by_name(name: &'static str) -> u16 {
                 match name.as_bytes() {
                     #(#userops_to_ids,)*
@@ -1908,16 +1936,16 @@ impl<'a> ToTokens for LifterGenerator<'a> {
                 }
             }
 
-            #[inline]
+            #[inline(always)]
             pub const fn user_op_by_id(id: u16) -> &'static str {
                 USER_OPS[id as usize]
             }
 
             // Helpers below
 
-            #[inline]
+            #[inline(always)]
             fn fixup_location_offset(
-                builder: &fugue_lifter::utils::pcode::PCodeBuilder,
+                builder: &fugue_lifter::runtime::pcode::PCodeBuilder,
                 space: u8,
                 offset: u64,
                 size: u8,
@@ -1925,9 +1953,9 @@ impl<'a> ToTokens for LifterGenerator<'a> {
                 #space_match
             }
 
-            #[inline]
+            #[inline(always)]
             fn is_dynamic(
-                builder: &fugue_lifter::utils::pcode::PCodeBuilder,
+                builder: &fugue_lifter::runtime::pcode::PCodeBuilder,
                 index: usize,
             ) -> bool {
                 unsafe {
@@ -1943,13 +1971,13 @@ impl<'a> ToTokens for LifterGenerator<'a> {
                         .unwrap_unchecked()
                         .offset_space;
 
-                    space != fugue_lifter::utils::input::INVALID_HANDLE
+                    space != fugue_lifter::runtime::input::INVALID_HANDLE
                 }
             }
 
             #[inline]
             fn append_build(
-                builder: &mut fugue_lifter::utils::pcode::PCodeBuilder,
+                builder: &mut fugue_lifter::runtime::pcode::PCodeBuilder,
                 index: usize,
             ) {
                 unsafe {
@@ -1971,7 +1999,7 @@ impl<'a> ToTokens for LifterGenerator<'a> {
             }
 
             #[inline(always)]
-            pub fn resolve_constructor(input: &mut fugue_lifter::utils::ParserInput) -> Option<&'static fugue_lifter::utils::Constructor> {
+            pub fn resolve_constructor(input: &mut fugue_lifter::runtime::ParserInput) -> Option<&'static fugue_lifter::runtime::Constructor> {
                 let ctor = SubTable0In0::resolve(input)?;
                 ctor.resolve_operands(input)?;
                 Some(ctor)
@@ -1979,9 +2007,9 @@ impl<'a> ToTokens for LifterGenerator<'a> {
 
             #[inline(always)]
             pub fn resolve(
-                input: &mut fugue_lifter::utils::ParserInput,
-                context: &mut fugue_lifter::utils::ContextDatabase,
-            ) -> Option<&'static fugue_lifter::utils::Constructor> {
+                input: &mut fugue_lifter::runtime::ParserInput,
+                context: &mut fugue_lifter::runtime::ContextDatabase,
+            ) -> Option<&'static fugue_lifter::runtime::Constructor> {
                 let ctor = resolve_constructor(input)?;
                 ctor.resolve_handles(input)?;
 
@@ -1995,8 +2023,8 @@ impl<'a> ToTokens for LifterGenerator<'a> {
             pub fn lift(
                 address: u64,
                 bytes: &[u8],
-                builder: &mut fugue_lifter::utils::pcode::PCodeBuilder,
-                context: &mut fugue_lifter::utils::ContextDatabase,
+                builder: &mut fugue_lifter::runtime::pcode::PCodeBuilder,
+                context: &mut fugue_lifter::runtime::ContextDatabase,
             ) -> Option<usize> {
                 builder.input.initialise(address, bytes, context);
 
@@ -2040,8 +2068,18 @@ impl<'a> ToTokens for LifterGenerator<'a> {
             }
 
             #[inline]
-            pub fn lifting_context() -> fugue_lifter::utils::pcode::PCodeBuilderContext {
-                fugue_lifter::utils::pcode::PCodeBuilderContext::new(UNIQUE_MASK)
+            pub fn default_context() -> fugue_lifter::runtime::ContextDatabase {
+                let mut context =
+                    fugue_lifter::runtime::ContextDatabase::new(ADDRESS_UPPER_BOUND);
+
+                #(#context_variables)*
+
+                context
+            }
+
+            #[inline]
+            pub fn default_builder() -> fugue_lifter::runtime::pcode::PCodeBuilderContext {
+                fugue_lifter::runtime::pcode::PCodeBuilderContext::new(UNIQUE_MASK)
             }
         });
 
