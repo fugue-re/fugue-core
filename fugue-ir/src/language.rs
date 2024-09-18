@@ -158,6 +158,14 @@ impl Language {
             compiler_specs,
         })
     }
+
+    pub fn context_set(&self) -> impl Iterator<Item = (&str, u32)> {
+        self.processor_spec.context_set()
+    }
+
+    pub fn tracked_set(&self) -> impl Iterator<Item = (&str, u32)> {
+        self.processor_spec.tracked_set()
+    }
 }
 
 #[derive(Debug, Clone)]

@@ -24,6 +24,10 @@ impl Specification {
         self.context_set.iter().map(|(n, v)| (n.as_ref(), *v))
     }
 
+    pub fn tracked_set(&self) -> impl Iterator<Item = (&str, u32)> {
+        self.tracked_set.iter().map(|(n, v)| (n.as_ref(), *v))
+    }
+
     pub fn from_xml(input: xml::Node) -> Result<Self, DeserialiseError> {
         // Example .pspec file
         // <processor_spec>
