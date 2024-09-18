@@ -5,9 +5,12 @@ use std::marker::PhantomData;
 use fugue_ir::disassembly::IRBuilderArena;
 use fugue_ir::Address;
 
+use itertools::Itertools as _;
+
 use thiserror::Error;
 
 use crate::language::Language;
+use crate::lifter::LiftedInsnTargetKind;
 use crate::lifter::{InsnLifter, Lifter};
 use crate::project::{
     LoadedSegment, Project, ProjectRawView, ProjectRawViewError, ProjectRawViewReader,
@@ -59,6 +62,8 @@ where
 pub struct ICFGBuilderConfig {
     pub arena_init_capacity: usize,
     pub arena_purge_threshold: usize,
+
+    pub ignore_loader_entrypoint: bool,
 }
 
 impl Default for ICFGBuilderConfig {
@@ -66,6 +71,8 @@ impl Default for ICFGBuilderConfig {
         Self {
             arena_init_capacity: 4_096,
             arena_purge_threshold: 1_000_000,
+
+            ignore_loader_entrypoint: false,
         }
     }
 }
@@ -89,8 +96,10 @@ where
             context: ICFGLiftingContext::new(project)?,
         };
 
-        if let Some(entry) = project.entry() {
-            slf.add_candidate(entry);
+        if !config.ignore_loader_entrypoint {
+            if let Some(entry) = project.entry() {
+                slf.add_candidate(entry);
+            }
         }
 
         Ok(slf)
@@ -158,7 +167,6 @@ impl<'a, 'b> FunctionBuilder<'a, 'b> {
         self.global_targets.clear();
 
         self.candidates.push_back(candidate);
-        self.local_targets.insert(candidate);
 
         let view = region.data();
         let start = region.address();
@@ -175,9 +183,13 @@ impl<'a, 'b> FunctionBuilder<'a, 'b> {
                     continue;
                 }
 
+                if !self.local_targets.insert(block) {
+                    continue;
+                }
+
                 let mut offset = usize::from(block - start);
 
-                'inner: loop {
+                '_inner: loop {
                     let address = start + offset;
 
                     // If we've already disassembled this instruction select the next candidate,
@@ -199,16 +211,20 @@ impl<'a, 'b> FunctionBuilder<'a, 'b> {
                             if insn.is_flow() {
                                 // We're done with this block; we schedule the next bit of work
 
-                                // local branches, etc.
-                                for taken in insn.local_targets(self.lifter, self.arena).unwrap() {
-                                    if self.local_targets.insert(taken) {
-                                        self.candidates.push_back(taken);
+                                // These targets are what we can statically compute by scanning
+                                // the instruction's PCode branch operations--we will miss things
+                                // like PC relative jumps.
+                                for (kind, target) in insn.iter_targets() {
+                                    match kind {
+                                        LiftedInsnTargetKind::Local => {
+                                            if !self.local_targets.contains(&target) {
+                                                self.candidates.push_back(target);
+                                            }
+                                        }
+                                        LiftedInsnTargetKind::Global => {
+                                            self.global_targets.insert(target);
+                                        }
                                     }
-                                }
-
-                                // calls, etc.
-                                for taken in insn.global_targets(self.lifter, self.arena).unwrap() {
-                                    self.global_targets.insert(taken);
                                 }
                             }
 
@@ -222,28 +238,39 @@ impl<'a, 'b> FunctionBuilder<'a, 'b> {
                         }
                         Err(_) => {
                             // flows into bad data
+                            self.local_targets.remove(&address);
                             continue 'outer;
                         }
                     }
                 }
             }
 
+            println!("{:?}", self.local_targets);
+
             // Structure the blocks
-            let iinsns = &mut insns.iter();
+            let iinsns = &mut itertools::put_back(insns.iter());
             let mut iblocks = self
                 .local_targets
                 .iter()
                 .skip(1)
                 .chain(std::iter::once(&Address::MAX));
 
+            // Targets may contain invalid addresses...
             let mut blocks = Vec::new();
 
             while let Some(next_block_start) = iblocks.next() {
                 blocks.push(
                     iinsns
-                        .take_while(|(start, _)| *start < next_block_start)
+                        .peeking_take_while(|(start, _)| *start < next_block_start)
                         .collect::<Vec<_>>(),
                 );
+            }
+
+            for block in blocks {
+                println!("blk@{}", block[0].0);
+                for (addr, insn) in block {
+                    println!("{addr}: {:#?}", insn.try_pcode());
+                }
             }
 
             // In this stage we attempt to recover function control-flow and schedule more blocks
@@ -263,13 +290,13 @@ mod test {
     use super::*;
 
     #[test]
-    fn test_icfg_explore() -> Result<(), Box<dyn std::error::Error>> {
+    #[ignore]
+    fn test_icfg_explore1() -> Result<(), Box<dyn std::error::Error>> {
         // Load the binary at tests/ls.elf into a mapping object
         let input = BytesOrMapping::from_file("tests/ls.elf")?;
         let object = Object::new(input)?;
 
         let language_builder = LanguageBuilder::new("data")?;
-
         let project_builder = ProjectBuilder::<ProjectRawViewMmaped>::new(language_builder);
 
         // Create the project from the mapping object
@@ -278,6 +305,34 @@ mod test {
         // Let's get some functions!
         let mut icfg_builder = ICFGBuilder::new(&project)?;
 
+        icfg_builder.add_candidate(0x4060u32);
+        icfg_builder.explore();
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_icfg_explore2() -> Result<(), Box<dyn std::error::Error>> {
+        // Load the binary at tests/ls.elf into a mapping object
+        let input = BytesOrMapping::from_file("tests/big.elf")?;
+        let object = Object::new(input)?;
+
+        let language_builder = LanguageBuilder::new("data")?;
+        let project_builder = ProjectBuilder::<ProjectRawViewMmaped>::new(language_builder);
+
+        // Create the project from the mapping object
+        let project = project_builder.build(&object)?;
+
+        // Let's get some functions!
+        let mut icfg_builder = ICFGBuilder::new_with(
+            &project,
+            ICFGBuilderConfig {
+                ignore_loader_entrypoint: true,
+                ..Default::default()
+            },
+        )?;
+
+        icfg_builder.add_candidate(0xffffffff813d1cf0u64);
         icfg_builder.explore();
 
         Ok(())

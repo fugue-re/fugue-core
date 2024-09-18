@@ -1,5 +1,3 @@
-use std::cell::{Cell, RefCell};
-
 use fugue_ir::disassembly::IRBuilderArena;
 use fugue_ir::Address;
 
@@ -10,8 +8,7 @@ pub use yaxpeax_arm::armv7::{
     DecodeError as ARMDecoderError, InstDecoder as ARMInstDecoder, Instruction as ARMInstruction,
 };
 
-use crate::ir::PCode;
-use crate::lifter::{InsnLifter, LiftedInsn, LiftedInsnProperties, Lifter, LifterError};
+use crate::lifter::{InsnLifter, LiftedInsn, Lifter, LifterError};
 
 pub struct ARMInsnLifter {
     decoder: ARMInstDecoder,
@@ -62,33 +59,12 @@ impl InsnLifter for ARMInsnLifter {
             .map_err(LifterError::decode)?;
         let size = insn.len().to_const() as u8;
 
-        if should_lift(&insn) {
-            let PCode {
-                address,
-                operations,
-                delay_slots,
-                length,
-            } = lifter
-                .lift(irb, address, bytes)
-                .map_err(LifterError::lift)?;
-
-            Ok(LiftedInsn {
-                address,
-                bytes,
-                properties: Cell::new(LiftedInsnProperties::default()),
-                operations: RefCell::new(Some(operations)),
-                delay_slots,
-                length,
-            })
+        let props = if should_lift(&insn) {
+            LiftedInsn::new_lifted(lifter, irb, address, bytes)?
         } else {
-            Ok(LiftedInsn {
-                address,
-                bytes,
-                properties: Cell::new(LiftedInsnProperties::default()),
-                operations: RefCell::new(None),
-                delay_slots: 0,
-                length: size,
-            })
-        }
+            LiftedInsn::new_lazy(address, bytes, size)
+        };
+
+        Ok(props)
     }
 }

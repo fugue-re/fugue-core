@@ -5,10 +5,24 @@ use fugue_ir::disassembly::lift::{ArenaString, ArenaVec};
 use fugue_ir::disassembly::PCodeData;
 use fugue_ir::{Address, VarnodeData};
 
+pub trait ToAddress {
+    fn to_address(&self) -> Option<Address>;
+}
+
+impl ToAddress for VarnodeData {
+    fn to_address(&self) -> Option<Address> {
+        if self.space().is_default() {
+            Some(self.offset().into())
+        } else {
+            None
+        }
+    }
+}
+
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Location {
     pub address: Address,
-    pub position: u32,
+    pub position: u16,
 }
 
 impl Default for Location {
@@ -23,10 +37,10 @@ impl fmt::Display for Location {
     }
 }
 
-impl Add<u32> for Location {
+impl Add<u16> for Location {
     type Output = Self;
 
-    fn add(self, rhs: u32) -> Self::Output {
+    fn add(self, rhs: u16) -> Self::Output {
         Self {
             position: self.position + rhs,
             ..self
@@ -39,14 +53,14 @@ impl Add<usize> for Location {
 
     fn add(self, rhs: usize) -> Self::Output {
         Self {
-            position: self.position + rhs as u32,
+            position: self.position + rhs as u16,
             ..self
         }
     }
 }
 
 impl Location {
-    pub fn new(address: impl Into<Address>, position: u32) -> Location {
+    pub fn new(address: impl Into<Address>, position: u16) -> Location {
         Self {
             address: address.into(),
             position,
@@ -57,30 +71,34 @@ impl Location {
         self.address
     }
 
-    pub fn position(&self) -> u32 {
+    pub fn position(&self) -> u16 {
         self.position
     }
 
-    pub(super) fn absolute_from(base: Address, address: VarnodeData, position: u32) -> Self {
+    pub(super) fn absolute_from(base: Address, address: VarnodeData, position: u16) -> Option<Self> {
+        if address.space().is_default() {
+            return Some(Self::new(address.offset(), 0));
+        }
+
         if !address.space().is_constant() {
-            return Self::new(address.offset(), 0); // position);
+            return None;
         }
 
         let offset = address.offset() as i64;
         let position = if offset.is_negative() {
             position
-                .checked_sub(offset.abs() as u32)
+                .checked_sub(offset.abs() as u16)
                 .expect("negative offset from position in valid range")
         } else {
             position
-                .checked_add(offset as u32)
+                .checked_add(offset as u16)
                 .expect("positive offset from position in valid range")
         };
 
-        Self {
+        Some(Self {
             address: base.into(),
             position,
-        }
+        })
     }
 }
 

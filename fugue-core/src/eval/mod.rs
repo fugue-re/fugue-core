@@ -241,15 +241,31 @@ where
             })?,
             Opcode::Subpiece => self.subpiece(operation)?,
             Opcode::Branch => {
-                let locn =
-                    Location::absolute_from(loc.address(), operation.inputs[0], loc.position());
-                return Ok(EvaluatorTarget::Branch(locn));
+                return Ok(
+                    if let Some(locn) =
+                        Location::absolute_from(loc.address(), operation.inputs[0], loc.position())
+                    {
+                        EvaluatorTarget::Branch(locn)
+                    } else {
+                        let addr = self.read_addr(&operation.inputs[0])?;
+                        EvaluatorTarget::Branch(addr.into())
+                    },
+                );
             }
             Opcode::CBranch => {
                 if self.read_bool(&operation.inputs[1])? {
-                    let locn =
-                        Location::absolute_from(loc.address(), operation.inputs[0], loc.position());
-                    return Ok(EvaluatorTarget::Branch(locn));
+                    return Ok(
+                        if let Some(locn) = Location::absolute_from(
+                            loc.address(),
+                            operation.inputs[0],
+                            loc.position(),
+                        ) {
+                            EvaluatorTarget::Branch(locn)
+                        } else {
+                            let addr = self.read_addr(&operation.inputs[0])?;
+                            EvaluatorTarget::Branch(addr.into())
+                        },
+                    );
                 }
             }
             Opcode::IBranch => {
@@ -257,9 +273,16 @@ where
                 return Ok(EvaluatorTarget::Branch(addr.into()));
             }
             Opcode::Call => {
-                let locn =
-                    Location::absolute_from(loc.address(), operation.inputs[0], loc.position());
-                return Ok(EvaluatorTarget::Call(locn));
+                return Ok(
+                    if let Some(locn) =
+                        Location::absolute_from(loc.address(), operation.inputs[0], loc.position())
+                    {
+                        EvaluatorTarget::Call(locn)
+                    } else {
+                        let addr = self.read_addr(&operation.inputs[0])?;
+                        EvaluatorTarget::Call(addr.into())
+                    },
+                );
             }
             Opcode::ICall => {
                 let addr = self.read_addr(&operation.inputs[0])?;

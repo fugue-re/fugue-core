@@ -1,5 +1,3 @@
-use std::cell::{Cell, RefCell};
-
 use fugue_ir::disassembly::IRBuilderArena;
 use fugue_ir::Address;
 
@@ -15,8 +13,7 @@ pub use yaxpeax_x86::protected_mode::{
     Instruction as X86_32Instruction,
 };
 
-use crate::ir::PCode;
-use crate::lifter::{InsnLifter, LiftedInsn, LiftedInsnProperties, Lifter, LifterError};
+use crate::lifter::{InsnLifter, LiftedInsn, Lifter, LifterError};
 
 #[sealed::sealed]
 pub trait X86Arch: Arch {
@@ -53,6 +50,7 @@ impl X86Arch for x86_32 {
             Opcode::RETF | Opcode::RETURN => true,
             Opcode::HLT => true,
             Opcode::INT => true,
+            Opcode::UD2 => true,
             _ => false,
         };
     }
@@ -87,6 +85,7 @@ impl X86Arch for x86_64 {
             Opcode::RETF | Opcode::RETURN => true,
             Opcode::HLT => true,
             Opcode::INT => true,
+            Opcode::UD2 => true,
             _ => false,
         };
     }
@@ -165,37 +164,13 @@ where
             .try_into()
             .map_err(LifterError::decode)?;
 
-        // anything that can affect control-flow
-        if D::should_lift(&insn) {
-            let PCode {
-                address,
-                operations,
-                delay_slots,
-                length,
-            } = lifter
-                .lift(irb, address, bytes)
-                .map_err(LifterError::lift)?;
-
-            // we need to obtain the true properties from the pcode
-            Ok(LiftedInsn {
-                address,
-                bytes,
-                properties: Cell::new(LiftedInsnProperties::default()),
-                operations: RefCell::new(Some(operations)),
-                delay_slots,
-                length,
-            })
+        let props = if D::should_lift(&insn) {
+            LiftedInsn::new_lifted(lifter, irb, address, bytes)?
         } else {
-            // by default, we assume fall
-            Ok(LiftedInsn {
-                address,
-                bytes,
-                properties: Cell::new(LiftedInsnProperties::default()),
-                operations: RefCell::new(None),
-                delay_slots: 0,
-                length: size,
-            })
-        }
+            LiftedInsn::new_lazy(address, bytes, size)
+        };
+
+        Ok(props)
     }
 }
 
