@@ -43,15 +43,14 @@ impl<'a> LifterGenerator<'a> {
             if let Symbol::Subtable {
                 id,
                 scope,
-                name,
                 constructors,
                 decision_tree,
+                ..
             } = symbol
             {
                 self.symbols.push(self.generate_subtable(
                     *id,
                     *scope,
-                    name,
                     constructors,
                     decision_tree,
                 )?);
@@ -1793,7 +1792,6 @@ impl<'a> LifterGenerator<'a> {
         &self,
         id: usize,
         scope: usize,
-        name: &str,
         ctors: &[Constructor],
         dtree: &DecisionNode,
     ) -> Result<TokenStream, LifterGeneratorError> {
@@ -1809,13 +1807,9 @@ impl<'a> LifterGenerator<'a> {
             #(#trees)*
 
             #[derive(Debug, Clone, Copy)]
-            pub struct #tname;
+            struct #tname;
 
             impl #tname {
-                pub const ID: usize = #id;
-                pub const SCOPE: usize = #scope;
-                pub const NAME: &'static str = #name;
-
                 #[allow(unused_parens)]
                 #dtree_tokens
             }

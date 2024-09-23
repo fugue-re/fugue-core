@@ -172,7 +172,7 @@ impl<'a> PCodeBuilder<'a> {
             } else if self.context.inputs_count & 1 == 0 {
                 self.context.inputs_spill.push_unchecked(Inputs::one(vnd));
             } else {
-                let last_posn = self.context.inputs_spill.len();
+                let last_posn = self.context.inputs_spill.len() - 1;
                 self.context
                     .inputs_spill
                     .get_unchecked_mut(last_posn)

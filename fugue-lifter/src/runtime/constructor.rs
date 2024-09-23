@@ -70,7 +70,7 @@ impl Constructor {
             return Some(());
         }
 
-        input.allocate_operands(self.operands.len());
+        input.allocate_operands(self.operands.len())?;
 
         'outer: while !input.resolved() {
             let ctor = input.constructor();
@@ -100,7 +100,7 @@ impl Constructor {
                         }
 
                         if !ctor.operands.is_empty() {
-                            input.allocate_operands(ctor.operands.len());
+                            input.allocate_operands(ctor.operands.len())?;
                         }
 
                         continue 'outer;

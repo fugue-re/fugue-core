@@ -416,7 +416,13 @@ impl ParserInput {
     }
 
     #[inline(always)]
-    pub fn allocate_operands(&mut self, operands: usize) -> usize {
+    pub fn allocate_operands(&mut self, operands: usize) -> Option<usize> {
+        let nalloc = self.context.alloc as usize + operands;
+
+        if nalloc >= MAX_CTOR_STATES || self.depth as usize >= MAX_PARSER_DEPTH {
+            return None;
+        }
+
         unsafe {
             let id = self.context.alloc;
 
@@ -450,7 +456,7 @@ impl ParserInput {
             self.breadcrumb[self.depth as usize] = 0;
             */
 
-            id as _
+            Some(id as _)
         }
     }
 
