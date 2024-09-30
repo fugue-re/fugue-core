@@ -23,6 +23,8 @@ pub struct PCodeBuilderContext {
     pub unique_mask: u64, // this is constant from the translator
 }
 
+// TODO: take ParserInputs as input
+
 pub struct PCodeBuilder<'a> {
     pub context: &'a mut PCodeBuilderContext,
     pub input: &'a mut ParserInput,
@@ -69,12 +71,12 @@ impl<'a> PCodeBuilder<'a> {
     }
 
     #[inline]
-    pub fn emit(&mut self) {
+    pub fn emit(&mut self) -> Option<()> {
         self.input.base_state();
         self.issued.clear();
 
         if let Some(builder) = self.input.constructor().build_action {
-            (builder)(self)
+            (builder)(self)?;
         }
 
         self.resolve_relatives();
@@ -84,11 +86,13 @@ impl<'a> PCodeBuilder<'a> {
         self.context.label_count = 0;
         self.context.labels.fill(INVALID_LABEL);
         self.context.label_refs.clear();
+
+        Some(())
     }
 
     #[doc(hidden)]
     #[inline]
-    pub fn emit_delay_slots(&mut self) {
+    pub fn emit_delay_slots(&mut self) -> Option<()> {
         let unique_offset = self.unique_offset;
 
         let base_address = self.address();
@@ -103,17 +107,18 @@ impl<'a> PCodeBuilder<'a> {
 
             self.set_unique_offset(address);
 
-            std::mem::swap(self.input, &mut self.delay_slots[index]);
+            let length = {
+                let mut nself = self.next_builder(index)?;
+                let length = nself.len();
 
-            let length = self.len();
+                nself.input.base_state();
 
-            self.input.base_state();
+                if let Some(builder) = nself.input.constructor().build_action {
+                    (builder)(&mut nself)?;
+                }
 
-            if let Some(builder) = self.input.constructor().build_action {
-                (builder)(self)
-            }
-
-            std::mem::swap(self.input, &mut self.delay_slots[index]);
+                length
+            };
 
             fall_offset += length;
             bytes += length;
@@ -126,6 +131,20 @@ impl<'a> PCodeBuilder<'a> {
         }
 
         self.unique_offset = unique_offset;
+
+        Some(())
+    }
+
+    pub fn next_builder<'b>(&'b mut self, index: usize) -> Option<PCodeBuilder<'b>> {
+        let (input, delay_slots) = self.delay_slots.get_mut(index..)?.split_first_mut()?;
+
+        Some(PCodeBuilder {
+            input,
+            delay_slots,
+            context: self.context,
+            issued: self.issued,
+            unique_offset: self.unique_offset,
+        })
     }
 
     #[doc(hidden)]

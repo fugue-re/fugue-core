@@ -1,4 +1,5 @@
 use std::mem::size_of;
+use std::ops::{Deref, DerefMut};
 
 use arrayvec::ArrayVec;
 
@@ -90,6 +91,69 @@ pub struct ParserInput {
 impl Default for ParserInput {
     fn default() -> Self {
         Self::empty()
+    }
+}
+
+pub struct ParserInputs<'a> {
+    pub bytes: &'a [u8],
+    pub input: &'a mut ParserInput,
+    pub inputs: &'a mut [ParserInput],
+    pub context: &'a mut ContextDatabase,
+}
+
+impl<'a> Deref for ParserInputs<'a> {
+    type Target = ParserInput;
+
+    fn deref(&self) -> &Self::Target {
+        &*self.input
+    }
+}
+
+impl<'a> DerefMut for ParserInputs<'a> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.input
+    }
+}
+
+impl<'a> ParserInputs<'a> {
+    pub fn new(bytes: &'a [u8], input: &'a mut ParserInput, inputs: &'a mut [ParserInput], context: &'a mut ContextDatabase) -> Self {
+        Self {
+            bytes,
+            input,
+            inputs,
+            context,
+        }
+    }
+
+    pub fn next_input<'b>(&'b mut self) -> Option<ParserInputs<'b>> {
+        let address = self.input.address();
+        let offset = self.input.len();
+        let bytes = self.bytes.get(offset..)?;
+
+        let (input, inputs) = self.inputs.split_first_mut()?;
+
+        input.initialise(address + offset as u64, bytes, self.context);
+
+        Some(ParserInputs {
+            bytes,
+            input,
+            inputs,
+            context: self.context,
+        })
+    }
+
+    pub fn next2_address(&mut self) -> Option<u64> {
+        let address = self.input.address();
+        let offset = self.input.len();
+
+        let naddress = address + offset as u64;
+        let ninput = self.inputs.get(0)?;
+
+        if ninput.address() == naddress {
+            Some(ninput.next_address())
+        } else {
+            None
+        }
     }
 }
 

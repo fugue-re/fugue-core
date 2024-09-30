@@ -7,7 +7,7 @@ pub mod varnode;
 
 pub use constructor::{Constructor, Operand, OperandHandleResolver, OperandResolver};
 pub use context::ContextDatabase;
-pub use input::{ContextCommit, FixedHandle, ParserInput};
+pub use input::{ContextCommit, FixedHandle, ParserInput, ParserInputs};
 
 const UMASKS: [u64; 9] = [
     0,

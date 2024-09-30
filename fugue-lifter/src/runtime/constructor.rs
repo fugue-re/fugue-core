@@ -22,7 +22,7 @@ pub struct Operand {
 }
 
 pub type ConstructorResult = fn(&mut ParserInput) -> FixedHandle;
-pub type PCodeBuildAction = fn(&mut PCodeBuilder<'_>);
+pub type PCodeBuildAction = fn(&mut PCodeBuilder<'_>) -> Option<()>;
 
 pub struct Constructor {
     pub id: u32,

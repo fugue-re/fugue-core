@@ -153,7 +153,23 @@ impl<'a> LifterGenerator<'a> {
                 }
             }
             Symbol::Next2 { .. } => {
-                quote! { unimplemented!() }
+                let space = self.translator.manager().default_space_ref();
+                let space_id = space.id().index() as u8;
+                let size = space.address_size() as u8;
+                quote! {
+                    fugue_lifter::runtime::FixedHandle {
+                        space: #space_id,
+                        size: #size,
+                        offset_offset: if let Some(next2_address) = input.next2_address() {
+                            next2_address
+                        } else {
+                            let mut ninput = input.next_input()?;
+                            resolve_constructor(&mut ninput)?;
+                            ninput.next_address()
+                        },
+                        ..Default::default()
+                    }
+                }
             }
             Symbol::VarnodeList {
                 pattern_value,
@@ -234,7 +250,15 @@ impl<'a> LifterGenerator<'a> {
                 quote! { (input.next_address() as i64) }
             }
             PatternExpression::Next2Instruction => {
-                quote! { unsupported!("next2_inst is not supported") }
+                quote! {
+                    if let Some(next2_address) = input.next2_address() {
+                        next2_address as i64
+                    } else {
+                        let mut ninput = input.next_input()?;
+                        resolve_constructor(&mut ninput)?;
+                        ninput.next_address()
+                    }
+                }
             }
             PatternExpression::TokenField {
                 big_endian,
@@ -1016,7 +1040,15 @@ impl<'a> LifterGenerator<'a> {
         match tmpl {
             ConstTpl::Start => quote! { input.address() },
             ConstTpl::Next => quote! { input.next_address() },
-            ConstTpl::Next2 => quote! { unimplemented!("next2 not supported") },
+            ConstTpl::Next2 => quote! {
+                if let Some(next2_address) = input.next2_address() {
+                    next2_address
+                } else {
+                    let mut ninput = input.next_input()?;
+                    resolve_constructor(&mut ninput)?;
+                    ninput.next_address()
+                }
+            },
             ConstTpl::CurrentSpaceSize => {
                 let size = self.translator.manager().default_space_ref().address_size() as u64;
                 quote! { #size }
@@ -1502,7 +1534,7 @@ impl<'a> LifterGenerator<'a> {
             .map(|op| self.generate_constructor_op_build_action(op));
 
         let action_fcn = quote! {
-            fn #action_name<'a>(input: &mut fugue_lifter::runtime::pcode::PCodeBuilder<'a>) {
+            fn #action_name<'a>(input: &mut fugue_lifter::runtime::pcode::PCodeBuilder<'a>) -> Option<()> {
                 let old_base = input.context.label_base;
 
                 input.context.label_base = input.context.label_count;
@@ -1511,6 +1543,8 @@ impl<'a> LifterGenerator<'a> {
                 #(#operations)*
 
                 input.context.label_base = old_base;
+
+                Some(())
             }
         };
 
@@ -1993,7 +2027,7 @@ impl<'a> ToTokens for LifterGenerator<'a> {
             }
 
             #[inline(always)]
-            pub fn resolve_constructor(input: &mut fugue_lifter::runtime::ParserInput) -> Option<&'static fugue_lifter::runtime::Constructor> {
+            pub fn resolve_constructor(input: &mut fugue_lifter::runtime::ParserInputs) -> Option<&'static fugue_lifter::runtime::Constructor> {
                 let ctor = SubTable0In0::resolve(input)?;
                 ctor.resolve_operands(input)?;
                 Some(ctor)
@@ -2001,14 +2035,13 @@ impl<'a> ToTokens for LifterGenerator<'a> {
 
             #[inline(always)]
             pub fn resolve(
-                input: &mut fugue_lifter::runtime::ParserInput,
-                context: &mut fugue_lifter::runtime::ContextDatabase,
+                input: &mut fugue_lifter::runtime::ParserInputs,
             ) -> Option<&'static fugue_lifter::runtime::Constructor> {
                 let ctor = resolve_constructor(input)?;
                 ctor.resolve_handles(input)?;
 
                 input.base_state();
-                input.apply_commits(context);
+                input.input.apply_commits(input.context);
 
                 Some(ctor)
             }
@@ -2022,7 +2055,14 @@ impl<'a> ToTokens for LifterGenerator<'a> {
             ) -> Option<usize> {
                 builder.input.initialise(address, bytes, context);
 
-                resolve(builder.input, context)?;
+                resolve(
+                    &mut fugue_lifter::runtime::ParserInputs::new(
+                        bytes,
+                        builder.input,
+                        builder.delay_slots,
+                        context,
+                    ),
+                )?;
 
                 let delay_slot_bytes = builder.input.delay_slot_length();
 
@@ -2038,11 +2078,21 @@ impl<'a> ToTokens for LifterGenerator<'a> {
                 loop {
                     let address = address + fall_offset as u64;
 
-                    let dinput = &mut builder.delay_slots[index];
+                    let (dinput, dinputs) = builder
+                        .delay_slots
+                        .get_mut(index..)?
+                        .split_first_mut()?;
 
-                    dinput.initialise(address, &bytes[fall_offset..], context);
+                    dinput.initialise(address, bytes.get(fall_offset..)?, context);
 
-                    resolve(dinput, context)?;
+                    resolve(
+                        &mut fugue_lifter::runtime::ParserInputs::new(
+                            bytes,
+                            dinput,
+                            dinputs,
+                            context,
+                        ),
+                    )?;
 
                     let length = dinput.len();
 
@@ -2056,12 +2106,13 @@ impl<'a> ToTokens for LifterGenerator<'a> {
                     index += 1;
                 }
 
-                builder.emit();
+                builder.emit()?;
 
                 Some(fall_offset)
             }
 
             #[inline]
+            #[allow(unused_mut)]
             pub fn default_context() -> fugue_lifter::runtime::ContextDatabase {
                 let mut context =
                     fugue_lifter::runtime::ContextDatabase::new(ADDRESS_UPPER_BOUND);
