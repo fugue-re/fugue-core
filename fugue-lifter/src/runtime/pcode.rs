@@ -2,7 +2,8 @@ use std::mem;
 
 use arrayvec::ArrayVec;
 
-use crate::runtime::input::{ParserInput, INVALID_HANDLE};
+use crate::runtime::context::ContextDatabase;
+use crate::runtime::input::{ParserInput, ParserInputs, INVALID_HANDLE};
 
 use super::{calculate_mask, FixedHandle};
 
@@ -33,6 +34,302 @@ pub struct PCodeBuilder<'a> {
     pub unique_offset: u64,
 }
 
+// These inputs will always be used
+pub struct LiftingContext {
+    inputs: Vec<ParserInput>,
+    lifting_context: PCodeBuilderContext,
+    parsing_context: ContextDatabase,
+}
+
+impl LiftingContext {
+    pub fn new(ninputs: usize, context: ContextDatabase, unique_mask: u64) -> Self {
+        Self {
+            inputs: vec![ParserInput::empty(); ninputs],
+            lifting_context: PCodeBuilderContext::new(unique_mask),
+            parsing_context: context,
+        }
+    }
+
+    pub fn state_for<'a>(
+        &'a mut self,
+        address: u64,
+        bytes: &'a [u8],
+        issued: &'a mut Vec<PCodeOp>,
+    ) -> Option<LiftingContextState<'a>> {
+        LiftingContextState::new(address, bytes, self, issued)
+    }
+}
+
+// Inputs/outputs that are borrowed
+pub struct LiftingContextState<'a> {
+    // derived from LiftingContext + inputs
+    pub inputs: ParserInputs<'a>,
+    pub context: &'a mut PCodeBuilderContext,
+    pub unique_offset: u64,
+
+    // output
+    pub issued: &'a mut Vec<PCodeOp>,
+}
+
+impl<'a> LiftingContextState<'a> {
+    pub fn new(
+        address: u64,
+        bytes: &'a [u8],
+        context: &'a mut LiftingContext,
+        issued: &'a mut Vec<PCodeOp>,
+    ) -> Option<Self> {
+        let (pinput, pinputs) = context.inputs.split_first_mut()?;
+
+        let mut inputs = ParserInputs::new(pinput, pinputs, &mut context.parsing_context);
+
+        inputs.initialise(address, bytes);
+
+        let context = &mut context.lifting_context;
+        let unique_offset = (address & context.unique_mask) << 4;
+
+        Some(Self {
+            inputs,
+            context,
+            unique_offset,
+            issued,
+        })
+    }
+
+    #[inline]
+    pub fn address(&self) -> u64 {
+        self.inputs.address()
+    }
+
+    #[inline]
+    pub fn next_address(&self) -> u64 {
+        self.inputs.next_address()
+    }
+
+    #[inline]
+    pub fn next2_address(&self) -> Option<u64> {
+        self.inputs.next2_address()
+    }
+
+    #[inline]
+    pub fn delay_slot_length(&self) -> usize {
+        self.inputs.input.delay_slot_length()
+    }
+
+    #[inline]
+    pub fn len(&self) -> usize {
+        self.inputs.input.len()
+    }
+
+    #[inline]
+    pub fn apply_commits(&mut self) {
+        for commit in mem::take(&mut self.inputs.input.context.commits) {
+            (commit.applier)(self, &commit);
+        }
+    }
+
+    #[inline]
+    pub fn input(&mut self) -> &mut ParserInput {
+        self.inputs.input
+    }
+
+    #[inline]
+    pub fn next_input<'b>(&'b mut self) -> Option<LiftingContextState<'b>> {
+        let inputs = self.inputs.next_input()?;
+        let unique_offset = (inputs.input.address() & self.context.unique_mask) << 4;
+
+        Some(LiftingContextState {
+            inputs,
+            context: self.context,
+            unique_offset,
+            issued: self.issued,
+        })
+    }
+
+    #[inline]
+    pub fn nth_delay_slot<'b>(&'b mut self, n: usize) -> Option<LiftingContextState<'b>> {
+        let (pinput, pinputs) = self.inputs.inputs.get_mut(n..)?.split_first_mut()?;
+        let inputs =
+            ParserInputs::new_with(&self.inputs.bytes, pinput, pinputs, self.inputs.context);
+        let unique_offset = (inputs.input.address() & self.context.unique_mask) << 4;
+
+        Some(LiftingContextState {
+            inputs,
+            context: self.context,
+            unique_offset,
+            issued: self.issued,
+        })
+    }
+
+    #[inline]
+    pub fn emit(&mut self) -> Option<()> {
+        self.inputs.input.base_state();
+        self.issued.clear();
+
+        if let Some(builder) = self.inputs.input.constructor().build_action {
+            (builder)(self)?;
+        }
+
+        self.resolve_relatives();
+
+        // reset
+        self.context.inputs_count = 0;
+        self.context.label_count = 0;
+        self.context.labels.fill(INVALID_LABEL);
+        self.context.label_refs.clear();
+
+        Some(())
+    }
+
+    #[doc(hidden)]
+    #[inline]
+    pub fn emit_delay_slots(&mut self) -> Option<()> {
+        let unique_offset = self.unique_offset;
+
+        let delay_slot_bytes = self.delay_slot_length();
+
+        let mut bytes = 0usize;
+        let mut index = 0usize;
+
+        loop {
+            let length = {
+                let mut nself = self.nth_delay_slot(index)?;
+                let length = nself.len();
+
+                nself.inputs.input.base_state();
+
+                if let Some(builder) = nself.inputs.input.constructor().build_action {
+                    (builder)(&mut nself)?;
+                }
+
+                length
+            };
+
+            bytes += length;
+
+            if bytes >= delay_slot_bytes {
+                break;
+            }
+
+            index += 1;
+        }
+
+        self.unique_offset = unique_offset;
+
+        Some(())
+    }
+
+    #[inline]
+    #[doc(hidden)]
+    pub fn unique_mask(&self) -> u64 {
+        self.context.unique_mask
+    }
+
+    #[inline]
+    #[doc(hidden)]
+    pub fn set_unique_offset(&mut self, address: u64) {
+        self.unique_offset = (address & self.context.unique_mask) << 4;
+    }
+
+    #[doc(hidden)]
+    #[inline]
+    pub fn operand_handle(&self, index: usize) -> &FixedHandle {
+        unsafe {
+            let opnds = self
+                .inputs
+                .input
+                .context
+                .constructors
+                .get_unchecked(self.inputs.input.point as usize)
+                .operands as usize;
+
+            self.inputs
+                .input
+                .context
+                .constructors
+                .get_unchecked(opnds + index)
+                .handle
+                .as_ref()
+                .unwrap_unchecked()
+        }
+    }
+
+    #[inline]
+    #[doc(hidden)]
+    pub fn push_input(&mut self, vnd: Varnode) {
+        unsafe {
+            if self.context.inputs_count < 2 {
+                self.context
+                    .inputs
+                    .set_input_unchecked(self.context.inputs_count as _, vnd);
+            } else if self.context.inputs_count & 1 == 0 {
+                self.context.inputs_spill.push_unchecked(Inputs::one(vnd));
+            } else {
+                let last_posn = self.context.inputs_spill.len() - 1;
+                self.context
+                    .inputs_spill
+                    .get_unchecked_mut(last_posn)
+                    .set_input(1, vnd);
+            }
+            self.context.inputs_count += 1;
+        }
+    }
+
+    #[inline]
+    #[doc(hidden)]
+    pub fn issue(&mut self, op: Op, output: Varnode) {
+        let pcode = PCodeOp {
+            op,
+            inputs: mem::take(&mut self.context.inputs),
+            output,
+        };
+
+        self.issued.reserve(1 + self.context.inputs_spill.len());
+        self.issued.push(pcode);
+        self.issued
+            .extend(self.context.inputs_spill.drain(..).map(|inputs| PCodeOp {
+                op: Op::Arg(1 + inputs.is_full() as u16),
+                output: Varnode::INVALID,
+                inputs,
+            }));
+
+        self.context.inputs_count = 0;
+    }
+
+    #[inline]
+    #[doc(hidden)]
+    pub fn issue_with(&mut self, op: Op, inputs: Inputs, output: Varnode) {
+        self.issued.push(PCodeOp { op, inputs, output });
+    }
+
+    #[inline]
+    fn resolve_relatives(&mut self) -> Option<()> {
+        for rel in self.context.label_refs.iter() {
+            // we need to recalculate the operation number since we emit args
+            // spilled as Op::Arg(_) when we have > 2 inputs.
+
+            let op_index = rel.operation + (rel.index >> 2);
+            let in_index = rel.index & 1;
+
+            let varnode = &mut self.issued[op_index as usize].inputs.0[in_index as usize];
+
+            let label_index = varnode.offset as usize;
+            let label = *self.context.labels.get(label_index)?;
+
+            if label == INVALID_LABEL {
+                return None;
+            } else {
+                let label = label as u64;
+                let fixed = label.wrapping_sub(rel.operation as u64)
+                    & calculate_mask(varnode.size as usize);
+                varnode.offset = fixed;
+            }
+        }
+
+        Some(())
+    }
+}
+
+/*
 impl<'a> PCodeBuilder<'a> {
     pub fn new(
         context: &'a mut PCodeBuilderContext,
@@ -58,6 +355,21 @@ impl<'a> PCodeBuilder<'a> {
     #[inline]
     pub fn next_address(&self) -> u64 {
         self.input.next_address()
+    }
+
+    #[inline]
+    pub fn next2_address(&self) -> Option<u64> {
+        let address = self.input.address();
+        let offset = self.input.len();
+
+        let naddress = address + offset as u64;
+        let ninput = self.delay_slots.get(0)?;
+
+        if ninput.address() == naddress {
+            Some(ninput.next_address())
+        } else {
+            None
+        }
     }
 
     #[inline]
@@ -255,6 +567,7 @@ impl<'a> PCodeBuilder<'a> {
         Some(())
     }
 }
+*/
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct RelativeRecord {

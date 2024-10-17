@@ -1,17 +1,17 @@
 use std::fmt::Debug;
 
-use crate::runtime::input::{FixedHandle, ParserInput};
-use crate::runtime::pcode::PCodeBuilder;
+use crate::runtime::input::FixedHandle;
+use crate::runtime::pcode::LiftingContextState;
 
-pub type ContextActionSet = fn(&mut ParserInput) -> Option<()>;
+pub type ContextActionSet = fn(&mut LiftingContextState<'_>) -> Option<()>;
 
 pub enum OperandResolver {
     None,
-    Constructor(fn(&mut ParserInput) -> Option<&'static Constructor>),
-    Filter(fn(&mut ParserInput) -> Option<()>),
+    Constructor(fn(&mut LiftingContextState<'_>) -> Option<&'static Constructor>),
+    Filter(fn(&mut LiftingContextState<'_>) -> Option<()>),
 }
 
-pub type OperandHandleResolver = fn(&mut ParserInput) -> Option<()>;
+pub type OperandHandleResolver = fn(&mut LiftingContextState) -> Option<()>;
 
 pub struct Operand {
     pub resolver: OperandResolver,
@@ -21,8 +21,8 @@ pub struct Operand {
     pub minimum_length: usize,
 }
 
-pub type ConstructorResult = fn(&mut ParserInput) -> FixedHandle;
-pub type PCodeBuildAction = fn(&mut PCodeBuilder<'_>) -> Option<()>;
+pub type ConstructorResult = fn(&mut LiftingContextState<'_>) -> FixedHandle;
+pub type PCodeBuildAction = fn(&mut LiftingContextState<'_>) -> Option<()>;
 
 pub struct Constructor {
     pub id: u32,
@@ -53,69 +53,73 @@ impl Eq for Constructor {}
 
 impl Constructor {
     #[inline]
-    pub fn resolve_operands(&'static self, input: &mut ParserInput) -> Option<()> {
-        input.set_constructor(self);
+    pub fn resolve_operands(&'static self, state: &mut LiftingContextState) -> Option<()> {
+        state.input().set_constructor(self);
         if let Some(actions) = self.context_actions {
-            (actions)(input)?;
+            (actions)(state)?;
         }
 
         if self.operands.is_empty() {
-            input.calculate_length(self.minimum_length, self.operands.len());
-            input.pop_operand();
+            state
+                .input()
+                .calculate_length(self.minimum_length, self.operands.len());
+            state.input().pop_operand();
 
             if self.delay_slot_length > 0 {
-                input.set_delay_slot_length(self.delay_slot_length);
+                state.input().set_delay_slot_length(self.delay_slot_length);
             }
 
             return Some(());
         }
 
-        input.allocate_operands(self.operands.len())?;
+        state.input().allocate_operands(self.operands.len())?;
 
-        'outer: while !input.resolved() {
-            let ctor = input.constructor();
-            let opid = input.operand();
+        'outer: while !state.input().resolved() {
+            let ctor = state.input().constructor();
+            let opid = state.input().operand();
 
             for (i, opnd) in ctor.operands.iter().enumerate().skip(opid) {
                 let offset = opnd
                     .offset_base
-                    .map(|n| input.offset_for_operand(n))
-                    .unwrap_or_else(|| input.offset())
+                    .map(|n| state.input().offset_for_operand(n))
+                    .unwrap_or_else(|| state.input().offset())
                     + opnd.offset_rela;
 
-                input.push_operand(i);
-                input.set_offset(offset);
+                state.input().push_operand(i);
+                state.input().set_offset(offset);
 
                 match opnd.resolver {
                     OperandResolver::None => (),
                     OperandResolver::Filter(filter) => {
-                        (filter)(input)?;
+                        (filter)(state)?;
                     }
                     OperandResolver::Constructor(resolver) => {
-                        let ctor = (resolver)(input)?;
+                        let ctor = (resolver)(state)?;
 
-                        input.set_constructor(ctor);
+                        state.input().set_constructor(ctor);
                         if let Some(actions) = ctor.context_actions {
-                            (actions)(input)?;
+                            (actions)(state)?;
                         }
 
                         if !ctor.operands.is_empty() {
-                            input.allocate_operands(ctor.operands.len())?;
+                            state.input().allocate_operands(ctor.operands.len())?;
                         }
 
                         continue 'outer;
                     }
                 }
 
-                input.set_current_length(opnd.minimum_length);
-                input.pop_operand();
+                state.input().set_current_length(opnd.minimum_length);
+                state.input().pop_operand();
             }
 
-            input.calculate_length(ctor.minimum_length, ctor.operands.len());
-            input.pop_operand();
+            state
+                .input()
+                .calculate_length(ctor.minimum_length, ctor.operands.len());
+            state.input().pop_operand();
 
             if ctor.delay_slot_length > 0 {
-                input.set_delay_slot_length(ctor.delay_slot_length);
+                state.input().set_delay_slot_length(ctor.delay_slot_length);
             }
         }
 
@@ -123,31 +127,31 @@ impl Constructor {
     }
 
     #[inline]
-    pub fn resolve_handles(&'static self, input: &mut ParserInput) -> Option<()> {
-        input.base_state();
+    pub fn resolve_handles(&'static self, state: &mut LiftingContextState) -> Option<()> {
+        state.input().base_state();
 
-        'outer: while !input.resolved() {
-            let ctor = input.constructor();
-            let opid = input.operand();
+        'outer: while !state.input().resolved() {
+            let ctor = state.input().constructor();
+            let opid = state.input().operand();
 
             for (i, opnd) in ctor.operands.iter().enumerate().skip(opid) {
-                input.push_operand(i);
+                state.input().push_operand(i);
 
                 if let Some(resolver) = opnd.handle_resolver {
-                    (resolver)(input)?;
+                    (resolver)(state)?;
                 } else {
                     continue 'outer;
                 }
 
-                input.pop_operand();
+                state.input().pop_operand();
             }
 
             if let Some(resolver) = ctor.result {
-                let handle = (resolver)(input);
-                input.set_parent_handle(handle);
+                let handle = (resolver)(state);
+                state.input().set_parent_handle(handle);
             }
 
-            input.pop_operand();
+            state.input().pop_operand();
         }
 
         Some(())

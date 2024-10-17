@@ -5,6 +5,7 @@ use arrayvec::ArrayVec;
 
 use crate::runtime::constructor::Constructor;
 use crate::runtime::context::ContextDatabase;
+use crate::runtime::pcode::LiftingContextState;
 
 const MAX_CTOR_STATES: usize = 128;
 const MAX_CTXT_CHUNKS: usize = 2;
@@ -61,15 +62,16 @@ impl Default for ConstructorNode {
     }
 }
 
-pub type ContextCommitApplier =
-    fn(&ParserInput, &mut ContextDatabase, &ContextCommit) -> Option<()>;
+pub type ContextCommitApplier = fn(&mut LiftingContextState, &ContextCommit) -> Option<()>;
 
+#[derive(Clone)]
 pub struct ContextCommit {
     pub applier: ContextCommitApplier,
     pub point: u8,
     pub values: ArrayVec<u32, MAX_CTXT_CHUNKS>,
 }
 
+#[derive(Clone)]
 pub struct ParserContext {
     pub buffer: [u8; 16],
     pub context: ArrayVec<u32, MAX_CTXT_CHUNKS>,
@@ -81,6 +83,7 @@ pub struct ParserContext {
     pub alloc: u8,
 }
 
+#[derive(Clone)]
 pub struct ParserInput {
     pub context: ParserContext,
     pub breadcrumb: [u8; BREADCRUMBS],
@@ -116,13 +119,31 @@ impl<'a> DerefMut for ParserInputs<'a> {
 }
 
 impl<'a> ParserInputs<'a> {
-    pub fn new(bytes: &'a [u8], input: &'a mut ParserInput, inputs: &'a mut [ParserInput], context: &'a mut ContextDatabase) -> Self {
+    pub fn new(
+        input: &'a mut ParserInput,
+        inputs: &'a mut [ParserInput],
+        context: &'a mut ContextDatabase,
+    ) -> Self {
+        Self::new_with(Default::default(), input, inputs, context)
+    }
+
+    pub fn new_with(
+        bytes: &'a [u8],
+        input: &'a mut ParserInput,
+        inputs: &'a mut [ParserInput],
+        context: &'a mut ContextDatabase,
+    ) -> Self {
         Self {
             bytes,
             input,
             inputs,
             context,
         }
+    }
+
+    pub fn initialise(&mut self, address: u64, bytes: &'a [u8]) {
+        self.bytes = bytes;
+        self.input.initialise(address, self.bytes, &self.context);
     }
 
     pub fn next_input<'b>(&'b mut self) -> Option<ParserInputs<'b>> {
@@ -142,7 +163,7 @@ impl<'a> ParserInputs<'a> {
         })
     }
 
-    pub fn next2_address(&mut self) -> Option<u64> {
+    pub fn next2_address(&self) -> Option<u64> {
         let address = self.input.address();
         let offset = self.input.len();
 
@@ -554,13 +575,6 @@ impl ParserInput {
     #[inline(always)]
     pub fn register_context_commit(&mut self, commit: ContextCommit) {
         self.context.commits.push(commit);
-    }
-
-    #[inline(always)]
-    pub fn apply_commits(&self, db: &mut ContextDatabase) {
-        for commit in self.context.commits.iter() {
-            (commit.applier)(self, db, commit);
-        }
     }
 
     #[inline(always)]
