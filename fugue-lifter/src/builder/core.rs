@@ -134,7 +134,7 @@ impl<'a> LifterGenerator<'a> {
                     fugue_lifter::runtime::FixedHandle {
                         space: #space_id,
                         size: #size,
-                        offset_offset: input.context.address,
+                        offset_offset: input.address(),
                         ..Default::default()
                     }
                 }
@@ -217,14 +217,9 @@ impl<'a> LifterGenerator<'a> {
                 ..
             } => {
                 let index = self.generate_pattern_resolver(pattern_value);
-                let cases = value_table.iter().enumerate().map(|(i, symid)| {
-                    if *symid != 0xbadbeef {
-                        let sym = self.translator.symbol_table().unchecked_symbol(*symid as _);
-                        let value = self.generate_handle_resolver(sym);
-                        quote! { #i => { #value as u64 } }
-                    } else {
-                        quote! { #i => { return None; } }
-                    }
+                let cases = value_table.iter().enumerate().map(|(i, value)| {
+                    let value = *value as u64;
+                    quote! { #i => { #value } }
                 });
 
                 quote! {
