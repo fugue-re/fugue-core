@@ -7,7 +7,7 @@ use crate::runtime::input::{ParserInput, ParserInputs, INVALID_HANDLE};
 
 use super::{calculate_mask, FixedHandle};
 
-pub const MAX_LABELS: usize = 32;
+pub const MAX_LABELS: usize = 64;
 pub const MAX_INPUTS_SPILL: usize = 8;
 pub const MAX_DELAY_CTXTS: usize = 8;
 

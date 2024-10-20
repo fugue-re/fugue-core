@@ -55,6 +55,7 @@ impl Constructor {
     #[inline]
     pub fn resolve_operands(&'static self, state: &mut LiftingContextState) -> Option<()> {
         state.input().set_constructor(self);
+
         if let Some(actions) = self.context_actions {
             (actions)(state)?;
         }
@@ -97,6 +98,7 @@ impl Constructor {
                         let ctor = (resolver)(state)?;
 
                         state.input().set_constructor(ctor);
+
                         if let Some(actions) = ctor.context_actions {
                             (actions)(state)?;
                         }

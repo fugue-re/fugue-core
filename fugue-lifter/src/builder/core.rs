@@ -2037,10 +2037,8 @@ impl<'a> ToTokens for LifterGenerator<'a> {
             ) -> Option<&'static fugue_lifter::runtime::Constructor> {
                 let ctor = resolve_constructor(state)?;
                 ctor.resolve_handles(state)?;
-
                 state.inputs.input.base_state();
                 state.apply_commits();
-
                 Some(ctor)
             }
 
@@ -2058,7 +2056,7 @@ impl<'a> ToTokens for LifterGenerator<'a> {
                 let delay_slot_bytes = state.delay_slot_length();
 
                 if delay_slot_bytes == 0 {
-                    state.emit();
+                    state.emit()?;
                     return Some(state.len());
                 }
 

@@ -78,7 +78,6 @@ pub struct ParserContext {
     pub constructors: [ConstructorNode; MAX_CTOR_STATES],
     pub commits: ArrayVec<ContextCommit, MAX_CTOR_STATES>,
     pub address: u64,
-    pub offset: u8,
     pub delay_slot_length: u8,
     pub alloc: u8,
 }
@@ -186,7 +185,6 @@ impl ParserInput {
             constructors: [ConstructorNode::default(); MAX_CTOR_STATES],
             commits: Default::default(),
             address,
-            offset: 0,
             delay_slot_length: 0,
             alloc: 1,
         };
@@ -210,7 +208,6 @@ impl ParserInput {
             constructors: [ConstructorNode::default(); MAX_CTOR_STATES],
             commits: Default::default(),
             address: 0,
-            offset: 0,
             delay_slot_length: 0,
             alloc: 1,
         };
@@ -295,7 +292,13 @@ impl ParserInput {
 
     #[inline(always)]
     pub fn instruction_bytes(&self, start: usize, size: usize) -> Option<u32> {
-        self.instruction_bytes_with(start, size, self.context.offset as _)
+        let offset = unsafe {
+            self.context
+                .constructors
+                .get_unchecked(self.point as usize)
+                .offset
+        };
+        self.instruction_bytes_with(start, size, offset as _)
     }
 
     #[inline(always)]
@@ -319,7 +322,13 @@ impl ParserInput {
 
     #[inline(always)]
     pub fn instruction_bits(&self, start: usize, size: usize) -> Option<u32> {
-        self.instruction_bits_with(start, size, self.context.offset as _)
+        let offset = unsafe {
+            self.context
+                .constructors
+                .get_unchecked(self.point as usize)
+                .offset
+        };
+        self.instruction_bits_with(start, size, offset as _)
     }
 
     #[inline(always)]
