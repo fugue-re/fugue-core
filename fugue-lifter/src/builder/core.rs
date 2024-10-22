@@ -1871,19 +1871,27 @@ impl<'a> ToTokens for LifterGenerator<'a> {
         let register_space_size = self.translator.register_space_size();
         let unique_space_size = self.translator.unique_space_size();
 
-        let userops = self.translator.user_ops().iter().map(|op| op.as_str());
-        let userops_to_ids = self
-            .translator
-            .user_ops()
-            .iter()
-            .enumerate()
-            .map(|(i, op)| {
-                let id = i as u16;
-                let name = op.as_str();
-                let name_bytes = Literal::byte_string(name.as_bytes());
+        let mut userops = Vec::new();
+        let mut userop_to_ids = Vec::new();
+        let mut userop_to_names = Vec::new();
 
-                quote! { #name_bytes => Some(#id) }
+        for (i, op) in self.translator.user_ops().iter().enumerate() {
+            let id = i as u16;
+            let name = op.as_str();
+            let name_bytes = Literal::byte_string(name.as_bytes());
+
+            let upper_snake_name = Ident::new(
+                &heck::AsShoutySnakeCase(name).to_string(),
+                Span::call_site(),
+            );
+
+            userops.push(quote! {
+                pub const #upper_snake_name: u16 = #id;
             });
+            userop_to_names.push(name);
+            userop_to_ids.push(quote! { #name_bytes => Some(#id) });
+        }
+
         let n_userops = self.translator.user_ops().len();
 
         let space_word_sizes = self
@@ -2049,14 +2057,16 @@ impl<'a> ToTokens for LifterGenerator<'a> {
             }
 
             pub mod user_op {
+                #(#userops)*
+
                 pub const USER_OPS: [&'static str; #n_userops] = [
-                    #(#userops),*
+                    #(#userop_to_names),*
                 ];
 
                 #[inline(always)]
                 pub const fn user_op_by_name(name: &str) -> Option<u16> {
                     match name.as_bytes() {
-                        #(#userops_to_ids,)*
+                        #(#userop_to_ids,)*
                         _ => None,
                     }
                 }
