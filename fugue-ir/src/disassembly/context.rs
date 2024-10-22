@@ -518,6 +518,23 @@ impl ContextDatabase {
         );
         Some(())
     }
+
+    pub fn set_variable_region_by_bits(
+        &mut self,
+        bits: &ContextBitRange,
+        addr1: AddressValue,
+        addr2: Option<AddressValue>,
+        value: u32,
+    ) {
+        get_region_for_set(
+            &mut self.database,
+            addr1,
+            addr2,
+            bits.word(),
+            bits.mask(),
+            |change| bits.set(change, value),
+        );
+    }
 }
 
 fn get_region_to_change_point<'a, F>(
