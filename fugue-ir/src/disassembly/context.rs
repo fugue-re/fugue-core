@@ -9,7 +9,9 @@ use crate::address::AddressValue;
 use crate::disassembly::partmap::{BoundKind, PartMap};
 use crate::disassembly::VarnodeData;
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Deserialize, serde::Serialize,
+)]
 pub struct ContextBitRange {
     word: usize,
     start_bit: usize,
@@ -19,13 +21,13 @@ pub struct ContextBitRange {
 }
 
 impl ContextBitRange {
-    pub fn new(start_bit: usize, end_bit: usize) -> Self {
+    pub const fn new(start_bit: usize, end_bit: usize) -> Self {
         let bits = 8 * mem::size_of::<u32>();
         let word = start_bit / bits;
         let start_bit = start_bit - word * bits;
         let end_bit = end_bit - word * bits;
         let shift = (bits - end_bit - 1) as u32;
-        let mask = (!0u32).checked_shr(start_bit as u32 + shift).unwrap_or(0);
+        let mask = (!0u32) >> (start_bit as u32 + shift);
 
         Self {
             word,
@@ -350,9 +352,13 @@ impl ContextDatabase {
         self.variables.get_mut(name.borrow())
     }
 
+    pub fn get_variable_by_bits(&self, bits: &ContextBitRange, address: AddressValue) -> u32 {
+        bits.get(&self.database.get_or_default(&address).values)
+    }
+
     pub fn get_variable<S: Borrow<str>>(&self, name: S, address: AddressValue) -> Option<u32> {
         self.variable(name.borrow())
-            .map(|context| context.get(&self.database.get_or_default(&address).values))
+            .map(|bits| self.get_variable_by_bits(bits, address))
     }
 
     pub fn set_variable<S: Borrow<str>>(
@@ -372,6 +378,20 @@ impl ContextDatabase {
         Some(())
     }
 
+    pub fn set_variable_by_bits(
+        &mut self,
+        bits: &ContextBitRange,
+        address: AddressValue,
+        value: u32,
+    ) {
+        let num = bits.word();
+        let mask = bits.mask().checked_shl(bits.shift()).unwrap_or(0);
+
+        get_region_to_change_point(&mut self.database, address, num, mask, |change| {
+            bits.set(change, value)
+        });
+    }
+
     pub fn set_variable_default<S: Borrow<str>>(&mut self, name: S, value: u32) -> Option<()> {
         let context = self.variables.get(name.borrow())?;
         let default = self.database.default_value_mut();
@@ -379,6 +399,11 @@ impl ContextDatabase {
         context.set_full(&mut default.values, &mut default.masks, value);
 
         Some(())
+    }
+
+    pub fn set_variable_default_by_bits(&mut self, bits: &ContextBitRange, value: u32) {
+        let default = self.database.default_value_mut();
+        bits.set_full(&mut default.values, &mut default.masks, value);
     }
 
     pub fn register_variable<S: Into<String>>(

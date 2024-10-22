@@ -9,6 +9,7 @@ members = [
   "fugue-bytes",
   "fugue-core",
 ]
+resolver = "2"
 
 [profile.bench]
 debug = true
