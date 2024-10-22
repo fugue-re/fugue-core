@@ -1963,7 +1963,7 @@ impl<'a> ToTokens for LifterGenerator<'a> {
 
             // for register by known symbol/const
             let var = quote! {
-                const #upper_snake_name: fugue_lifter::runtime::pcode::Varnode =
+                pub const #upper_snake_name: fugue_lifter::runtime::pcode::Varnode =
                     fugue_lifter::runtime::pcode::Varnode::new(#register_space_id, #off, #sz);
             };
 
