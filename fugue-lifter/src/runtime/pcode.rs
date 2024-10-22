@@ -7,7 +7,7 @@ use crate::runtime::input::{ParserInput, ParserInputs, INVALID_HANDLE};
 
 use super::{calculate_mask, FixedHandle};
 
-pub const MAX_LABELS: usize = 64;
+pub const MAX_LABELS: usize = 192;
 pub const MAX_INPUTS_SPILL: usize = 8;
 pub const MAX_DELAY_CTXTS: usize = 8;
 
@@ -594,14 +594,14 @@ impl PCodeBuilderContext {
 pub struct Varnode {
     pub space: u8,
     pub offset: u64,
-    pub size: u8,
+    pub size: u16,
 }
 
 impl Varnode {
     pub const INVALID: Varnode = Varnode::new(INVALID_HANDLE, 0, 0);
 
     #[inline]
-    pub const fn new(space: u8, offset: u64, size: u8) -> Self {
+    pub const fn new(space: u8, offset: u64, size: u16) -> Self {
         Self {
             space,
             offset,
@@ -610,7 +610,7 @@ impl Varnode {
     }
 
     #[inline]
-    pub const fn constant(value: u64, size: u8) -> Self {
+    pub const fn constant(value: u64, size: u16) -> Self {
         Self::new(0, value, size)
     }
 

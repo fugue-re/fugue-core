@@ -7,9 +7,9 @@ use crate::runtime::constructor::Constructor;
 use crate::runtime::context::ContextDatabase;
 use crate::runtime::pcode::LiftingContextState;
 
-const MAX_CTOR_STATES: usize = 128;
+const MAX_CTOR_STATES: usize = 256; // 128;
 const MAX_CTXT_CHUNKS: usize = 2;
-const MAX_PARSER_DEPTH: usize = 64;
+const MAX_PARSER_DEPTH: usize = 128; // 64;
 
 pub const INVALID_HANDLE: u8 = 0xff;
 pub const BREADCRUMBS: usize = MAX_PARSER_DEPTH + 1;
@@ -17,10 +17,10 @@ pub const BREADCRUMBS: usize = MAX_PARSER_DEPTH + 1;
 #[derive(Copy, Clone)]
 pub struct FixedHandle {
     pub space: u8,
-    pub size: u8,
+    pub size: u16,
     pub offset_space: u8,
     pub offset_offset: u64,
-    pub offset_size: u8,
+    pub offset_size: u16,
     pub temporary_space: u8,
     pub temporary_offset: u64,
 }

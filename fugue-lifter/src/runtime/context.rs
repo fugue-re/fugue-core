@@ -1,9 +1,7 @@
-use std::borrow::Borrow;
 use std::collections::BTreeMap as Map;
 use std::mem;
 use std::ops::{Deref, DerefMut};
 
-use fugue_ir::Translator;
 use itertools::Itertools;
 
 use crate::runtime::partmap::{BoundKind, PartMap};
@@ -18,14 +16,20 @@ pub struct ContextBitRange {
     mask: u32,
 }
 
+impl AsRef<ContextBitRange> for ContextBitRange {
+    fn as_ref(&self) -> &ContextBitRange {
+        self
+    }
+}
+
 impl ContextBitRange {
-    pub fn new(start_bit: usize, end_bit: usize) -> Self {
+    pub const fn new(start_bit: usize, end_bit: usize) -> Self {
         let bits = 8 * mem::size_of::<u32>();
         let word = start_bit / bits;
         let start_bit = start_bit - word * bits;
         let end_bit = end_bit - word * bits;
         let shift = (bits - end_bit - 1) as u32;
-        let mask = (!0u32).checked_shr(start_bit as u32 + shift).unwrap_or(0);
+        let mask = (!0u32) >> (start_bit as u32 + shift);
 
         Self {
             word,
@@ -164,6 +168,7 @@ impl ContextDatabase {
         }
     }
 
+    /*
     pub fn from_translator(translator: &Translator) -> Self {
         let limit = translator.manager().default_space_ref().highest_offset();
         let ctxt = translator.context_database();
@@ -212,6 +217,7 @@ impl ContextDatabase {
             }),
         }
     }
+    */
 
     pub fn size(&self) -> usize {
         self.size
@@ -235,26 +241,26 @@ impl ContextDatabase {
         self.trackbase.default_value_mut()
     }
 
-    pub fn variable<S: Borrow<str>>(&self, name: S) -> Option<&ContextBitRange> {
-        self.variables.get(name.borrow())
+    pub fn variable(&self, name: impl AsRef<str>) -> Option<&ContextBitRange> {
+        self.variables.get(name.as_ref())
     }
 
-    pub fn variable_mut<S: Borrow<str>>(&mut self, name: S) -> Option<&mut ContextBitRange> {
-        self.variables.get_mut(name.borrow())
+    pub fn variable_mut(&mut self, name: impl AsRef<str>) -> Option<&mut ContextBitRange> {
+        self.variables.get_mut(name.as_ref())
     }
 
-    pub fn get_variable<S: Borrow<str>>(&self, name: S, address: u64) -> Option<u32> {
-        self.variable(name.borrow())
+    pub fn get_variable(&self, name: impl AsRef<str>, address: u64) -> Option<u32> {
+        self.variable(name.as_ref())
             .map(|context| context.get(&self.database.get_or_default(address).values))
     }
 
-    pub fn set_variable<S: Borrow<str>>(
-        &mut self,
-        name: S,
-        address: u64,
-        value: u32,
-    ) -> Option<()> {
-        let context = self.variables.get(name.borrow())?;
+    pub fn get_variable_by_bits(&self, bits: impl AsRef<ContextBitRange>, address: u64) -> u32 {
+        bits.as_ref()
+            .get(&self.database.get_or_default(address).values)
+    }
+
+    pub fn set_variable(&mut self, name: impl AsRef<str>, address: u64, value: u32) -> Option<()> {
+        let context = self.variables.get(name.as_ref())?;
         let num = context.word();
         let mask = context.mask().checked_shl(context.shift()).unwrap_or(0);
 
@@ -265,8 +271,23 @@ impl ContextDatabase {
         Some(())
     }
 
-    pub fn set_variable_default<S: Borrow<str>>(&mut self, name: S, value: u32) -> Option<()> {
-        let context = self.variables.get(name.borrow())?;
+    pub fn set_variable_by_bits(
+        &mut self,
+        bits: impl AsRef<ContextBitRange>,
+        address: u64,
+        value: u32,
+    ) {
+        let bits = bits.as_ref();
+        let num = bits.word();
+        let mask = bits.mask().checked_shl(bits.shift()).unwrap_or(0);
+
+        get_region_to_change_point(&mut self.database, address, num, mask, |change| {
+            bits.set(change, value)
+        });
+    }
+
+    pub fn set_variable_default(&mut self, name: impl AsRef<str>, value: u32) -> Option<()> {
+        let context = self.variables.get(name.as_ref())?;
         let default = self.database.default_value_mut();
 
         context.set_full(&mut default.values, &mut default.masks, value);
@@ -274,9 +295,15 @@ impl ContextDatabase {
         Some(())
     }
 
-    pub fn register_variable<S: Into<String>>(
+    pub fn set_variable_default_by_bits(&mut self, bits: impl AsRef<ContextBitRange>, value: u32) {
+        let default = self.database.default_value_mut();
+        bits.as_ref()
+            .set_full(&mut default.values, &mut default.masks, value);
+    }
+
+    pub fn register_variable(
         &mut self,
-        name: S,
+        name: impl Into<String>,
         start_bit: usize,
         end_bit: usize,
     ) -> Option<()> {
@@ -348,14 +375,14 @@ impl ContextDatabase {
         })
     }
 
-    pub fn set_variable_region<S: Borrow<str>>(
+    pub fn set_variable_region(
         &mut self,
-        name: S,
+        name: impl AsRef<str>,
         addr1: u64,
         addr2: Option<u64>,
         value: u32,
     ) -> Option<()> {
-        let context = self.variables.get(name.borrow())?;
+        let context = self.variables.get(name.as_ref())?;
         get_region_for_set(
             &mut self.database,
             addr1,
@@ -365,6 +392,24 @@ impl ContextDatabase {
             |change| context.set(change, value),
         );
         Some(())
+    }
+
+    pub fn set_variable_region_by_bits(
+        &mut self,
+        bits: impl AsRef<ContextBitRange>,
+        addr1: u64,
+        addr2: Option<u64>,
+        value: u32,
+    ) {
+        let bits = bits.as_ref();
+        get_region_for_set(
+            &mut self.database,
+            addr1,
+            addr2,
+            bits.word(),
+            bits.mask(),
+            |change| bits.set(change, value),
+        );
     }
 }
 

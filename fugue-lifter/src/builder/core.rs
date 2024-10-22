@@ -10,7 +10,7 @@ use fugue_ir::disassembly::symbol::{Constructor, DecisionNode, Symbol};
 use fugue_ir::disassembly::{Opcode, PatternExpression};
 use fugue_ir::Translator;
 
-use proc_macro2::{Literal, TokenStream};
+use proc_macro2::{Literal, Span, TokenStream};
 use quote::{format_ident, quote, ToTokens, TokenStreamExt};
 use syn::Ident;
 
@@ -106,7 +106,7 @@ impl<'a> LifterGenerator<'a> {
             } => {
                 let space = space.index() as u8;
                 let offset = *offset;
-                let size = *size as u8;
+                let size = *size as u16;
 
                 quote! {
                     fugue_lifter::runtime::FixedHandle {
@@ -129,7 +129,7 @@ impl<'a> LifterGenerator<'a> {
             Symbol::Start { .. } => {
                 let space = self.translator.manager().default_space_ref();
                 let space_id = space.id().index() as u8;
-                let size = space.address_size() as u8;
+                let size = space.address_size() as u16;
                 quote! {
                     fugue_lifter::runtime::FixedHandle {
                         space: #space_id,
@@ -142,7 +142,7 @@ impl<'a> LifterGenerator<'a> {
             Symbol::End { .. } => {
                 let space = self.translator.manager().default_space_ref();
                 let space_id = space.id().index() as u8;
-                let size = space.address_size() as u8;
+                let size = space.address_size() as u16;
                 quote! {
                     fugue_lifter::runtime::FixedHandle {
                         space: #space_id,
@@ -155,7 +155,7 @@ impl<'a> LifterGenerator<'a> {
             Symbol::Next2 { .. } => {
                 let space = self.translator.manager().default_space_ref();
                 let space_id = space.id().index() as u8;
-                let size = space.address_size() as u8;
+                let size = space.address_size() as u16;
                 quote! {
                     fugue_lifter::runtime::FixedHandle {
                         space: #space_id,
@@ -1186,7 +1186,7 @@ impl<'a> LifterGenerator<'a> {
                 {
                     let mut handle = fugue_lifter::runtime::FixedHandle {
                         space: #space,
-                        size: #size as u8,
+                        size: #size as u16,
                         ..Default::default()
                     };
 
@@ -1211,7 +1211,7 @@ impl<'a> LifterGenerator<'a> {
             {
                 let mut handle = fugue_lifter::runtime::FixedHandle {
                     space: #space,
-                    size: #size as u8,
+                    size: #size as u16,
                     offset_offset: #offset_offset,
                     ..Default::default()
                 };
@@ -1226,7 +1226,7 @@ impl<'a> LifterGenerator<'a> {
                         fugue_lifter::runtime::wrap_offset(hoffset, handle.offset_offset * word_size);
                 } else {
                     handle.offset_space = offset_space;
-                    handle.offset_size = #offset_size as u8;
+                    handle.offset_size = #offset_size as u16;
 
                     handle.temporary_offset = #temporary_offset;
                     handle.temporary_space = #temporary_space as u8;
@@ -1280,7 +1280,7 @@ impl<'a> LifterGenerator<'a> {
         quote! {
             {
                 let space = #space;
-                let size = #size as u8;
+                let size = #size as u16;
 
                 let mut offset = #offset;
 
@@ -1859,6 +1859,11 @@ impl<'a> ToTokens for LifterGenerator<'a> {
 
         let default_space = self.translator.manager().default_space_ref();
 
+        let constant_space_id = self.translator.manager().constant_space_id().index() as u8;
+        let default_space_id = default_space.index() as u8;
+        let register_space_id = self.translator.manager().register_space_id().index() as u8;
+        let unique_space_id = self.translator.manager().unique_space_id().index() as u8;
+
         let address_size = default_space.address_size();
         let address_bits = address_size as u32 * 8;
         let max_address = default_space.highest_offset();
@@ -1877,7 +1882,7 @@ impl<'a> ToTokens for LifterGenerator<'a> {
                 let name = op.as_str();
                 let name_bytes = Literal::byte_string(name.as_bytes());
 
-                quote! { #name_bytes => #id }
+                quote! { #name_bytes => Some(#id) }
             });
         let n_userops = self.translator.user_ops().len();
 
@@ -1923,11 +1928,64 @@ impl<'a> ToTokens for LifterGenerator<'a> {
             }
         };
 
-        let context_variables = self.context_variables.iter().map(|(name, start, end)| {
+        let context_variable_consts = self.context_variables.iter().map(|(name, start, end)| {
+            let upper_snake_name = Ident::new(
+                &heck::AsShoutySnakeCase(*name).to_string(),
+                Span::call_site(),
+            );
             quote! {
-                context.register_variable(#name, #start, #end);
+                pub const #upper_snake_name: fugue_lifter::runtime::context::ContextBitRange =
+                    fugue_lifter::runtime::context::ContextBitRange::new(#start, #end);
             }
         });
+
+        let context_variable_registrations =
+            self.context_variables.iter().map(|(name, start, end)| {
+                quote! {
+                    context.register_variable(#name, #start, #end);
+                }
+            });
+
+        let n_registers = self.translator.registers().name_mapping().len();
+
+        let mut registers = Vec::with_capacity(n_registers);
+        let mut register_names = Vec::with_capacity(n_registers);
+        let mut register_ranges = Vec::with_capacity(n_registers);
+
+        for ((off, sz), nm) in self.translator.registers().iter() {
+            let off = *off;
+            let sz = *sz as u16;
+
+            let upper_snake_name = Ident::new(
+                &heck::AsShoutySnakeCase(nm.as_str()).to_string(),
+                Span::call_site(),
+            );
+
+            // for register by known symbol/const
+            let var = quote! {
+                const #upper_snake_name: fugue_lifter::runtime::pcode::Varnode =
+                    fugue_lifter::runtime::pcode::Varnode::new(#register_space_id, #off, #sz);
+            };
+
+            let nm = nm.as_str();
+            let nm_bytes = Literal::byte_string(nm.as_bytes());
+
+            // TODO: look at the code generated by this (switch to phf or similar?)
+            //
+            // for name to varnode mapping
+            let name_to_varnode = quote! {
+                #nm_bytes => Some(#upper_snake_name)
+            };
+
+            // for range (off, sz) to name mapping
+            let range_to_name = quote! {
+                (#off, #sz, #nm)
+            };
+
+            registers.push(var);
+            register_names.push(name_to_varnode);
+            register_ranges.push(range_to_name);
+        }
 
         tokens.append_all(quote! {
             pub const ADDRESS_ALIGNMENT: usize = #alignment;
@@ -1936,14 +1994,15 @@ impl<'a> ToTokens for LifterGenerator<'a> {
 
             pub const ADDRESS_UPPER_BOUND: u64 = #max_address;
 
+            pub const CONSTANT_SPACE: u8 = #constant_space_id;
+            pub const DEFAULT_SPACE: u8 = #default_space_id;
+
+            pub const REGISTER_SPACE: u8 = #register_space_id;
             pub const REGISTER_SPACE_SIZE: usize = #register_space_size;
 
             pub const UNIQUE_MASK: u64 = #unique_mask;
+            pub const UNIQUE_SPACE: u8 = #unique_space_id;
             pub const UNIQUE_SPACE_SIZE: usize = #unique_space_size;
-
-            pub const USER_OPS: [&'static str; #n_userops] = [
-                #(#userops),*
-            ];
 
             pub const SPACE_WORD_SIZE: [usize; #n_spaces] = [
                 #(#space_word_sizes),*
@@ -1952,17 +2011,60 @@ impl<'a> ToTokens for LifterGenerator<'a> {
                 #(#space_upper_bounds),*
             ];
 
-            #[inline(always)]
-            pub const fn user_op_by_name(name: &'static str) -> u16 {
-                match name.as_bytes() {
-                    #(#userops_to_ids,)*
-                    _ => panic!("unknown user op"),
+            pub mod context {
+                #(#context_variable_consts)*
+            }
+
+            pub mod register {
+                #(#registers)*
+
+                pub const REGISTERS: [(u64, u16, &'static str); #n_registers] = [
+                    #(#register_ranges),*
+                ];
+
+                #[inline]
+                pub const fn register_by_name(
+                    name: &str,
+                ) -> Option<fugue_lifter::runtime::pcode::Varnode> {
+                    match name.as_bytes() {
+                        #(#register_names,)*
+                        _ => None,
+                    }
+                }
+
+                #[inline]
+                pub fn register_name(
+                    varnode: &fugue_lifter::runtime::pcode::Varnode,
+                ) -> Option<&'static str> {
+                    if varnode.space != #register_space_id {
+                        return None;
+                    }
+
+                    let key = (varnode.offset, varnode.size);
+
+                    REGISTERS.binary_search_by(|&(off, sz, _)| (off, sz).cmp(&key))
+                        .ok()
+                        .map(|pos| REGISTERS[pos].2)
                 }
             }
 
-            #[inline(always)]
-            pub const fn user_op_by_id(id: u16) -> &'static str {
-                USER_OPS[id as usize]
+            pub mod user_op {
+                pub const USER_OPS: [&'static str; #n_userops] = [
+                    #(#userops),*
+                ];
+
+                #[inline(always)]
+                pub const fn user_op_by_name(name: &str) -> Option<u16> {
+                    match name.as_bytes() {
+                        #(#userops_to_ids,)*
+                        _ => None,
+                    }
+                }
+
+                #[inline(always)]
+                pub const fn user_op_by_id(id: u16) -> &'static str {
+                    USER_OPS[id as usize]
+                }
             }
 
             // Helpers below
@@ -1972,7 +2074,7 @@ impl<'a> ToTokens for LifterGenerator<'a> {
                 builder: &fugue_lifter::runtime::LiftingContextState,
                 space: u8,
                 offset: u64,
-                size: u8,
+                size: u16,
             ) -> u64 {
                 #space_match
             }
@@ -2025,14 +2127,16 @@ impl<'a> ToTokens for LifterGenerator<'a> {
             }
 
             #[inline(always)]
-            pub fn resolve_constructor(state: &mut fugue_lifter::runtime::LiftingContextState) -> Option<&'static fugue_lifter::runtime::Constructor> {
+            pub fn resolve_constructor(
+                state: &mut fugue_lifter::runtime::LiftingContextState,
+            ) -> Option<&'static fugue_lifter::runtime::Constructor> {
                 let ctor = SubTable0In0::resolve(state)?;
                 ctor.resolve_operands(state)?;
                 Some(ctor)
             }
 
             #[inline(always)]
-            pub fn resolve(
+            pub fn resolve_state(
                 state: &mut fugue_lifter::runtime::LiftingContextState,
             ) -> Option<&'static fugue_lifter::runtime::Constructor> {
                 let ctor = resolve_constructor(state)?;
@@ -2040,6 +2144,29 @@ impl<'a> ToTokens for LifterGenerator<'a> {
                 state.inputs.input.base_state();
                 state.apply_commits();
                 Some(ctor)
+            }
+
+            #[inline]
+            pub fn resolve(
+                address: u64,
+                bytes: &[u8],
+                context: &mut fugue_lifter::runtime::LiftingContext,
+                apply_commits: bool,
+            ) -> Option<usize> {
+                let mut nop_issued = Vec::with_capacity(0);
+                let mut state = context.state_for(address, bytes, &mut nop_issued)?;
+
+                let ctor = resolve_constructor(&mut state)?;
+
+                if apply_commits {
+                    ctor.resolve_handles(&mut state)?;
+                    state.inputs.input.base_state();
+                    state.apply_commits();
+                } else {
+                    state.inputs.input.base_state();
+                }
+
+                Some(state.len())
             }
 
             #[inline]
@@ -2051,7 +2178,7 @@ impl<'a> ToTokens for LifterGenerator<'a> {
             ) -> Option<usize> {
                 let mut state = context.state_for(address, bytes, issued)?;
 
-                resolve(&mut state)?;
+                resolve_state(&mut state)?;
 
                 let delay_slot_bytes = state.delay_slot_length();
 
@@ -2075,7 +2202,7 @@ impl<'a> ToTokens for LifterGenerator<'a> {
 
                     dstate.inputs.initialise(address, bytes);
 
-                    resolve(&mut dstate)?;
+                    resolve_state(&mut dstate)?;
 
                     let length = dstate.len();
 
@@ -2113,7 +2240,7 @@ impl<'a> ToTokens for LifterGenerator<'a> {
                 let mut context =
                     fugue_lifter::runtime::ContextDatabase::new(ADDRESS_UPPER_BOUND);
 
-                #(#context_variables)*
+                #(#context_variable_registrations)*
 
                 context
             }
