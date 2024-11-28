@@ -392,7 +392,7 @@ impl Translator {
                         ));
                     }
 
-                    if pc_name == name.as_ref() {
+                    if pc_name == name {
                         if pc.is_some() {
                             return Err(DeserialiseError::Invariant(
                                 "duplicate definition of program counter",
