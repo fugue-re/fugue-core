@@ -539,7 +539,7 @@ impl<'b, 'c, 'cz, 'z> IRBuilder<'b, 'c, 'cz, 'z> {
         let nops = ctor.operand_count();
 
         for i in 0..nops {
-            let operand = symbols.unchecked_symbol(self.walker.unchecked_constructor().operand(i));
+            let operand = unsafe { symbols.unchecked_symbol(self.walker.unchecked_constructor().operand(i)) };
             let symbol = operand.defining_symbol(symbols);
             if symbol.is_none() || !symbol.as_ref().unwrap().is_subtable() {
                 continue;
@@ -568,7 +568,7 @@ impl<'b, 'c, 'cz, 'z> IRBuilder<'b, 'c, 'cz, 'z> {
         symbols: &'b SymbolTable,
     ) -> Result<(), Error> {
         let index = op.input(0).offset().real() as usize;
-        let operand = symbols.unchecked_symbol(self.walker.unchecked_constructor().operand(index));
+        let operand = unsafe { symbols.unchecked_symbol(self.walker.unchecked_constructor().operand(index)) };
         let symbol = operand.defining_symbol(symbols);
         if symbol.is_none() || !symbol.as_ref().unwrap().is_subtable() {
             return Ok(());

@@ -827,7 +827,7 @@ impl Translator {
             let mut op = walker.operand();
 
             'inner: while op < nops {
-                let operand = symbol_table.unchecked_symbol(ct.operand(op));
+                let operand = unsafe { symbol_table.unchecked_symbol(ct.operand(op)) };
                 //.ok_or_else(|| DisassemblyError::InvalidSymbol)?;
 
                 walker.unchecked_push_operand(op);
@@ -890,7 +890,7 @@ impl Translator {
             let mut op = walker.operand();
 
             'inner: while op < nops {
-                let operand = symbol_table.unchecked_symbol(ct.operand(op));
+                let operand = unsafe { symbol_table.unchecked_symbol(ct.operand(op)) };
                 //.ok_or_else(|| DisassemblyError::InvalidSymbol)?;
 
                 let offset = walker.offset(operand.offset_base()) + operand.relative_offset();

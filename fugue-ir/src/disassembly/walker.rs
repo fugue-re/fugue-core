@@ -838,7 +838,7 @@ impl<'b, 'c, 'z> ParserWalker<'b, 'c, 'z> {
             point = self.ctx.point(unsafe { point.parent.unsafe_unwrap() });
         }
 
-        let sym = symbols.unchecked_symbol(ctor.operand(index)); //.ok_or_else(|| Error::InvalidSymbol)?;
+        let sym = unsafe { symbols.unchecked_symbol(ctor.operand(index)) };
         let offset = if sym.offset_base().is_none() {
             // relative
             point.offset + sym.relative_offset()

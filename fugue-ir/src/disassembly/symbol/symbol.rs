@@ -245,9 +245,7 @@ impl Symbol {
     pub fn defining_symbol<'b>(&self, symbols: &'b SymbolTable) -> Option<&'b Symbol> {
         if let Self::Operand { subsym_id, .. } = self {
             if let Some(id) = subsym_id {
-                Some(
-                    symbols.unchecked_symbol(*id), // .ok_or_else(|| Error::InvalidSymbol)?,
-                )
+                Some(unsafe { symbols.unchecked_symbol(*id) })
             } else {
                 None
             }
@@ -405,7 +403,7 @@ impl Symbol {
                 }
             }
             Self::Next2 { .. } => {
-                return Err(Error::InvalidNext2Address)
+                return Err(Error::InvalidNext2Address);
                 /*
                 let space = manager.unchecked_space_by_id(walker.address().space());
                 let size = space.address_size();
@@ -429,9 +427,11 @@ impl Symbol {
                 ..
             } => {
                 let index = pattern_value.value(walker, symbols)?;
-                let varnode = symbols.unchecked_symbol(
-                    unsafe { varnode_table.get_unchecked(index as usize).unsafe_unwrap() }, //.ok_or_else(|| Error::InvalidSymbol)?
-                ); //.ok_or_else(|| Error::InvalidSymbol)?;
+                let varnode = unsafe {
+                    symbols.unchecked_symbol(
+                        varnode_table.get_unchecked(index as usize).unsafe_unwrap(),
+                    )
+                };
                 varnode.fixed_handle(walker, manager, symbols)?
             }
             Self::ValueMap {
@@ -483,7 +483,7 @@ impl Symbol {
             } => {
                 walker.unchecked_push_operand(*handle_index);
                 if let Some(id) = subsym_id {
-                    let sym = symbols.unchecked_symbol(*id);
+                    let sym = unsafe { symbols.unchecked_symbol(*id) };
                     if sym.is_subtable() {
                         let mut inner = Operands::new(arena);
                         walker
@@ -518,9 +518,11 @@ impl Symbol {
             } => {
                 let (index, bits) = pattern_value.value_with(walker, symbols).unwrap();
                 if index >= 0 && (index as usize) < varnode_table.len() {
-                    let named = symbols.unchecked_symbol(unsafe {
-                        varnode_table.get_unchecked(index as usize).unsafe_unwrap()
-                    });
+                    let named = unsafe {
+                        symbols.unchecked_symbol(
+                            varnode_table.get_unchecked(index as usize).unsafe_unwrap(),
+                        )
+                    };
                     operands.push_with(named.name(), bits);
                 }
             }
@@ -576,7 +578,7 @@ impl Symbol {
             } => {
                 walker.unchecked_push_operand(*handle_index);
                 if let Some(id) = subsym_id {
-                    let sym = symbols.unchecked_symbol(*id);
+                    let sym = unsafe { symbols.unchecked_symbol(*id) };
                     if sym.is_subtable() {
                         walker
                             .unchecked_constructor()
@@ -612,11 +614,12 @@ impl Symbol {
                     write!(
                         fmt,
                         "{}",
-                        symbols
-                            .unchecked_symbol(unsafe {
-                                varnode_table.get_unchecked(index as usize).unsafe_unwrap()
-                            })
-                            .name()
+                        unsafe {
+                            symbols.unchecked_symbol(
+                                varnode_table.get_unchecked(index as usize).unsafe_unwrap(),
+                            )
+                        }
+                        .name()
                     )?;
                 }
                 Ok(())
@@ -681,7 +684,7 @@ impl Symbol {
             } => {
                 walker.unchecked_push_operand(*handle_index);
                 if let Some(id) = subsym_id {
-                    let sym = symbols.unchecked_symbol(*id);
+                    let sym = unsafe { symbols.unchecked_symbol(*id) };
                     if sym.is_subtable() {
                         walker
                             .unchecked_constructor()
@@ -714,11 +717,12 @@ impl Symbol {
             } => {
                 let index = pattern_value.value(walker, symbols).unwrap();
                 if index >= 0 && (index as usize) < varnode_table.len() {
-                    let register = symbols
-                        .unchecked_symbol(unsafe {
-                            varnode_table.get_unchecked(index as usize).unsafe_unwrap()
-                        })
-                        .name();
+                    let register = unsafe {
+                        symbols.unchecked_symbol(
+                            varnode_table.get_unchecked(index as usize).unsafe_unwrap(),
+                        )
+                    }
+                    .name();
                     tokens.push(Token::register(register));
                 }
             }

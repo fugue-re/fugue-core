@@ -168,7 +168,7 @@ impl PatternExpression {
                 constructor_id,
                 index,
             } => {
-                let table = symbols.unchecked_symbol(*table_id); //.ok_or_else(|| Error::InvalidSymbol)?;
+                let table = unsafe { symbols.unchecked_symbol(*table_id) };
                 let ctor = if let Symbol::Subtable { constructors, .. } = table {
                     unsafe { constructors.get_unchecked(*constructor_id) }
                 } else {
@@ -180,11 +180,11 @@ impl PatternExpression {
                     def_expr,
                     subsym_id,
                     ..
-                } = symbols.unchecked_symbol(ctor.operand(*index)) /* .ok_or_else(|| Error::InvalidSymbol)? */ {
+                } = unsafe { symbols.unchecked_symbol(ctor.operand(*index)) } {
                     if let Some(def_expr) = def_expr {
                         def_expr
                     } else if let Some(subsym_id) = subsym_id {
-                        let sym = symbols.unchecked_symbol(*subsym_id); /* .ok_or_else(|| Error::InvalidSymbol)?; */
+                        let sym = unsafe { symbols.unchecked_symbol(*subsym_id) };
                         sym.pattern_value()
                     } else {
                         return Ok((0, None))
@@ -373,7 +373,7 @@ impl PatternExpression {
                 constructor_id,
                 index,
             } => {
-                let table = symbols.unchecked_symbol(*table_id); //.ok_or_else(|| Error::InvalidSymbol)?;
+                let table = unsafe { symbols.unchecked_symbol(*table_id) };
                 let ctor = if let Symbol::Subtable { constructors, .. } = table {
                     unsafe { constructors.get_unchecked(*constructor_id) }
                 } else {
@@ -385,11 +385,11 @@ impl PatternExpression {
                     def_expr,
                     subsym_id,
                     ..
-                } = symbols.unchecked_symbol(ctor.operand(*index)) /* .ok_or_else(|| Error::InvalidSymbol)? */ {
+                } = unsafe { symbols.unchecked_symbol(ctor.operand(*index)) } {
                     if let Some(def_expr) = def_expr {
                         def_expr
                     } else if let Some(subsym_id) = subsym_id {
-                        let sym = symbols.unchecked_symbol(*subsym_id); /* .ok_or_else(|| Error::InvalidSymbol)?; */
+                        let sym = unsafe { symbols.unchecked_symbol(*subsym_id) };
                         sym.pattern_value()
                     } else {
                         return Ok(0)

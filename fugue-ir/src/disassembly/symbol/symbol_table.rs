@@ -27,8 +27,11 @@ impl SymbolTable {
         self.symbols.get(id)
     }
 
-    pub fn unchecked_symbol(&self, id: usize) -> &Symbol {
-        unsafe { self.symbols.get_unchecked(id) }
+    //
+    // SAFETY: UB if `id` does not correspond to a valid symbol
+    //
+    pub unsafe fn unchecked_symbol(&self, id: usize) -> &Symbol {
+        self.symbols.get_unchecked(id)
     }
 
     pub (crate) fn resolve<'b, 'c, 'z>(&'b self, id: usize, walker: &mut ParserWalker<'b, 'c, 'z>) -> Result<&'b Constructor, Error> {

@@ -51,7 +51,7 @@ impl Context {
                 mask,
                 flow,
             } => {
-                let sym = symbols.unchecked_symbol(*symbol_id); //.ok_or_else(|| Error::InvalidSymbol)?;
+                let sym = unsafe { symbols.unchecked_symbol(*symbol_id) };
                 walker.add_commit(sym, *num, *mask, *flow);
             }
         })
@@ -141,9 +141,7 @@ impl Constructor {
         symbols: &'b SymbolTable,
     ) {
         if let Some(index) = self.flow_through_index {
-            match symbols
-                .unchecked_symbol(self.operands[index])
-                .defining_symbol(symbols)
+            match unsafe { symbols.unchecked_symbol(self.operands[index]) }.defining_symbol(symbols)
             {
                 Some(Symbol::Subtable { .. }) => {
                     walker.unchecked_push_operand(index);
@@ -160,8 +158,7 @@ impl Constructor {
             for i in (first_whitespace + 1)..self.print_pieces.len() {
                 if self.print_pieces[i].as_bytes()[0] == b'\n' {
                     let index = (self.print_pieces[i].as_bytes()[1] - b'A') as usize;
-                    symbols
-                        .unchecked_symbol(self.operands[index])
+                    unsafe { symbols.unchecked_symbol(self.operands[index]) }
                         .collect_operands(arena, operands, walker, symbols);
                 }
             }
@@ -193,9 +190,7 @@ impl Constructor {
         symbols: &'b SymbolTable,
     ) {
         if let Some(index) = self.flow_through_index {
-            match symbols
-                .unchecked_symbol(self.operands[index])
-                .defining_symbol(symbols)
+            match unsafe { symbols.unchecked_symbol(self.operands[index]) }.defining_symbol(symbols)
             {
                 Some(Symbol::Subtable { .. }) => {
                     walker.unchecked_push_operand(index);
@@ -212,8 +207,7 @@ impl Constructor {
         for i in 0..end {
             if self.print_pieces[i].as_bytes()[0] == b'\n' {
                 let index = (self.print_pieces[i].as_bytes()[1] - b'A') as usize;
-                symbols
-                    .unchecked_symbol(self.operands[index])
+                unsafe { symbols.unchecked_symbol(self.operands[index]) }
                     .tokens(tokens, walker, symbols);
             } else {
                 tokens.push(Token::symbol(&self.print_pieces[i]));
@@ -228,9 +222,7 @@ impl Constructor {
         symbols: &'b SymbolTable,
     ) {
         if let Some(index) = self.flow_through_index {
-            match symbols
-                .unchecked_symbol(self.operands[index])
-                .defining_symbol(symbols)
+            match unsafe { symbols.unchecked_symbol(self.operands[index]) }.defining_symbol(symbols)
             {
                 Some(Symbol::Subtable { .. }) => {
                     walker.unchecked_push_operand(index);
@@ -247,8 +239,7 @@ impl Constructor {
             for i in (first_whitespace + 1)..self.print_pieces.len() {
                 if self.print_pieces[i].as_bytes()[0] == b'\n' {
                     let index = (self.print_pieces[i].as_bytes()[1] - b'A') as usize;
-                    symbols
-                        .unchecked_symbol(self.operands[index])
+                    unsafe { symbols.unchecked_symbol(self.operands[index]) }
                         .tokens(tokens, walker, symbols);
                 } else {
                     tokens.push(Token::symbol(&self.print_pieces[i]));
@@ -303,9 +294,7 @@ impl Constructor {
         symbols: &'b SymbolTable,
     ) -> Result<(), fmt::Error> {
         if let Some(index) = self.flow_through_index {
-            match symbols
-                .unchecked_symbol(self.operands[index])
-                .defining_symbol(symbols)
+            match unsafe { symbols.unchecked_symbol(self.operands[index]) }.defining_symbol(symbols)
             {
                 Some(Symbol::Subtable { .. }) => {
                     walker.unchecked_push_operand(index);
@@ -322,8 +311,7 @@ impl Constructor {
         for i in 0..end {
             if self.print_pieces[i].as_bytes()[0] == b'\n' {
                 let index = (self.print_pieces[i].as_bytes()[1] - b'A') as usize;
-                symbols
-                    .unchecked_symbol(self.operands[index])
+                unsafe { symbols.unchecked_symbol(self.operands[index]) }
                     .format(fmt, walker, symbols)?;
             } else {
                 write!(fmt, "{}", self.print_pieces[i])?;
@@ -339,9 +327,7 @@ impl Constructor {
         symbols: &'b SymbolTable,
     ) -> Result<(), fmt::Error> {
         if let Some(index) = self.flow_through_index {
-            match symbols
-                .unchecked_symbol(self.operands[index])
-                .defining_symbol(symbols)
+            match unsafe { symbols.unchecked_symbol(self.operands[index]) }.defining_symbol(symbols)
             {
                 Some(Symbol::Subtable { .. }) => {
                     walker.unchecked_push_operand(index);
@@ -358,8 +344,7 @@ impl Constructor {
             for i in (first_whitespace + 1)..self.print_pieces.len() {
                 if self.print_pieces[i].as_bytes()[0] == b'\n' {
                     let index = (self.print_pieces[i].as_bytes()[1] - b'A') as usize;
-                    symbols
-                        .unchecked_symbol(self.operands[index])
+                    unsafe { symbols.unchecked_symbol(self.operands[index]) }
                         .format(fmt, walker, symbols)?;
                 } else {
                     write!(fmt, "{}", self.print_pieces[i])?;
