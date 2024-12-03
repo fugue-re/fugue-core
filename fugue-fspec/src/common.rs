@@ -3,6 +3,7 @@ use std::marker::PhantomData;
 use std::ops::{Deref, Index};
 use std::str::FromStr;
 
+use fugue_arch::ArchitectureDef;
 use fugue_bytes::Endian;
 
 use serde::de::{Error, Visitor};
@@ -345,6 +346,27 @@ pub enum GroupOrValue<T> {
     Value(T),
 }
 
+pub trait GroupOrValueVisitor<T> {
+    fn matches_value(&self, value: &T) -> bool;
+}
+
+impl<T> GroupOrValue<T> {
+    pub fn matches<V>(&self, visitor: &V) -> bool
+    where
+        V: GroupOrValueVisitor<T>,
+    {
+        match self {
+            Self::Value(t) => visitor.matches_value(t),
+            Self::Group(group) => group.iter().any(|g| match g.kind() {
+                GroupKind::All => g.values().iter().all(|v| v.matches(visitor)),
+                GroupKind::Any => g.values().iter().any(|v| v.matches(visitor)),
+                GroupKind::NotAll => !g.values().iter().all(|v| v.matches(visitor)),
+                GroupKind::NotAny => !g.values().iter().any(|v| v.matches(visitor)),
+            }),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Language {
     processor: String,
@@ -373,6 +395,25 @@ impl Language {
             variant: variant.into(),
             convention: convention.into(),
         }
+    }
+
+    pub fn matches(&self, other: &Self) -> bool {
+        (other.processor() == self.processor())
+            && (other.endian() == self.endian())
+            && (other.bits().is_none() || self.bits().is_none() || other.bits() == self.bits())
+            && (other.variant().is_none()
+                || self.variant().is_none()
+                || other.variant() == self.variant())
+            && (other.convention().is_none()
+                || self.convention().is_none()
+                || other.convention() == self.convention())
+    }
+
+    pub fn matches_arch(&self, arch: &ArchitectureDef) -> bool {
+        (arch.processor() == self.processor())
+            && (arch.endian() == self.endian())
+            && (self.bits().is_none() || arch.bits() as u32 == self.bits().unwrap())
+            && (self.variant().is_none() || arch.variant() == self.variant().unwrap())
     }
 
     pub fn processor(&self) -> &str {

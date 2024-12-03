@@ -229,7 +229,7 @@ impl FunctionSpec {
 mod test {
     use fugue_bytes::Endian;
 
-    use crate::common::GroupKind;
+    use crate::common::GroupOrValueVisitor;
 
     use super::*;
 
@@ -257,9 +257,11 @@ mod test {
 function: Perl_croak_no_mem
 properties: non-returning
 where:
-  any:
+  all:
+  - any:
+    - arch: x86:LE:32
+    - arch: x86:LE:64
   - platform: posix
-  - platform: uefi
 patterns:
 - x86:LE:32:
     patterns:
@@ -281,21 +283,31 @@ patterns:
         assert_eq!(fspec.patterns.0.len(), 2);
 
         let constraints = fspec.constraints.unwrap();
-        let GroupOrValue::Group(group) = constraints else {
-            panic!("expected group")
-        };
 
-        assert_eq!(group.len(), 1);
-        let group0 = &group.groups()[0];
+        // test group matching via where
+        struct ArchWithPlatform {
+            arch: Language,
+            platform: &'static str,
+        }
 
-        assert_eq!(group0.kind(), GroupKind::Any);
-        assert_eq!(
-            group0.values(),
-            [
-                GroupOrValue::Value(PlatformConstraint::Platform("posix".to_owned())),
-                GroupOrValue::Value(PlatformConstraint::Platform("uefi".to_owned())),
-            ]
-        );
+        impl GroupOrValueVisitor<PlatformConstraint> for ArchWithPlatform {
+            fn matches_value(&self, value: &PlatformConstraint) -> bool {
+                match value {
+                    PlatformConstraint::Platform(platform) => platform == self.platform,
+                    PlatformConstraint::Arch(arch) => arch.matches(&self.arch),
+                }
+            }
+        }
+
+        assert!(constraints.matches(&ArchWithPlatform {
+            arch: Language::new("x86", Endian::Little),
+            platform: "posix",
+        }));
+
+        assert!(!constraints.matches(&ArchWithPlatform {
+            arch: Language::new("x86", Endian::Little),
+            platform: "uefi",
+        }));
 
         Ok(())
     }
