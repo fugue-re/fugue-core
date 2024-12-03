@@ -8,6 +8,8 @@ members = [
   "fugue-arch",
   "fugue-bytes",
   "fugue-core",
+
+  "fugue-fspec",
 ]
 resolver = "2"
 

@@ -7,3 +7,4 @@ pub use fugue_ir as ir;
 
 pub use fugue_arch as arch;
 pub use fugue_bytes as bytes;
+pub use fugue_fspec as fspec;

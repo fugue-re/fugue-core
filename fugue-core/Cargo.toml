@@ -26,4 +26,5 @@ fugue-bv = { path = "../fugue-bv", version = "0.2", default-features = false }
 fugue-bytes = { path = "../fugue-bytes", version = "0.2" }
 fugue-db = { path = "../fugue-db", version = "0.2", default-features = false, optional = true }
 fugue-fp = { path = "../fugue-fp", version = "0.2", optional = true }
+fugue-fspec = { path = "../fugue-fspec", version = "0.2" }
 fugue-ir = { path = "../fugue-ir", version = "0.2", default-features = false }
