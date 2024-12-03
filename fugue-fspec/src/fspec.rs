@@ -1,6 +1,9 @@
 use std::borrow::Cow;
 use std::collections::btree_map::Entry;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
+use std::fs::File;
+use std::io::{self, BufReader, Read};
+use std::path::{Path, PathBuf};
 
 use bitflags::bitflags;
 
@@ -8,7 +11,11 @@ use serde::de::value::StringDeserializer;
 use serde::ser::SerializeSeq;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::common::{AttrOptWithVal, AttrWithVal, GroupOrValue, Language, OneOrMany};
+use thiserror::Error;
+
+use crate::common::{
+    AttrOptWithVal, AttrWithVal, GroupOrValue, GroupOrValueVisitor, Language, OneOrMany,
+};
 use crate::pattern::PatternsWithContext;
 
 bitflags! {
@@ -163,9 +170,12 @@ impl Serialize for FunctionPatterns {
     }
 }
 
+pub type FunctionSpecAliases = BTreeSet<String>;
+
 #[derive(Clone)]
 pub struct FunctionSpec {
-    function: String,
+    name: String,
+    aliases: FunctionSpecAliases,
     constraints: Option<GroupOrValue<PlatformConstraint>>,
     properties: FunctionProperties,
     patterns: FunctionPatterns,
@@ -174,7 +184,9 @@ pub struct FunctionSpec {
 
 #[derive(Deserialize, Serialize)]
 struct FunctionSpecRepr<'a> {
-    function: Cow<'a, str>,
+    name: Cow<'a, str>,
+    #[serde(default)]
+    aliases: Cow<'a, FunctionSpecAliases>,
     #[serde(default, rename = "where")]
     constraints: Cow<'a, Option<GroupOrValue<PlatformConstraint>>>,
     #[serde(default)]
@@ -193,7 +205,8 @@ impl<'de> Deserialize<'de> for FunctionSpec {
         let d = FunctionSpecRepr::deserialize(deserializer)?;
 
         Ok(Self {
-            function: d.function.into_owned(),
+            name: d.name.into_owned(),
+            aliases: d.aliases.into_owned(),
             constraints: d.constraints.into_owned(),
             properties: d.properties.into_owned().into(),
             patterns: d.patterns.into_owned(),
@@ -208,7 +221,8 @@ impl Serialize for FunctionSpec {
         S: Serializer,
     {
         let s = FunctionSpecRepr {
-            function: Cow::Borrowed(&self.function),
+            name: Cow::Borrowed(&self.name),
+            aliases: Cow::Borrowed(&self.aliases),
             constraints: Cow::Borrowed(&self.constraints),
             properties: Cow::Owned(self.properties.into()),
             patterns: Cow::Borrowed(&self.patterns),
@@ -220,8 +234,102 @@ impl Serialize for FunctionSpec {
 }
 
 impl FunctionSpec {
-    pub fn function(&self) -> &str {
-        &self.function
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn aliases(&self) -> &FunctionSpecAliases {
+        &self.aliases
+    }
+
+    pub fn properties(&self) -> FunctionProperties {
+        self.properties
+    }
+
+    pub fn patterns(&self) -> &FunctionPatterns {
+        &self.patterns
+    }
+
+    pub fn fixup(&self) -> Option<&str> {
+        self.fixup.as_deref()
+    }
+
+    pub fn matches<V>(&self, visitor: &V) -> bool
+    where
+        V: GroupOrValueVisitor<PlatformConstraint>,
+    {
+        self.constraints
+            .as_ref()
+            .map(|c| c.matches(visitor))
+            .unwrap_or(true)
+    }
+}
+
+#[derive(Clone, Deserialize, Serialize)]
+pub struct FunctionSpecs {
+    author: Option<String>,
+    description: Option<String>,
+    constraints: Option<GroupOrValue<PlatformConstraint>>,
+    functions: Vec<FunctionSpec>,
+}
+
+#[derive(Debug, Error)]
+pub enum FunctionSpecError {
+    #[error("cannot parse function specifications: {0}")]
+    Parse(serde_yaml::Error),
+    #[error("cannot function specifications from `{0}`: {1}")]
+    ParseFile(PathBuf, serde_yaml::Error),
+    #[error("cannot parse function specifications from `{0}`: {1}")]
+    ReadFile(PathBuf, io::Error),
+}
+
+impl FunctionSpecs {
+    pub fn from_str(input: impl AsRef<str>) -> Result<Self, FunctionSpecError> {
+        serde_yaml::from_str(input.as_ref()).map_err(FunctionSpecError::Parse)
+    }
+
+    pub fn from_reader(reader: impl Read) -> Result<Self, FunctionSpecError> {
+        serde_yaml::from_reader(reader).map_err(FunctionSpecError::Parse)
+    }
+
+    pub fn from_file(path: impl AsRef<Path>) -> Result<Self, FunctionSpecError> {
+        let path = path.as_ref();
+        let file = BufReader::new(
+            File::open(path).map_err(|e| FunctionSpecError::ReadFile(path.to_owned(), e))?,
+        );
+        serde_yaml::from_reader(file).map_err(|e| FunctionSpecError::ParseFile(path.to_owned(), e))
+    }
+
+    pub fn author(&self) -> Option<&str> {
+        self.author.as_deref()
+    }
+
+    pub fn description(&self) -> Option<&str> {
+        self.description.as_deref()
+    }
+
+    pub fn matches<V>(&self, visitor: &V) -> bool
+    where
+        V: GroupOrValueVisitor<PlatformConstraint>,
+    {
+        self.constraints
+            .as_ref()
+            .map(|c| c.matches(visitor))
+            .unwrap_or(true)
+    }
+
+    pub fn functions(&self) -> &[FunctionSpec] {
+        &self.functions
+    }
+
+    pub fn functions_matching<'a, V>(
+        &'a self,
+        visitor: &'a V,
+    ) -> impl Iterator<Item = &'a FunctionSpec> + 'a
+    where
+        V: GroupOrValueVisitor<PlatformConstraint>,
+    {
+        self.functions.iter().filter(|f| f.matches(visitor))
     }
 }
 
@@ -254,7 +362,7 @@ mod test {
     #[test]
     fn test_function() -> Result<(), Box<dyn std::error::Error>> {
         let input1 = r#"
-function: Perl_croak_no_mem
+name: Perl_croak_no_mem
 properties: non-returning
 where:
   all:
@@ -278,7 +386,7 @@ patterns:
 
         let fspec = serde_yaml::from_str::<FunctionSpec>(input1)?;
 
-        assert_eq!(fspec.function, "Perl_croak_no_mem");
+        assert_eq!(fspec.name, "Perl_croak_no_mem");
         assert!(fspec.properties.contains(FunctionProperties::NON_RETURNING));
         assert_eq!(fspec.patterns.0.len(), 2);
 
