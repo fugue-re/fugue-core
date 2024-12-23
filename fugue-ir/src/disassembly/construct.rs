@@ -68,18 +68,16 @@ impl ConstTpl {
     ) -> u64 {
         match self {
             Self::Start => walker.address().offset(),
-            Self::Next => walker.unchecked_next_address().offset(), // .ok_or_else(|| Error::InvalidNextAddress)?.offset(),
-            Self::CurrentSpaceSize => manager
-                .unchecked_space_by_id(walker.address().space())
-                .address_size() as u64,
+            Self::Next => unsafe { walker.unchecked_next_address() }.offset(),
+            Self::CurrentSpaceSize => {
+                unsafe { manager.unchecked_space_by_id(walker.address().space()) }.address_size()
+                    as u64
+            }
             Self::CurrentSpace => walker.address().space().index() as u64,
             Self::Relative(value) | Self::Real(value) => *value,
-            Self::SpaceId(space) => space.index() as u64, /* { manager.space_by_name(name)
-            .ok_or_else(|| Error::InvalidSpace)?
-            .index() as u64,
-            },*/
+            Self::SpaceId(space) => space.index() as u64,
             Self::Handle(index, kind) => {
-                let handle = walker.unchecked_handle_ref(*index); //?.ok_or_else(|| Error::InvalidHandle)?;
+                let handle = unsafe { walker.unchecked_handle_ref(*index) };
                 match kind {
                     HandleKind::Space => {
                         if handle.offset_space.is_none() {
@@ -128,8 +126,7 @@ impl ConstTpl {
     ) {
         match self {
             Self::Handle(index, _) => {
-                let h = walker.unchecked_handle_ref(*index); //?
-                                                             //.ok_or_else(|| Error::InvalidHandle)?;
+                let h = unsafe { walker.unchecked_handle_ref(*index) };
                 handle.offset_space = h.offset_space;
                 handle.offset_offset = h.offset_offset;
                 handle.offset_size = h.offset_size;
@@ -149,19 +146,18 @@ impl ConstTpl {
         manager: &'b SpaceManager,
     ) -> &'b AddressSpace {
         match self {
-            Self::CurrentSpace => manager.unchecked_space_by_id(walker.address().space()),
+            Self::CurrentSpace => unsafe {
+                manager.unchecked_space_by_id(walker.address().space())
+            },
             Self::Handle(index, kind) => {
                 if *kind == HandleKind::Space {
-                    walker
-                        .unchecked_handle_ref(*index) /*?.ok_or_else(|| Error::InvalidHandle)?*/
-                        .space
+                    unsafe { walker.unchecked_handle_ref(*index) }.space
                 } else {
                     unreachable!()
-                    //return Err(Error::InconsistentState)
                 }
             }
-            Self::SpaceId(space) => manager.unchecked_space_by_id(*space),
-            _ => unreachable!(), //return Err(Error::InconsistentState)
+            Self::SpaceId(space) => unsafe { manager.unchecked_space_by_id(*space) },
+            _ => unreachable!(),
         }
     }
 
@@ -171,10 +167,12 @@ impl ConstTpl {
         manager: &'b SpaceManager,
     ) -> Option<&'b AddressSpace> {
         match self {
-            Self::CurrentSpace => Some(manager.unchecked_space_by_id(walker.address().space())),
+            Self::CurrentSpace => {
+                Some(unsafe { manager.unchecked_space_by_id(walker.address().space()) })
+            }
             Self::Handle(index, kind) => {
                 if *kind == HandleKind::Space {
-                    let h = walker.unchecked_handle_ref(*index); //?.ok_or_else(|| Error::InvalidHandle)?;
+                    let h = unsafe { walker.unchecked_handle_ref(*index) };
                     if h.offset_space.is_none() {
                         Some(h.space)
                     } else {
@@ -184,7 +182,7 @@ impl ConstTpl {
                     unreachable!()
                 }
             }
-            Self::SpaceId(space) => Some(manager.unchecked_space_by_id(*space)),
+            Self::SpaceId(space) => Some(unsafe { manager.unchecked_space_by_id(*space) }),
             _ => unreachable!(),
         }
     }
@@ -195,10 +193,12 @@ impl ConstTpl {
         manager: &'b SpaceManager,
     ) -> Result<Option<&'b AddressSpace>, Error> {
         Ok(match self {
-            Self::CurrentSpace => Some(manager.unchecked_space_by_id(walker.address().space())),
+            Self::CurrentSpace => {
+                Some(unsafe { manager.unchecked_space_by_id(walker.address().space()) })
+            }
             Self::Handle(index, kind) => {
                 if *kind == HandleKind::Space {
-                    let h = walker.unchecked_handle_ref(*index); //?.ok_or_else(|| Error::InvalidHandle)?;
+                    let h = unsafe { walker.unchecked_handle_ref(*index) };
                     if h.offset_space.is_none() {
                         Some(h.space)
                     } else {
@@ -208,7 +208,7 @@ impl ConstTpl {
                     return Err(Error::InconsistentState);
                 }
             }
-            Self::SpaceId(space) => Some(manager.unchecked_space_by_id(*space)),
+            Self::SpaceId(space) => Some(unsafe { manager.unchecked_space_by_id(*space) }),
             _ => return Err(Error::InconsistentState),
         })
     }
@@ -340,7 +340,10 @@ pub struct VarnodeTpl {
 }
 
 impl VarnodeTpl {
-    pub fn is_dynamic<'b, 'c, 'z>(&'b self, walker: &mut ParserWalker<'b, 'c, 'z>) -> Result<bool, Error> {
+    pub fn is_dynamic<'b, 'c, 'z>(
+        &'b self,
+        walker: &mut ParserWalker<'b, 'c, 'z>,
+    ) -> Result<bool, Error> {
         if let ConstTpl::Handle(index, _) = self.offset {
             if let Some(h) = walker.handle_ref(index) {
                 Ok(h.offset_space.is_some())

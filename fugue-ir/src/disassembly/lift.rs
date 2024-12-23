@@ -539,21 +539,26 @@ impl<'b, 'c, 'cz, 'z> IRBuilder<'b, 'c, 'cz, 'z> {
         let nops = ctor.operand_count();
 
         for i in 0..nops {
-            let operand = unsafe { symbols.unchecked_symbol(self.walker.unchecked_constructor().operand(i)) };
+            let operand =
+                unsafe { symbols.unchecked_symbol(self.walker.unchecked_constructor().operand(i)) };
             let symbol = operand.defining_symbol(symbols);
             if symbol.is_none() || !symbol.as_ref().unwrap().is_subtable() {
                 continue;
             }
 
             self.walker.unchecked_push_operand(i); //?;
-            if let Some(ctpl) = self
-                .walker
-                .unchecked_constructor()
-                .named_template(unsafe { section_num.unsafe_unwrap() })
-            {
+            if let Some(ctpl) = unsafe {
+                self.walker
+                    .unchecked_constructor()
+                    .named_template(section_num.unsafe_unwrap())
+            } {
                 self.build(ctpl, section_num, symbols)?;
             } else {
-                self.build_empty(self.walker.unchecked_constructor(), section_num, symbols)?;
+                self.build_empty(
+                    unsafe { self.walker.unchecked_constructor() },
+                    section_num,
+                    symbols,
+                )?;
             }
             self.walker.unchecked_pop_operand(); //?;
         }
@@ -568,14 +573,15 @@ impl<'b, 'c, 'cz, 'z> IRBuilder<'b, 'c, 'cz, 'z> {
         symbols: &'b SymbolTable,
     ) -> Result<(), Error> {
         let index = op.input(0).offset().real() as usize;
-        let operand = unsafe { symbols.unchecked_symbol(self.walker.unchecked_constructor().operand(index)) };
+        let operand =
+            unsafe { symbols.unchecked_symbol(self.walker.unchecked_constructor().operand(index)) };
         let symbol = operand.defining_symbol(symbols);
         if symbol.is_none() || !symbol.as_ref().unwrap().is_subtable() {
             return Ok(());
         }
 
         self.walker.unchecked_push_operand(index);
-        let constructor = self.walker.unchecked_constructor();
+        let constructor = unsafe { self.walker.unchecked_constructor() };
         if let Some(section_num) = section_num {
             if let Some(ctpl) = constructor.named_template(section_num) {
                 self.build(ctpl, Some(section_num), symbols)?;
@@ -611,7 +617,7 @@ impl<'b, 'c, 'cz, 'z> IRBuilder<'b, 'c, 'cz, 'z> {
 
             self.walker.base_state();
 
-            if let Some(ctpl) = self.walker.unchecked_constructor().template() {
+            if let Some(ctpl) = unsafe { self.walker.unchecked_constructor() }.template() {
                 self.build(ctpl, None, symbols)?;
             }
 
@@ -800,8 +806,8 @@ impl<'b, 'c, 'cz, 'z> IRBuilder<'b, 'c, 'cz, 'z> {
                     )));
                 }
                 Some(label) => {
-                    let res =
-                        label.wrapping_sub(rel.instruction as u64) & bits::calculate_mask(varnode.size());
+                    let res = label.wrapping_sub(rel.instruction as u64)
+                        & bits::calculate_mask(varnode.size());
                     varnode.offset = res;
                 }
             }

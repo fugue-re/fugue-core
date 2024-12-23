@@ -69,7 +69,7 @@ impl<'z> Operand {
             }
         } else if space_id.is_register() {
             // register
-            let name = registers.unchecked_get(offset, size).clone();
+            let name = unsafe { registers.unchecked_get(offset, size) }.clone();
 
             Operand::Register {
                 name,

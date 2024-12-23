@@ -91,7 +91,7 @@ impl fmt::Display for Var {
 impl<'var, 'trans> fmt::Display for VarFormatter<'var, 'trans> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if let Some(trans) = self.fmt.translator {
-            let space = trans.manager().unchecked_space_by_id(self.var.space());
+            let space = unsafe { trans.manager().unchecked_space_by_id(self.var.space()) };
             if space.is_register() {
                 let name = trans
                     .registers()
@@ -263,7 +263,10 @@ impl<'z> FromSpace<'z, VarnodeData> for Location {
 
     fn from_space(vnd: VarnodeData, manager: &SpaceManager) -> Self {
         Self {
-            address: AddressValue::new(manager.unchecked_space_by_id(vnd.space()), vnd.offset()),
+            address: AddressValue::new(
+                unsafe { manager.unchecked_space_by_id(vnd.space()) },
+                vnd.offset(),
+            ),
             position: 0,
         }
     }
@@ -836,7 +839,7 @@ where
 
             ExprT::Load(expr, bits, space) => {
                 if let Some(trans) = d.fmt.translator {
-                    let space = trans.manager().unchecked_space_by_id(*space);
+                    let space = unsafe { trans.manager().unchecked_space_by_id(*space) };
                     write!(
                         f,
                         "{}{}{}[{}]:{}{}{}",
@@ -1257,7 +1260,7 @@ impl<'z, Loc> FromSpace<'z, VarnodeData> for ExprT<Loc, BitVec, Var> {
     }
 
     fn from_space(vnd: VarnodeData, manager: &SpaceManager) -> ExprT<Loc, BitVec, Var> {
-        let space = manager.unchecked_space_by_id(vnd.space());
+        let space = unsafe { manager.unchecked_space_by_id(vnd.space()) };
         if space.is_constant() {
             ExprT::from(BitVec::from_u64(vnd.offset(), vnd.size() * 8))
         } else {
@@ -2225,7 +2228,7 @@ where
             ),
             StmtT::Store(dest, src, size, spc) => {
                 if let Some(trans) = self.fmt.translator {
-                    let space = trans.manager().unchecked_space_by_id(*spc);
+                    let space = unsafe { trans.manager().unchecked_space_by_id(*spc) };
                     write!(
                         f,
                         "{}{}{}[{}]:{}{}{} {}←{} {}",
@@ -2416,7 +2419,7 @@ impl StmtT<Location, BitVec, Var> {
             }
             Opcode::IBranch => {
                 let target = ExprT::from_space(inputs.next().unwrap(), manager);
-                let space = manager.unchecked_space_by_id(address.space());
+                let space = unsafe { manager.unchecked_space_by_id(address.space()) };
 
                 Self::branch_indirect(target, space)
             }
@@ -2428,7 +2431,7 @@ impl StmtT<Location, BitVec, Var> {
             }
             Opcode::ICall => {
                 let target = ExprT::from_space(inputs.next().unwrap(), manager);
-                let space = manager.unchecked_space_by_id(address.space());
+                let space = unsafe { manager.unchecked_space_by_id(address.space()) };
 
                 Self::call_indirect(target, space)
             }
@@ -2455,7 +2458,7 @@ impl StmtT<Location, BitVec, Var> {
             }
             Opcode::Return => {
                 let target = ExprT::from_space(inputs.next().unwrap(), manager);
-                let space = manager.unchecked_space_by_id(address.space());
+                let space = unsafe { manager.unchecked_space_by_id(address.space()) };
 
                 Self::return_(target, space)
             }
@@ -3083,7 +3086,7 @@ impl<'z> FromSpace<'z, Operand> for Location {
                 position: 0,
             },
             Operand::Variable { offset, space, .. } => Location {
-                address: AddressValue::new(manager.unchecked_space_by_id(space), offset),
+                address: AddressValue::new(unsafe { manager.unchecked_space_by_id(space) }, offset),
                 position: 0,
             },
         }
@@ -3113,7 +3116,7 @@ impl StmtT<Location, BitVec, Var> {
                 source,
                 space,
             } => {
-                let space = manager.unchecked_space_by_id(space);
+                let space = unsafe { manager.unchecked_space_by_id(space) };
                 let size = destination.size() * 8;
                 let src = if space.word_size() > 1 {
                     let s = ExprT::from_space(source, manager);
@@ -3136,7 +3139,7 @@ impl StmtT<Location, BitVec, Var> {
                 source,
                 space,
             } => {
-                let space = manager.unchecked_space_by_id(space);
+                let space = unsafe { manager.unchecked_space_by_id(space) };
                 let size = source.size() * 8;
 
                 let dest = if space.word_size() > 1 {
@@ -3168,7 +3171,7 @@ impl StmtT<Location, BitVec, Var> {
                 Self::branch_conditional(ExprT::from_space(condition, manager), target)
             }
             PCodeOp::IBranch { destination } => {
-                let space = manager.unchecked_space_by_id(address.space());
+                let space = unsafe { manager.unchecked_space_by_id(address.space()) };
 
                 Self::branch_indirect(ExprT::from_space(destination, manager), space)
             }
@@ -3179,7 +3182,7 @@ impl StmtT<Location, BitVec, Var> {
                 Self::call(target)
             }
             PCodeOp::ICall { destination } => {
-                let space = manager.unchecked_space_by_id(address.space());
+                let space = unsafe { manager.unchecked_space_by_id(address.space()) };
 
                 Self::call_indirect(ExprT::from_space(destination, manager), space)
             }
@@ -3207,7 +3210,7 @@ impl StmtT<Location, BitVec, Var> {
                 }
             }
             PCodeOp::Return { destination } => {
-                let space = manager.unchecked_space_by_id(address.space());
+                let space = unsafe { manager.unchecked_space_by_id(address.space()) };
 
                 Self::return_(ExprT::from_space(destination, manager), space)
             }
@@ -3771,14 +3774,8 @@ pub struct ECodeFormatter<'ecode, 'trans> {
 impl<'v, 't> TranslatorDisplay<'v, 't> for ECode {
     type Target = ECodeFormatter<'v, 't>;
 
-    fn display_full(
-        &'v self,
-        fmt: Cow<'t, TranslatorFormatter<'t>>,
-    ) -> Self::Target {
-        ECodeFormatter {
-            ecode: self,
-            fmt,
-        }
+    fn display_full(&'v self, fmt: Cow<'t, TranslatorFormatter<'t>>) -> Self::Target {
+        ECodeFormatter { ecode: self, fmt }
     }
 }
 

@@ -1,13 +1,12 @@
-use std::sync::Arc;
-use iset::IntervalMap;
 use ahash::AHashMap as Map;
+use iset::IntervalMap;
+use std::sync::Arc;
 use unsafe_unwrap::UnsafeUnwrap;
 use ustr::Ustr;
 
 use crate::space::AddressSpace;
 
-#[derive(Debug, Clone)]
-#[derive(serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct RegisterNames {
     exact: Map<(u64, usize), Ustr>,
     reversed: Map<Ustr, (u64, usize)>,
@@ -33,33 +32,40 @@ impl RegisterNames {
 
     pub fn get(&self, offset: u64, size: usize) -> Option<&Ustr> {
         if let Some(exact) = self.exact.get(&(offset, size)) {
-            return Some(exact)
+            return Some(exact);
         }
 
         let range = offset..offset + size as u64;
-        self.overlaps.iter(range.clone())
+        self.overlaps
+            .iter(range.clone())
             .into_iter()
-            .find_map(|(r, v)| if r.start <= range.start && r.end >= range.end {
-                Some(v)
-            } else {
-                None
+            .find_map(|(r, v)| {
+                if r.start <= range.start && r.end >= range.end {
+                    Some(v)
+                } else {
+                    None
+                }
             })
     }
 
-    pub fn unchecked_get(&self, offset: u64, size: usize) -> &Ustr {
-        unsafe { self.get(offset, size).unsafe_unwrap() }
+    pub unsafe fn unchecked_get(&self, offset: u64, size: usize) -> &Ustr {
+        self.get(offset, size).unsafe_unwrap()
     }
 
     pub fn get_by_name<N>(&self, name: N) -> Option<(&Ustr, u64, usize)>
-    where N: AsRef<str> {
-        self.reversed.get_key_value(&name.as_ref().into()).map(|(k, vv)| (k, vv.0, vv.1))
+    where
+        N: AsRef<str>,
+    {
+        self.reversed
+            .get_key_value(&name.as_ref().into())
+            .map(|(k, vv)| (k, vv.0, vv.1))
     }
 
     pub fn register_space(&self) -> &Arc<AddressSpace> {
         &self.space
     }
 
-    pub fn iter(&self) -> impl ExactSizeIterator<Item=(&(u64, usize), &Ustr)> {
+    pub fn iter(&self) -> impl ExactSizeIterator<Item = (&(u64, usize), &Ustr)> {
         self.exact.iter()
     }
 }
