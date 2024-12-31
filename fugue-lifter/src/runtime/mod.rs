@@ -2,6 +2,7 @@ pub mod constructor;
 pub mod context;
 pub mod input;
 pub mod partmap;
+pub mod pattern;
 pub mod pcode;
 pub mod varnode;
 

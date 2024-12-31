@@ -1,9 +1,30 @@
 use std::fmt::Debug;
 
 use crate::runtime::input::FixedHandle;
+use crate::runtime::pattern::PatternOp;
 use crate::runtime::pcode::LiftingContextState;
 
 pub type ContextActionSet = fn(&mut LiftingContextState<'_>) -> Option<()>;
+
+pub struct ContextPreAction {
+    pattern: PatternOp,
+    num: usize,
+    mask: u32,
+    shift: u32,
+}
+
+impl ContextPreAction {
+    #[inline(always)]
+    pub fn apply(
+        &self,
+        input: &mut LiftingContextState<'_>,
+        ctor_resolver: ConstructorResolver,
+    ) -> Option<()> {
+        let value = (self.pattern.resolve(input, ctor_resolver)? as u32) << self.shift;
+        input.input().set_context_word(self.num, value, self.mask);
+        Some(())
+    }
+}
 
 pub enum OperandResolver {
     None,
@@ -21,7 +42,9 @@ pub struct Operand {
     pub minimum_length: usize,
 }
 
+pub type ConstructorResolver = fn(&mut LiftingContextState) -> Option<&'static Constructor>;
 pub type ConstructorResult = fn(&mut LiftingContextState<'_>) -> FixedHandle;
+
 pub type PCodeBuildAction = fn(&mut LiftingContextState<'_>) -> Option<()>;
 
 pub struct Constructor {

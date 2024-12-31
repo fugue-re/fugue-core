@@ -566,11 +566,11 @@ impl<'a> LifterGenerator<'a> {
             }
             PatternExpression::Not(val) => {
                 let val = self.generate_pattern_resolver(val);
-                quote! { -(#val) }
+                quote! { !(#val) }
             }
             PatternExpression::Minus(val) => {
                 let val = self.generate_pattern_resolver(val);
-                quote! { !(#val) }
+                quote! { -(#val) }
             }
         }
     }
@@ -1610,7 +1610,7 @@ impl<'a> LifterGenerator<'a> {
         })
     }
 
-    fn ctor_vname(id: usize, scope: usize, cid: usize) -> Ident {
+    pub(crate) fn ctor_vname(id: usize, scope: usize, cid: usize) -> Ident {
         format_ident!("__SYM{id}_IN{scope}_CTOR{cid}")
     }
 

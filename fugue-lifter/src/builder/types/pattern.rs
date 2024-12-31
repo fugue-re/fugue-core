@@ -1,0 +1,239 @@
+use fugue_ir::disassembly::{PatternExpression, Symbol};
+use fugue_ir::Translator;
+
+use proc_macro2::TokenStream;
+use quote::{quote, ToTokens};
+
+use crate::LifterGenerator;
+
+pub struct PatternOpAdaptor<'a> {
+    translator: &'a Translator,
+    expression: &'a PatternExpression,
+}
+
+impl<'a> PatternOpAdaptor<'a> {
+    pub fn new(translator: &'a Translator, expression: &'a PatternExpression) -> Self {
+        Self {
+            translator,
+            expression,
+        }
+    }
+
+    pub fn wrap(&self, expression: &'a PatternExpression) -> Self {
+        Self {
+            translator: self.translator,
+            expression,
+        }
+    }
+}
+
+impl<'a> ToTokens for PatternOpAdaptor<'a> {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
+        use PatternExpression as E;
+
+        let value = match self.expression {
+            E::StartInstruction => {
+                quote! {
+                    fugue_lifter::runtime::pattern::PatternOp::StartInstruction
+                }
+            }
+            E::EndInstruction => {
+                quote! {
+                    fugue_lifter::runtime::pattern::PatternOp::EndInstruction
+                }
+            }
+            E::Next2Instruction => {
+                quote! {
+                    fugue_lifter::runtime::pattern::PatternOp::Next2Instruction
+                }
+            }
+            E::Constant { value } => {
+                quote! {
+                    fugue_lifter::runtime::pattern::PatternOp::Constant { value: #value }
+                }
+            }
+            E::And(lhs, rhs) => {
+                let lhs = self.wrap(lhs);
+                let rhs = self.wrap(rhs);
+                quote! {
+                    fugue_lifter::runtime::pattern::PatternOp::And(&#lhs, &#rhs)
+                }
+            }
+            E::Or(lhs, rhs) => {
+                let lhs = self.wrap(lhs);
+                let rhs = self.wrap(rhs);
+                quote! {
+                    fugue_lifter::runtime::pattern::PatternOp::Or(&#lhs, &#rhs)
+                }
+            }
+            E::Xor(lhs, rhs) => {
+                let lhs = self.wrap(lhs);
+                let rhs = self.wrap(rhs);
+                quote! {
+                    fugue_lifter::runtime::pattern::PatternOp::Xor(&#lhs, &#rhs)
+                }
+            }
+            E::Plus(lhs, rhs) => {
+                let lhs = self.wrap(lhs);
+                let rhs = self.wrap(rhs);
+                quote! {
+                    fugue_lifter::runtime::pattern::PatternOp::Plus(&#lhs, &#rhs)
+                }
+            }
+            E::Sub(lhs, rhs) => {
+                let lhs = self.wrap(lhs);
+                let rhs = self.wrap(rhs);
+                quote! {
+                    fugue_lifter::runtime::pattern::PatternOp::Sub(&#lhs, &#rhs)
+                }
+            }
+            E::Mult(lhs, rhs) => {
+                let lhs = self.wrap(lhs);
+                let rhs = self.wrap(rhs);
+                quote! {
+                    fugue_lifter::runtime::pattern::PatternOp::Mult(&#lhs, &#rhs)
+                }
+            }
+            E::Div(lhs, rhs) => {
+                let lhs = self.wrap(lhs);
+                let rhs = self.wrap(rhs);
+                quote! {
+                    fugue_lifter::runtime::pattern::PatternOp::Div(&#lhs, &#rhs)
+                }
+            }
+            E::LeftShift(lhs, rhs) => {
+                let lhs = self.wrap(lhs);
+                let rhs = self.wrap(rhs);
+                quote! {
+                    fugue_lifter::runtime::pattern::PatternOp::LeftShift(&#lhs, &#rhs)
+                }
+            }
+            E::RightShift(lhs, rhs) => {
+                let lhs = self.wrap(lhs);
+                let rhs = self.wrap(rhs);
+                quote! {
+                    fugue_lifter::runtime::pattern::PatternOp::RightShift(&#lhs, &#rhs)
+                }
+            }
+            E::Minus(rhs) => {
+                let rhs = self.wrap(rhs);
+                quote! {
+                    fugue_lifter::runtime::pattern::PatternOp::Minus(&#rhs)
+                }
+            }
+            E::Not(rhs) => {
+                let rhs = self.wrap(rhs);
+                quote! {
+                    fugue_lifter::runtime::pattern::PatternOp::Not(&#rhs)
+                }
+            }
+            E::TokenField {
+                big_endian,
+                sign_bit,
+                bit_start,
+                bit_end,
+                byte_start,
+                byte_end,
+                shift,
+            } => {
+                quote! {
+                    fugue_lifter::runtime::pattern::PatternOp::TokenField {
+                        big_endian: #big_endian,
+                        sign_bit: #sign_bit,
+                        bit_start: #bit_start,
+                        bit_end: #bit_end,
+                        byte_start: #byte_start,
+                        byte_end: #byte_end,
+                        shift: #shift,
+                    }
+                }
+            }
+            E::ContextField {
+                sign_bit,
+                bit_start,
+                bit_end,
+                byte_start,
+                byte_end,
+                shift,
+            } => {
+                quote! {
+                    fugue_lifter::runtime::pattern::PatternOp::ContextField {
+                        sign_bit: #sign_bit,
+                        bit_start: #bit_start,
+                        bit_end: #bit_end,
+                        byte_start: #byte_start,
+                        byte_end: #byte_end,
+                        shift: #shift,
+                    }
+                }
+            }
+            E::Operand {
+                index,
+                table_id,
+                constructor_id,
+            } => {
+                let symbols = self.translator.symbol_table();
+                let table = symbols.unchecked_symbol(*table_id);
+                let Symbol::Subtable {
+                    constructors,
+                    scope,
+                    ..
+                } = table
+                else {
+                    unreachable!("this state should not be reachable");
+                };
+                let ctor = &constructors[*constructor_id];
+
+                let Symbol::Operand {
+                    def_expr,
+                    subsym_id,
+                    ..
+                } = symbols.unchecked_symbol(ctor.operand(*index))
+                else {
+                    unreachable!("this state should not be reachable");
+                };
+
+                let pexpr = if let Some(def_expr) = def_expr.as_ref() {
+                    def_expr
+                } else if let Some(subsym_id) = subsym_id.as_ref() {
+                    let sym = symbols.unchecked_symbol(*subsym_id);
+                    sym.pattern_value()
+                } else {
+                    quote! {
+                        fugue_lifter::runtime::pattern::PatternOp::Constant { value: 0i64 }
+                    }
+                    .to_tokens(tokens);
+                    return;
+                };
+
+                let index = *index;
+                let symbol = ctor.operand(index);
+                let operand = self.translator.symbol_table().unchecked_symbol(symbol);
+
+                let ctor_vname = LifterGenerator::ctor_vname(*table_id, *scope, *constructor_id);
+                let value = self.wrap(pexpr);
+
+                let rel_offset = operand.relative_offset() as u8;
+                let offset = if operand.offset_base().is_none() {
+                    quote! {
+                        fugue_lifter::runtime::pattern::OperandOffset::Relative(#rel_offset)
+                    }
+                } else {
+                    let index = index as u8;
+                    quote! {
+                        fugue_lifter::runtime::pattern::OperandOffset::Operand(#index)
+                    }
+                };
+
+                quote! {
+                    fugue_lifter::runtime::pattern::PatternOp::Operand {
+                        constructor: #ctor_vname,
+                        offset: #offset,
+                        value: &#value,
+                    }
+                }
+            }
+        };
+        value.to_tokens(tokens)
+    }
+}
