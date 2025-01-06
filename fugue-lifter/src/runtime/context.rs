@@ -4,8 +4,115 @@ use std::ops::{Deref, DerefMut};
 
 use itertools::Itertools;
 
+use crate::runtime::constructor::ConstructorResolver;
+use crate::runtime::input::{ContextCommit, FixedHandle};
 use crate::runtime::partmap::{BoundKind, PartMap};
+use crate::runtime::pattern::PatternExpression;
+use crate::runtime::pcode::LiftingContextState;
+use crate::runtime::symbol::Symbol;
 use crate::runtime::varnode::VarnodeData;
+use crate::runtime::wrap_offset;
+
+#[derive(Clone)]
+pub struct ContextPreAction {
+    pub num: usize,
+    pub shift: u32,
+    pub mask: u32,
+    pub value: PatternExpression,
+}
+
+impl ContextPreAction {
+    #[inline]
+    pub fn apply(
+        &self,
+        input: &mut LiftingContextState<'_>,
+        ctor_resolver: ConstructorResolver,
+    ) -> Option<()> {
+        let value = (self.value.resolve(input, ctor_resolver)? as u32) << self.shift;
+        input.input().set_context_word(self.num, value, self.mask);
+        Some(())
+    }
+}
+
+#[derive(Clone)]
+pub enum ContextPostActionHandle {
+    Operand(usize),
+    Symbol(&'static Symbol),
+}
+
+#[derive(Clone)]
+pub struct ContextPostAction {
+    pub handle: ContextPostActionHandle,
+    pub num: usize,
+    pub mask: u32,
+    pub highest: u64,
+    pub word_size: u64,
+    pub flow: bool,
+}
+
+impl ContextPostAction {
+    #[inline]
+    pub fn extract(&self, input: &mut LiftingContextState<'_>) -> u32 {
+        input.input().context.context[self.num] & self.mask
+    }
+
+    #[inline]
+    pub fn apply(
+        &self,
+        input: &mut LiftingContextState<'_>,
+        ctor_resolver: ConstructorResolver,
+        commit: &ContextCommit,
+    ) -> Option<()> {
+        let FixedHandle {
+            space,
+            offset_offset: mut offset,
+            ..
+        } = match self.handle {
+            ContextPostActionHandle::Symbol(symbol) => {
+                symbol.resolve_handle(input, ctor_resolver)?
+            }
+            ContextPostActionHandle::Operand(index) => unsafe {
+                input
+                    .input()
+                    .unchecked_operand_via(commit.point as usize, index)
+                    .handle
+                    .unwrap_or_default()
+            },
+        };
+
+        if space == 0 {
+            offset *= self.word_size
+        }
+
+        if self.flow {
+            input.inputs.context.set_context_change_point(
+                offset,
+                self.num,
+                self.mask,
+                commit.value,
+            );
+        } else {
+            let noffset = wrap_offset(self.highest, offset.wrapping_add(1u64));
+            if noffset < offset {
+                input.inputs.context.set_context_change_point(
+                    offset,
+                    self.num,
+                    self.mask,
+                    commit.value,
+                );
+            } else {
+                input.inputs.context.set_context_region(
+                    offset,
+                    Some(noffset),
+                    self.num,
+                    self.mask,
+                    commit.value,
+                );
+            }
+        }
+        Some(())
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct ContextBitRange {
@@ -347,15 +454,15 @@ impl ContextDatabase {
 
     pub fn set_context_change_point(
         &mut self,
-        current_address: u64,
-        commit_address: u64,
+        // current_address: u64,
+        address: u64,
         num: usize,
         mask: u32,
         value: u32,
     ) {
-        self.database.split(current_address);
+        // self.database.split(current_address);
 
-        get_region_to_change_point(&mut self.database, commit_address, num, mask, |change| {
+        get_region_to_change_point(&mut self.database, address, num, mask, |change| {
             let val = &mut change[num];
             *val &= !mask;
             *val |= value;

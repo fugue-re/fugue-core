@@ -1,0 +1,182 @@
+use crate::runtime::constructor::ConstructorResolver;
+use crate::runtime::input::FixedHandle;
+use crate::runtime::pattern::PatternExpression;
+use crate::runtime::pcode::LiftingContextState;
+
+#[derive(Clone)]
+pub enum Symbol {
+    Epsilon,
+    Value {
+        pattern_value: PatternExpression,
+    },
+    ValueMap {
+        pattern_value: PatternExpression,
+        value_table: &'static [Option<i64>],
+    },
+    ValueMapFilled {
+        pattern_value: PatternExpression,
+        value_table: &'static [i64],
+    },
+    Name {
+        pattern_value: PatternExpression,
+        // name_table: &'static [Option<&'static str>],
+    },
+    /*
+    NameFilled {
+        pattern_value: PatternExpression,
+        name_table: &'static [&'static str],
+    },
+    */
+    Varnode {
+        space: u8,
+        offset: u64,
+        size: u16,
+    },
+    VarnodeList {
+        pattern_value: PatternExpression,
+        varnode_table: &'static [Option<&'static Self>],
+    },
+    VarnodeListFilled {
+        pattern_value: PatternExpression,
+        varnode_table: &'static [&'static Self],
+    },
+    Operand {
+        handle_index: usize,
+        /*
+        offset: usize,
+        base: Option<usize>,
+        min_length: usize,
+        subsym: Option<&'static Self>,
+        local_expr: PatternExpression,
+        def_expr: Option<PatternExpression>,
+        */
+    },
+    Start {
+        space: u8,
+        size: u16,
+        // pattern_value: PatternExpression,
+    },
+    End {
+        space: u8,
+        size: u16,
+        // pattern_value: PatternExpression,
+    },
+    Next2 {
+        space: u8,
+        size: u16,
+        // pattern_value: PatternExpression,
+    },
+}
+
+impl Symbol {
+    // NOTE: this will be handled via core code generation
+    /*
+    pub fn resolve(
+        &self,
+        input: &mut LiftingContextState<'_>,
+        ctor_resolver: ConstructorResolver,
+    ) -> Option<&'static Constructor> {
+        todo!()
+    }
+    */
+
+    pub fn resolve_handle(
+        &self,
+        input: &mut LiftingContextState<'_>,
+        ctor_resolver: ConstructorResolver,
+    ) -> Option<FixedHandle> {
+        Some(match self {
+            Symbol::Epsilon => FixedHandle {
+                space: 0,
+                ..Default::default()
+            },
+            Symbol::Name { pattern_value, .. } | Symbol::Value { pattern_value } => {
+                let value = pattern_value.resolve(input, ctor_resolver)?;
+                FixedHandle {
+                    space: 0,
+                    offset_offset: value as u64,
+                    ..Default::default()
+                }
+            }
+            Symbol::Varnode {
+                space,
+                offset,
+                size,
+            } => FixedHandle {
+                space: *space,
+                size: *size,
+                offset_offset: *offset,
+                ..Default::default()
+            },
+            Symbol::Operand { handle_index } => unsafe {
+                input.input().unchecked_operand_handle(*handle_index)
+            },
+            Symbol::Start { space, size } => FixedHandle {
+                space: *space,
+                size: *size,
+                offset_offset: input.address(),
+                ..Default::default()
+            },
+            Symbol::End { space, size } => FixedHandle {
+                space: *space,
+                size: *size,
+                offset_offset: input.next_address(),
+                ..Default::default()
+            },
+            Symbol::Next2 { space, size } => FixedHandle {
+                space: *space,
+                size: *size,
+                offset_offset: if let Some(next2_address) = input.next2_address() {
+                    next2_address
+                } else {
+                    let mut ninput = input.next_input()?;
+                    ctor_resolver(&mut ninput)?;
+                    ninput.next_address()
+                },
+                ..Default::default()
+            },
+            Symbol::VarnodeList {
+                pattern_value,
+                varnode_table,
+            } => {
+                let index = pattern_value.resolve(input, ctor_resolver)? as usize;
+                let symbol = varnode_table.get(index)?.as_ref()?;
+                symbol.resolve_handle(input, ctor_resolver)?
+            }
+            Symbol::VarnodeListFilled {
+                pattern_value,
+                varnode_table,
+            } => {
+                let index = pattern_value.resolve(input, ctor_resolver)? as usize;
+                let symbol = varnode_table.get(index)?;
+                symbol.resolve_handle(input, ctor_resolver)?
+            }
+            Symbol::ValueMap {
+                pattern_value,
+                value_table,
+            } => {
+                let index = pattern_value.resolve(input, ctor_resolver)? as usize;
+                let value = *value_table.get(index)?.as_ref()? as u64;
+
+                FixedHandle {
+                    space: 0,
+                    offset_offset: value,
+                    ..Default::default()
+                }
+            }
+            Symbol::ValueMapFilled {
+                pattern_value,
+                value_table,
+            } => {
+                let index = pattern_value.resolve(input, ctor_resolver)? as usize;
+                let value = *value_table.get(index)? as u64;
+
+                FixedHandle {
+                    space: 0,
+                    offset_offset: value,
+                    ..Default::default()
+                }
+            }
+        })
+    }
+}

@@ -10,7 +10,7 @@ pub enum OperandOffset {
 }
 
 #[derive(Clone)]
-pub enum PatternOp {
+pub enum PatternExpression {
     TokenField {
         big_endian: bool,
         sign_bit: bool,
@@ -52,7 +52,7 @@ pub enum PatternOp {
     Not(&'static Self),
 }
 
-impl PatternOp {
+impl PatternExpression {
     #[inline]
     pub fn resolve(
         &self,

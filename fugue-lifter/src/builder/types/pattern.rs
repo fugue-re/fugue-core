@@ -6,12 +6,12 @@ use quote::{quote, ToTokens};
 
 use crate::LifterGenerator;
 
-pub struct PatternOpAdaptor<'a> {
+pub struct PatternExpressionAdaptor<'a> {
     translator: &'a Translator,
     expression: &'a PatternExpression,
 }
 
-impl<'a> PatternOpAdaptor<'a> {
+impl<'a> PatternExpressionAdaptor<'a> {
     pub fn new(translator: &'a Translator, expression: &'a PatternExpression) -> Self {
         Self {
             translator,
@@ -27,104 +27,104 @@ impl<'a> PatternOpAdaptor<'a> {
     }
 }
 
-impl<'a> ToTokens for PatternOpAdaptor<'a> {
+impl<'a> ToTokens for PatternExpressionAdaptor<'a> {
     fn to_tokens(&self, tokens: &mut TokenStream) {
         use PatternExpression as E;
 
         let value = match self.expression {
             E::StartInstruction => {
                 quote! {
-                    fugue_lifter::runtime::pattern::PatternOp::StartInstruction
+                    fugue_lifter::runtime::pattern::PatternExpression::StartInstruction
                 }
             }
             E::EndInstruction => {
                 quote! {
-                    fugue_lifter::runtime::pattern::PatternOp::EndInstruction
+                    fugue_lifter::runtime::pattern::PatternExpression::EndInstruction
                 }
             }
             E::Next2Instruction => {
                 quote! {
-                    fugue_lifter::runtime::pattern::PatternOp::Next2Instruction
+                    fugue_lifter::runtime::pattern::PatternExpression::Next2Instruction
                 }
             }
             E::Constant { value } => {
                 quote! {
-                    fugue_lifter::runtime::pattern::PatternOp::Constant { value: #value }
+                    fugue_lifter::runtime::pattern::PatternExpression::Constant { value: #value }
                 }
             }
             E::And(lhs, rhs) => {
                 let lhs = self.wrap(lhs);
                 let rhs = self.wrap(rhs);
                 quote! {
-                    fugue_lifter::runtime::pattern::PatternOp::And(&#lhs, &#rhs)
+                    fugue_lifter::runtime::pattern::PatternExpression::And(&#lhs, &#rhs)
                 }
             }
             E::Or(lhs, rhs) => {
                 let lhs = self.wrap(lhs);
                 let rhs = self.wrap(rhs);
                 quote! {
-                    fugue_lifter::runtime::pattern::PatternOp::Or(&#lhs, &#rhs)
+                    fugue_lifter::runtime::pattern::PatternExpression::Or(&#lhs, &#rhs)
                 }
             }
             E::Xor(lhs, rhs) => {
                 let lhs = self.wrap(lhs);
                 let rhs = self.wrap(rhs);
                 quote! {
-                    fugue_lifter::runtime::pattern::PatternOp::Xor(&#lhs, &#rhs)
+                    fugue_lifter::runtime::pattern::PatternExpression::Xor(&#lhs, &#rhs)
                 }
             }
             E::Plus(lhs, rhs) => {
                 let lhs = self.wrap(lhs);
                 let rhs = self.wrap(rhs);
                 quote! {
-                    fugue_lifter::runtime::pattern::PatternOp::Plus(&#lhs, &#rhs)
+                    fugue_lifter::runtime::pattern::PatternExpression::Plus(&#lhs, &#rhs)
                 }
             }
             E::Sub(lhs, rhs) => {
                 let lhs = self.wrap(lhs);
                 let rhs = self.wrap(rhs);
                 quote! {
-                    fugue_lifter::runtime::pattern::PatternOp::Sub(&#lhs, &#rhs)
+                    fugue_lifter::runtime::pattern::PatternExpression::Sub(&#lhs, &#rhs)
                 }
             }
             E::Mult(lhs, rhs) => {
                 let lhs = self.wrap(lhs);
                 let rhs = self.wrap(rhs);
                 quote! {
-                    fugue_lifter::runtime::pattern::PatternOp::Mult(&#lhs, &#rhs)
+                    fugue_lifter::runtime::pattern::PatternExpression::Mult(&#lhs, &#rhs)
                 }
             }
             E::Div(lhs, rhs) => {
                 let lhs = self.wrap(lhs);
                 let rhs = self.wrap(rhs);
                 quote! {
-                    fugue_lifter::runtime::pattern::PatternOp::Div(&#lhs, &#rhs)
+                    fugue_lifter::runtime::pattern::PatternExpression::Div(&#lhs, &#rhs)
                 }
             }
             E::LeftShift(lhs, rhs) => {
                 let lhs = self.wrap(lhs);
                 let rhs = self.wrap(rhs);
                 quote! {
-                    fugue_lifter::runtime::pattern::PatternOp::LeftShift(&#lhs, &#rhs)
+                    fugue_lifter::runtime::pattern::PatternExpression::LeftShift(&#lhs, &#rhs)
                 }
             }
             E::RightShift(lhs, rhs) => {
                 let lhs = self.wrap(lhs);
                 let rhs = self.wrap(rhs);
                 quote! {
-                    fugue_lifter::runtime::pattern::PatternOp::RightShift(&#lhs, &#rhs)
+                    fugue_lifter::runtime::pattern::PatternExpression::RightShift(&#lhs, &#rhs)
                 }
             }
             E::Minus(rhs) => {
                 let rhs = self.wrap(rhs);
                 quote! {
-                    fugue_lifter::runtime::pattern::PatternOp::Minus(&#rhs)
+                    fugue_lifter::runtime::pattern::PatternExpression::Minus(&#rhs)
                 }
             }
             E::Not(rhs) => {
                 let rhs = self.wrap(rhs);
                 quote! {
-                    fugue_lifter::runtime::pattern::PatternOp::Not(&#rhs)
+                    fugue_lifter::runtime::pattern::PatternExpression::Not(&#rhs)
                 }
             }
             E::TokenField {
@@ -137,7 +137,7 @@ impl<'a> ToTokens for PatternOpAdaptor<'a> {
                 shift,
             } => {
                 quote! {
-                    fugue_lifter::runtime::pattern::PatternOp::TokenField {
+                    fugue_lifter::runtime::pattern::PatternExpression::TokenField {
                         big_endian: #big_endian,
                         sign_bit: #sign_bit,
                         bit_start: #bit_start,
@@ -157,7 +157,7 @@ impl<'a> ToTokens for PatternOpAdaptor<'a> {
                 shift,
             } => {
                 quote! {
-                    fugue_lifter::runtime::pattern::PatternOp::ContextField {
+                    fugue_lifter::runtime::pattern::PatternExpression::ContextField {
                         sign_bit: #sign_bit,
                         bit_start: #bit_start,
                         bit_end: #bit_end,
@@ -200,7 +200,7 @@ impl<'a> ToTokens for PatternOpAdaptor<'a> {
                     sym.pattern_value()
                 } else {
                     quote! {
-                        fugue_lifter::runtime::pattern::PatternOp::Constant { value: 0i64 }
+                        fugue_lifter::runtime::pattern::PatternExpression::Constant { value: 0i64 }
                     }
                     .to_tokens(tokens);
                     return;
@@ -226,8 +226,8 @@ impl<'a> ToTokens for PatternOpAdaptor<'a> {
                 };
 
                 quote! {
-                    fugue_lifter::runtime::pattern::PatternOp::Operand {
-                        constructor: #ctor_vname,
+                    fugue_lifter::runtime::pattern::PatternExpression::Operand {
+                        constructor: &#ctor_vname,
                         offset: #offset,
                         value: &#value,
                     }

@@ -2,10 +2,10 @@ use std::mem;
 
 use arrayvec::ArrayVec;
 
+use crate::runtime::calculate_mask;
+use crate::runtime::constructor::ConstructorResolver;
 use crate::runtime::context::ContextDatabase;
-use crate::runtime::input::{ParserInput, ParserInputs, INVALID_HANDLE};
-
-use super::{calculate_mask, FixedHandle};
+use crate::runtime::input::{FixedHandle, ParserInput, ParserInputs, INVALID_HANDLE};
 
 pub const MAX_LABELS: usize = 192;
 pub const MAX_INPUTS_SPILL: usize = 8;
@@ -121,9 +121,9 @@ impl<'a> LiftingContextState<'a> {
     }
 
     #[inline]
-    pub fn apply_commits(&mut self) {
+    pub fn apply_commits(&mut self, ctor_resolver: ConstructorResolver) {
         for commit in mem::take(&mut self.inputs.input.context.commits) {
-            (commit.applier)(self, &commit);
+            commit.action.apply(self, ctor_resolver, &commit);
         }
     }
 

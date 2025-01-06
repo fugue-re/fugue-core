@@ -4,8 +4,7 @@ use std::ops::{Deref, DerefMut};
 use arrayvec::ArrayVec;
 
 use crate::runtime::constructor::Constructor;
-use crate::runtime::context::ContextDatabase;
-use crate::runtime::pcode::LiftingContextState;
+use crate::runtime::context::{ContextDatabase, ContextPostAction};
 
 const MAX_CTOR_STATES: usize = 256; // 128;
 const MAX_CTXT_CHUNKS: usize = 2;
@@ -62,13 +61,14 @@ impl Default for ConstructorNode {
     }
 }
 
-pub type ContextCommitApplier = fn(&mut LiftingContextState, &ContextCommit) -> Option<()>;
+// pub type ContextCommitApplier = fn(&mut LiftingContextState, &ContextCommit) -> Option<()>;
+// actions = &'static [ContextPostAction]
 
 #[derive(Clone)]
 pub struct ContextCommit {
-    pub applier: ContextCommitApplier,
+    pub action: ContextPostAction,
     pub point: u8,
-    pub values: ArrayVec<u32, MAX_CTXT_CHUNKS>,
+    pub value: u32,
 }
 
 #[derive(Clone)]
@@ -637,6 +637,40 @@ impl ParserInput {
                 .as_ref()
                 .unwrap_unchecked()
         }
+    }
+
+    #[inline(always)]
+    pub unsafe fn unchecked_operand(&self, index: usize) -> &ConstructorNode {
+        let opnds = self
+            .context
+            .constructors
+            .get_unchecked(self.point as usize)
+            .operands as usize;
+        self.context.constructors.get_unchecked(opnds + index)
+    }
+
+    #[inline(always)]
+    pub unsafe fn unchecked_operand_via(&self, point: usize, index: usize) -> &ConstructorNode {
+        let opnds = self
+            .context
+            .constructors
+            .get_unchecked(point)
+            .operands as usize;
+        self.context.constructors.get_unchecked(opnds + index)
+    }
+
+    #[inline(always)]
+    pub unsafe fn unchecked_operand_handle(&self, index: usize) -> FixedHandle {
+        let opnds = self
+            .context
+            .constructors
+            .get_unchecked(self.point as usize)
+            .operands as usize;
+        self.context
+            .constructors
+            .get_unchecked(opnds + index)
+            .handle
+            .unwrap_unchecked()
     }
 
     #[inline]

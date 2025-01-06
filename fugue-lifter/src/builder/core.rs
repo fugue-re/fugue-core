@@ -14,6 +14,8 @@ use proc_macro2::{Literal, Span, TokenStream};
 use quote::{format_ident, quote, ToTokens, TokenStreamExt};
 use syn::Ident;
 
+use crate::builder::types::pattern::PatternExpressionAdaptor;
+use crate::builder::types::symbol::SymbolAdaptor;
 use crate::runtime::pcode::Op;
 use crate::LifterGeneratorError;
 
@@ -54,6 +56,9 @@ impl<'a> LifterGenerator<'a> {
                     constructors,
                     decision_tree,
                 )?);
+            } else {
+                self.symbols
+                    .push(SymbolAdaptor::new(&self.translator, symbol).to_token_stream());
             }
         }
 
@@ -238,6 +243,11 @@ impl<'a> LifterGenerator<'a> {
     }
 
     pub fn generate_pattern_resolver(&self, pattern: &PatternExpression) -> TokenStream {
+        let expr = PatternExpressionAdaptor::new(self.translator, pattern);
+
+        quote! { (#expr).resolve(input, resolve_constructor)? }
+
+        /*
         match pattern {
             PatternExpression::Constant { value } => quote! { #value },
             PatternExpression::StartInstruction => quote! { (input.address() as i64) },
@@ -573,6 +583,7 @@ impl<'a> LifterGenerator<'a> {
                 quote! { -(#val) }
             }
         }
+        */
     }
 
     pub fn generate_constructor_operand_resolvers(
@@ -609,16 +620,19 @@ impl<'a> LifterGenerator<'a> {
                         //
                         let stname = format_ident!("SubTable{id}In{scope}");
                         let resolver = quote! { fugue_lifter::runtime::OperandResolver::Constructor(<#stname>::resolve) };
-                        let handle_resolver = quote! { None };
+                        let handle_resolver =
+                            quote! { fugue_lifter::runtime::OperandHandleResolver::None };
 
                         (resolver, handle_resolver)
                     }
                     Symbol::ValueMap {
+                        id,
                         table_is_filled,
-                        pattern_value,
-                        value_table,
+                        //pattern_value,
+                        //value_table,
                         ..
                     } => {
+                        /*
                         let resolver = if !*table_is_filled {
                             let bad_indices = value_table
                                 .iter()
@@ -665,15 +679,29 @@ impl<'a> LifterGenerator<'a> {
                         let handle_resolver = quote! {
                             Some(#ctor_opnd_handle_resolver)
                         };
+                        */
+
+                        let resolver = if *table_is_filled {
+                            quote! { fugue_lifter::runtime::OperandResolver::None }
+                        } else {
+                            let ident = format_ident!("__SYM{id}_FILTER");
+                            quote! { fugue_lifter::runtime::OperandResolver::Filter(&#ident) }
+                        };
+
+                        let ident = format_ident!("__SYM{id}");
+                        let handle_resolver =
+                            quote! { fugue_lifter::runtime::OperandHandleResolver::Symbol(&#ident) };
 
                         (resolver, handle_resolver)
                     }
                     Symbol::VarnodeList {
+                        id,
                         table_is_filled,
-                        pattern_value,
-                        varnode_table,
+                        //pattern_value,
+                        //varnode_table,
                         ..
                     } => {
+                        /*
                         let resolver = if !*table_is_filled {
                             let bad_indices = varnode_table
                                 .iter()
@@ -720,15 +748,29 @@ impl<'a> LifterGenerator<'a> {
                         let handle_resolver = quote! {
                             Some(#ctor_opnd_handle_resolver)
                         };
+                        */
+
+                        let resolver = if *table_is_filled {
+                            quote! { fugue_lifter::runtime::OperandResolver::None }
+                        } else {
+                            let ident = format_ident!("__SYM{id}_FILTER");
+                            quote! { fugue_lifter::runtime::OperandResolver::Filter(&#ident) }
+                        };
+
+                        let ident = format_ident!("__SYM{id}");
+                        let handle_resolver =
+                            quote! { fugue_lifter::runtime::OperandHandleResolver::Symbol(&#ident) };
 
                         (resolver, handle_resolver)
                     }
                     Symbol::Name {
+                        id,
                         table_is_filled,
-                        pattern_value,
-                        name_table,
+                        // pattern_value,
+                        // name_table,
                         ..
                     } => {
+                        /*
                         let resolver = if !*table_is_filled {
                             let bad_indices = name_table.iter().enumerate().filter_map(|(i, v)| {
                                 if v == "\t" {
@@ -778,10 +820,23 @@ impl<'a> LifterGenerator<'a> {
                         let handle_resolver = quote! {
                             Some(#ctor_opnd_handle_resolver)
                         };
+                        */
+
+                        let resolver = if *table_is_filled {
+                            quote! { fugue_lifter::runtime::OperandResolver::None }
+                        } else {
+                            let ident = format_ident!("__SYM{id}_FILTER");
+                            quote! { fugue_lifter::runtime::OperandResolver::Filter(&#ident) }
+                        };
+
+                        let ident = format_ident!("__SYM{id}");
+                        let handle_resolver =
+                            quote! { fugue_lifter::runtime::OperandHandleResolver::Symbol(&#ident) };
 
                         (resolver, handle_resolver)
                     }
-                    _ => {
+                    symbol => {
+                        /*
                         let ctor_opnd_handle_resolver =
                             format_ident!("operand_handle_resolver_{id}_{scope}_{cid}_{oid}");
 
@@ -799,14 +854,21 @@ impl<'a> LifterGenerator<'a> {
                         let handle_resolver = quote! {
                             Some(#ctor_opnd_handle_resolver)
                         };
+                        */
 
                         let resolver = quote! { fugue_lifter::runtime::OperandResolver::None };
+
+                        let id = symbol.id();
+                        let ident = format_ident!("__SYM{id}");
+                        let handle_resolver =
+                            quote! { fugue_lifter::runtime::OperandHandleResolver::Symbol(&#ident) };
 
                         (resolver, handle_resolver)
                     }
                 }
             } else {
                 let pexp = operand.defining_expression().unwrap();
+                /*
                 let value = self.generate_pattern_resolver(pexp);
 
                 let ctor_opnd_handle_resolver =
@@ -835,8 +897,13 @@ impl<'a> LifterGenerator<'a> {
                 let handle_resolver = quote! {
                     Some(#ctor_opnd_handle_resolver)
                 };
+                */
 
                 let resolver = quote! { fugue_lifter::runtime::OperandResolver::None };
+
+                let value = PatternExpressionAdaptor::new(&self.translator, pexp);
+                let handle_resolver =
+                    quote! { fugue_lifter::runtime::OperandHandleResolver::Expression(#value) };
 
                 (resolver, handle_resolver)
             };
@@ -899,7 +966,7 @@ impl<'a> LifterGenerator<'a> {
                             input.inputs.input.context.constructors[id as usize]
                                 .handle
                                 .as_ref()
-                                .map(|handle| (handle.offset_space, handle.offset_offset))
+                                .map(|handle| (handle.space, handle.offset_offset))
                                 .unwrap_or_default()
                         }
                     } else {
@@ -927,7 +994,6 @@ impl<'a> LifterGenerator<'a> {
                         quote! {
                             input.inputs.context
                                 .set_context_change_point(
-                                    input.inputs.input.context.address,
                                     offset,
                                     #number,
                                     #mask,
@@ -942,7 +1008,6 @@ impl<'a> LifterGenerator<'a> {
                             if noffset < offset {
                                 input.inputs.context
                                     .set_context_change_point(
-                                        input.inputs.input.context.address,
                                         offset,
                                         #number,
                                         #mask,
@@ -951,7 +1016,7 @@ impl<'a> LifterGenerator<'a> {
                             } else {
                                 input.inputs.context
                                     .set_context_region(
-                                        input.inputs.input.context.address,
+                                        offset,
                                         Some(noffset),
                                         #number,
                                         #mask,
@@ -1588,7 +1653,7 @@ impl<'a> LifterGenerator<'a> {
             let (lifting_helper, lifting_action) = self.generate_constructor_lifting_actions(id, scope, cid, ctor);
 
             quote! {
-                pub const #ctor_vname: &'static fugue_lifter::runtime::Constructor = &fugue_lifter::runtime::Constructor {
+                pub static #ctor_vname: fugue_lifter::runtime::Constructor = fugue_lifter::runtime::Constructor {
                     id: #ctor_id,
                     context_actions: #apply_context,
                     operands: &[#(#operands),*],
@@ -1695,7 +1760,7 @@ impl<'a> LifterGenerator<'a> {
 
                 quote! {
                     if #cond {
-                        return Some(#ctor);
+                        return Some(& #ctor);
                     }
                 }
             }
@@ -1706,7 +1771,7 @@ impl<'a> LifterGenerator<'a> {
 
                 quote! {
                     if #cond {
-                        return Some(#ctor);
+                        return Some(& #ctor);
                     }
                 }
             }
@@ -1722,7 +1787,7 @@ impl<'a> LifterGenerator<'a> {
 
                 quote! {
                     if #icond && #ccond {
-                        return Some(#ctor);
+                        return Some(& #ctor);
                     }
                 }
             }
@@ -2141,7 +2206,7 @@ impl<'a> ToTokens for LifterGenerator<'a> {
                 state: &mut fugue_lifter::runtime::LiftingContextState,
             ) -> Option<&'static fugue_lifter::runtime::Constructor> {
                 let ctor = SubTable0In0::resolve(state)?;
-                ctor.resolve_operands(state)?;
+                ctor.resolve_operands(state, resolve_constructor)?;
                 Some(ctor)
             }
 
@@ -2150,7 +2215,7 @@ impl<'a> ToTokens for LifterGenerator<'a> {
                 state: &mut fugue_lifter::runtime::LiftingContextState,
             ) -> Option<&'static fugue_lifter::runtime::Constructor> {
                 let ctor = resolve_constructor(state)?;
-                ctor.resolve_handles(state)?;
+                ctor.resolve_handles(state, resolve_constructor)?;
                 state.inputs.input.base_state();
                 state.apply_commits();
                 Some(ctor)
@@ -2169,7 +2234,7 @@ impl<'a> ToTokens for LifterGenerator<'a> {
                 let ctor = resolve_constructor(&mut state)?;
 
                 if apply_commits {
-                    ctor.resolve_handles(&mut state)?;
+                    ctor.resolve_handles(&mut state, resolve_constructor)?;
                     state.inputs.input.base_state();
                     state.apply_commits();
                 } else {

@@ -4,6 +4,7 @@ pub mod input;
 pub mod partmap;
 pub mod pattern;
 pub mod pcode;
+pub mod symbol;
 pub mod varnode;
 
 pub use constructor::{Constructor, Operand, OperandHandleResolver, OperandResolver};
