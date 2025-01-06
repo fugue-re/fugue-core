@@ -489,7 +489,7 @@ impl Translator {
         let delay_slots = walker.delay_slot();
         let length = walker.length();
 
-        let ctor = walker.unchecked_constructor();
+        let ctor = unsafe { walker.unchecked_constructor() };
 
         f(
             InstructionFormatter::new(walker, &self.symbol_table, ctor),
@@ -624,7 +624,7 @@ impl Translator {
         }
 
         if let Some(ctor) = walker.constructor()? {
-            let tmpl = ctor.unchecked_template();
+            let tmpl = unsafe { ctor.unchecked_template() };
             let mut builder =
                 IRBuilder::new(builder, ParserWalker::new(context), &mut delay_contexts);
             builder.build(tmpl, None, &self.symbol_table)?;
@@ -712,7 +712,7 @@ impl Translator {
         }
 
         if let Some(ctor) = walker.constructor()? {
-            let tmpl = ctor.unchecked_template();
+            let tmpl = unsafe { ctor.unchecked_template() };
             let mut base = arena.builder(self);
             let mut builder =
                 IRBuilder::new(&mut base, ParserWalker::new(context), &mut delay_contexts);
@@ -800,7 +800,7 @@ impl Translator {
         }
 
         if let Some(ctor) = walker.constructor()? {
-            let tmpl = ctor.unchecked_template();
+            let tmpl = unsafe { ctor.unchecked_template() };
             let mut base = arena.builder(self);
             let mut builder =
                 IRBuilder::new(&mut base, ParserWalker::new(context), &mut delay_contexts);
@@ -821,7 +821,7 @@ impl Translator {
         walker.base_state();
 
         while walker.is_state() {
-            let ct = walker.unchecked_constructor();
+            let ct = unsafe { walker.unchecked_constructor() };
 
             let nops = ct.operand_count();
             let mut op = walker.operand();
@@ -885,7 +885,7 @@ impl Translator {
         ctor.apply_context(walker, symbol_table)?;
 
         while walker.is_state() {
-            let ct = walker.unchecked_constructor();
+            let ct = unsafe { walker.unchecked_constructor() };
             let nops = ct.operand_count();
             let mut op = walker.operand();
 
@@ -893,7 +893,7 @@ impl Translator {
                 let operand = unsafe { symbol_table.unchecked_symbol(ct.operand(op)) };
                 //.ok_or_else(|| DisassemblyError::InvalidSymbol)?;
 
-                let offset = walker.offset(operand.offset_base()) + operand.relative_offset();
+                let offset = unsafe { walker.offset(operand.offset_base()) } + operand.relative_offset();
 
                 walker.unchecked_allocate_operand(op);
                 walker.set_offset(offset)?;

@@ -145,8 +145,7 @@ impl Constructor {
             {
                 Some(Symbol::Subtable { .. }) => {
                     walker.unchecked_push_operand(index);
-                    walker
-                        .unchecked_constructor()
+                    unsafe { walker.unchecked_constructor() }
                         .operands_into(arena, operands, walker, symbols);
                     walker.unchecked_pop_operand();
                     return;
@@ -194,8 +193,7 @@ impl Constructor {
             {
                 Some(Symbol::Subtable { .. }) => {
                     walker.unchecked_push_operand(index);
-                    walker
-                        .unchecked_constructor()
+                    unsafe { walker.unchecked_constructor() }
                         .mnemonic_tokens(tokens, walker, symbols);
                     walker.unchecked_pop_operand();
                     return;
@@ -226,9 +224,7 @@ impl Constructor {
             {
                 Some(Symbol::Subtable { .. }) => {
                     walker.unchecked_push_operand(index);
-                    walker
-                        .unchecked_constructor()
-                        .body_tokens(tokens, walker, symbols);
+                    unsafe { walker.unchecked_constructor() }.body_tokens(tokens, walker, symbols);
                     walker.unchecked_pop_operand();
                     return;
                 }
@@ -298,8 +294,7 @@ impl Constructor {
             {
                 Some(Symbol::Subtable { .. }) => {
                     walker.unchecked_push_operand(index);
-                    walker
-                        .unchecked_constructor()
+                    unsafe { walker.unchecked_constructor() }
                         .format_mnemonic(fmt, walker, symbols)?;
                     walker.unchecked_pop_operand();
                     return Ok(());
@@ -331,9 +326,7 @@ impl Constructor {
             {
                 Some(Symbol::Subtable { .. }) => {
                     walker.unchecked_push_operand(index);
-                    walker
-                        .unchecked_constructor()
-                        .format_body(fmt, walker, symbols)?;
+                    unsafe { walker.unchecked_constructor() }.format_body(fmt, walker, symbols)?;
                     walker.unchecked_pop_operand();
                     return Ok(());
                 }
@@ -366,7 +359,7 @@ impl Constructor {
         self.template.as_ref()
     }
 
-    pub fn unchecked_template(&self) -> &ConstructTpl {
+    pub unsafe fn unchecked_template(&self) -> &ConstructTpl {
         if let Some(ref templ) = self.template {
             templ
         } else {
@@ -378,8 +371,8 @@ impl Constructor {
         self.named_template.get(index).and_then(|v| v.as_ref())
     }
 
-    pub fn unchecked_named_template(&self, index: usize) -> &ConstructTpl {
-        if let Some(ref named) = unsafe { self.named_template.get_unchecked(index) } {
+    pub unsafe fn unchecked_named_template(&self, index: usize) -> &ConstructTpl {
+        if let Some(ref named) = self.named_template.get_unchecked(index) {
             named
         } else {
             unreachable!()
@@ -529,7 +522,7 @@ impl DecisionNode {
             let val = if self.context_decision {
                 walker.context_bits(self.start_bit, self.size)
             } else {
-                walker.unchecked_instruction_bits(self.start_bit, self.size)
+                unsafe { walker.unchecked_instruction_bits(self.start_bit, self.size) }
             };
 
             self.children[val as usize].resolve(walker, ctors)
@@ -748,7 +741,8 @@ impl PatternBlock {
             _ => {
                 let mut offset = self.offset;
                 for i in 0..self.values.len() {
-                    let data = walker.unchecked_instruction_bytes(offset, size_of::<u32>());
+                    let data =
+                        unsafe { walker.unchecked_instruction_bytes(offset, size_of::<u32>()) };
                     if self.masks[i] & data != self.values[i] {
                         return false;
                     }

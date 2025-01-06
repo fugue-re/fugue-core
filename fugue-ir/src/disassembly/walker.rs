@@ -174,7 +174,6 @@ pub struct ParserContext<'b, 'z> {
     address: AddressValue,
     next_address: Option<AddressValue>,
     // next2_address: Option<AddressValue>,
-
     delay_slot: usize,
 
     alloc: usize,
@@ -297,13 +296,11 @@ impl<'b, 'z> ParserContext<'b, 'z> {
         self.state[point].handle.as_ref()
     }
 
-    pub fn unchecked_handle(&self, point: usize) -> &FixedHandle<'b> {
-        unsafe {
-            if let Some(ref handle) = self.state.get_unchecked(point).handle {
-                handle
-            } else {
-                unreachable!()
-            }
+    pub unsafe fn unchecked_handle(&self, point: usize) -> &FixedHandle<'b> {
+        if let Some(ref handle) = self.state.get_unchecked(point).handle {
+            handle
+        } else {
+            unreachable!()
         }
     }
 
@@ -463,8 +460,8 @@ impl<'b, 'z> ParserContext<'b, 'z> {
         for commit in commits {
             let symbol = commit.triple;
             let mut address = if let Symbol::Operand { handle_index, .. } = symbol {
-                let handle = nwalker.unchecked_handle_ref_via(commit.point, *handle_index); //?
-                                                                                            //.ok_or_else(|| Error::InvalidHandle)?;
+                let handle =
+                    unsafe { nwalker.unchecked_handle_ref_via(commit.point, *handle_index) };
                 AddressValue::new(handle.space, handle.offset_offset)
             } else {
                 let handle = symbol.fixed_handle(&mut nwalker, manager, symbols)?;
@@ -472,7 +469,7 @@ impl<'b, 'z> ParserContext<'b, 'z> {
             };
 
             if address.is_constant() {
-                let space = manager.unchecked_space_by_id(curr_address.space());
+                let space = unsafe { manager.unchecked_space_by_id(curr_address.space()) };
                 let noffset = address.offset() * space.word_size() as u64;
                 address = AddressValue::new(space, noffset);
             }
@@ -514,8 +511,8 @@ impl<'b, 'z> ParserContext<'b, 'z> {
         self.state[point].constructor
     }
 
-    pub fn unchecked_constructor(&self, point: usize) -> &'b Constructor {
-        unsafe { self.state.get_unchecked(point).constructor.unsafe_unwrap() }
+    pub unsafe fn unchecked_constructor(&self, point: usize) -> &'b Constructor {
+        self.state.get_unchecked(point).constructor.unsafe_unwrap()
     }
 
     pub fn set_next_address(&mut self, address: AddressValue) {
@@ -563,7 +560,7 @@ impl<'b, 'c, 'z> ParserWalker<'b, 'c, 'z> {
         self.ctx.address.clone()
     }
 
-    pub fn unchecked_next_address(&self) -> &AddressValue {
+    pub unsafe fn unchecked_next_address(&self) -> &AddressValue {
         if let Some(ref address) = self.ctx.next_address {
             address
         } else {
@@ -575,7 +572,7 @@ impl<'b, 'c, 'z> ParserWalker<'b, 'c, 'z> {
         self.ctx.next_address.clone()
     }
 
-    pub fn unchecked_next2_address(&self) -> &AddressValue {
+    pub unsafe fn unchecked_next2_address(&self) -> &AddressValue {
         unimplemented!("inst_next2")
     }
 
@@ -621,28 +618,26 @@ impl<'b, 'c, 'z> ParserWalker<'b, 'c, 'z> {
             .and_then(|hidx| self.ctx.handle(hidx))
     }
 
-    pub fn unchecked_handle(&self, index: usize) -> FixedHandle<'b> {
+    pub unsafe fn unchecked_handle(&self, index: usize) -> FixedHandle<'b> {
         self.unchecked_handle_ref(index).clone()
     }
 
-    pub fn unchecked_handle_ref(&self, index: usize) -> &FixedHandle<'b> {
-        let ph = unsafe {
-            self.unchecked_point()
-                .resolve
-                .get_unchecked(index)
-                .unsafe_unwrap()
-        };
+    pub unsafe fn unchecked_handle_ref(&self, index: usize) -> &FixedHandle<'b> {
+        let ph = self
+            .unchecked_point()
+            .resolve
+            .get_unchecked(index)
+            .unsafe_unwrap();
         self.ctx.unchecked_handle(ph)
     }
 
-    pub fn unchecked_handle_ref_via(&self, point: usize, index: usize) -> &FixedHandle<'b> {
-        let ph = unsafe {
-            self.ctx
-                .point(point)
-                .resolve
-                .get_unchecked(index)
-                .unsafe_unwrap()
-        };
+    pub unsafe fn unchecked_handle_ref_via(&self, point: usize, index: usize) -> &FixedHandle<'b> {
+        let ph = self
+            .ctx
+            .point(point)
+            .resolve
+            .get_unchecked(index)
+            .unsafe_unwrap();
         self.ctx.unchecked_handle(ph)
     }
 
@@ -783,9 +778,9 @@ impl<'b, 'c, 'z> ParserWalker<'b, 'c, 'z> {
         self.depth -= 1;
     }
 
-    pub fn offset(&self, offset: Option<usize>) -> usize {
+    pub unsafe fn offset(&self, offset: Option<usize>) -> usize {
         match offset {
-            None => self.unchecked_point().offset, //.ok_or_else(|| Error::InconsistentState)?.offset,
+            None => self.unchecked_point().offset,
             Some(index) => {
                 let op_index = unsafe {
                     self.unchecked_point()
@@ -793,7 +788,6 @@ impl<'b, 'c, 'z> ParserWalker<'b, 'c, 'z> {
                         .get_unchecked(index)
                         .unsafe_unwrap()
                 };
-                //.ok_or_else(|| Error::InconsistentState)?;
                 let op = self.ctx.point(op_index);
                 op.offset + op.length
             }
@@ -801,7 +795,7 @@ impl<'b, 'c, 'z> ParserWalker<'b, 'c, 'z> {
     }
 
     #[inline]
-    pub fn resolve_with_aux<'d, T, F>(
+    pub unsafe fn resolve_with_aux<'d, T, F>(
         &'d mut self,
         pat: &'b PatternExpression,
         ctor: &'b Constructor,
@@ -865,7 +859,7 @@ impl<'b, 'c, 'z> ParserWalker<'b, 'c, 'z> {
         Ok(value)
     }
 
-    pub fn resolve_with<'d>(
+    pub unsafe fn resolve_with<'d>(
         &'d mut self,
         pat: &'b PatternExpression,
         ctor: &'b Constructor,
@@ -875,7 +869,7 @@ impl<'b, 'c, 'z> ParserWalker<'b, 'c, 'z> {
         self.resolve_with_aux(pat, ctor, index, symbols, |p, w, s| p.value(w, s))
     }
 
-    pub fn resolve_with_bits<'d>(
+    pub unsafe fn resolve_with_bits<'d>(
         &'d mut self,
         pat: &'b PatternExpression,
         ctor: &'b Constructor,
@@ -918,17 +912,16 @@ impl<'b, 'c, 'z> ParserWalker<'b, 'c, 'z> {
         }
     }
 
-    pub fn unchecked_constructor(&self) -> &'b Constructor {
-        self.ctx
-            .unchecked_constructor(unsafe { self.point.unsafe_unwrap() })
+    pub unsafe fn unchecked_constructor(&self) -> &'b Constructor {
+        self.ctx.unchecked_constructor(self.point.unsafe_unwrap())
     }
 
     pub fn point(&self) -> Option<&ConstructState<'b>> {
         self.point.map(|index| self.ctx.point(index))
     }
 
-    pub fn unchecked_point(&self) -> &ConstructState<'b> {
-        unsafe { self.ctx.point(self.point.unsafe_unwrap()) }
+    pub unsafe fn unchecked_point(&self) -> &ConstructState<'b> {
+        self.ctx.point(self.point.unsafe_unwrap())
     }
 
     pub fn set_offset(&mut self, offset: usize) -> Result<(), Error> {
@@ -952,8 +945,8 @@ impl<'b, 'c, 'z> ParserWalker<'b, 'c, 'z> {
         Ok(self.ctx.instruction_bytes(offset, size, point.offset)?)
     }
 
-    pub fn unchecked_instruction_bytes(&self, offset: usize, size: usize) -> u32 {
-        let point = self.ctx.point(unsafe { self.point.unsafe_unwrap() });
+    pub unsafe fn unchecked_instruction_bytes(&self, offset: usize, size: usize) -> u32 {
+        let point = self.ctx.point(self.point.unsafe_unwrap());
         self.ctx
             .instruction_bytes(offset, size, point.offset)
             .unwrap()
@@ -966,8 +959,8 @@ impl<'b, 'c, 'z> ParserWalker<'b, 'c, 'z> {
         Ok(self.ctx.instruction_bits(offset, size, point.offset)?)
     }
 
-    pub fn unchecked_instruction_bits(&self, offset: usize, size: usize) -> u32 {
-        let point = self.ctx.point(unsafe { self.point.unsafe_unwrap() });
+    pub unsafe fn unchecked_instruction_bits(&self, offset: usize, size: usize) -> u32 {
+        let point = self.ctx.point(self.point.unsafe_unwrap());
         self.ctx
             .instruction_bits(offset, size, point.offset)
             .unwrap()

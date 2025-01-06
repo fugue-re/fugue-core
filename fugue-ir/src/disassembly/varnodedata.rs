@@ -1,6 +1,5 @@
 use std::fmt;
 
-use crate::address::AddressValue;
 use crate::space::{AddressSpace, AddressSpaceId};
 use crate::Translator;
 
@@ -38,7 +37,7 @@ impl<'a> VarnodeDataFormatter<'a> {
 
 impl<'a> fmt::Display for VarnodeDataFormatter<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        let space = self.translator.manager().unchecked_space_by_id(self.varnode.space);
+        let space = unsafe { self.translator.manager().unchecked_space_by_id(self.varnode.space) };
         if space.is_register() {
             let name = self.translator.registers()
                 .get(self.varnode.offset, self.varnode.size)
@@ -75,11 +74,6 @@ impl VarnodeData {
             offset,
             size,
         }
-    }
-
-    pub fn address(&self) -> AddressValue {
-        todo!()
-        //AddressValue::new(self.space.clone(), self.offset)
     }
 
     pub fn space(&self) -> AddressSpaceId {

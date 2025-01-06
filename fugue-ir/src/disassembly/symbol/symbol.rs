@@ -365,7 +365,7 @@ impl Symbol {
                 size,
                 ..
             } => FixedHandle {
-                space: manager.unchecked_space_by_id(*space),
+                space: unsafe { manager.unchecked_space_by_id(*space) },
                 size: *size,
                 offset_space: None,
                 offset_offset: *offset,
@@ -373,9 +373,9 @@ impl Symbol {
                 temporary_space: None,
                 temporary_offset: 0,
             },
-            Self::Operand { handle_index, .. } => walker.unchecked_handle(*handle_index),
+            Self::Operand { handle_index, .. } => unsafe { walker.unchecked_handle(*handle_index) },
             Self::Start { .. } => {
-                let space = manager.unchecked_space_by_id(walker.address().space());
+                let space = unsafe { manager.unchecked_space_by_id(walker.address().space()) };
                 let size = space.address_size();
                 FixedHandle {
                     space,
@@ -388,15 +388,13 @@ impl Symbol {
                 }
             }
             Self::End { .. } => {
-                let space = manager.unchecked_space_by_id(walker.address().space());
+                let space = unsafe { manager.unchecked_space_by_id(walker.address().space()) };
                 let size = space.address_size();
                 FixedHandle {
                     space,
                     size,
                     offset_space: None,
-                    offset_offset: walker
-                        .unchecked_next_address() /*.ok_or_else(|| Error::InvalidNextAddress)?*/
-                        .offset(),
+                    offset_offset: unsafe { walker.unchecked_next_address() }.offset(),
                     offset_size: 0,
                     temporary_space: None,
                     temporary_offset: 0,
@@ -486,8 +484,7 @@ impl Symbol {
                     let sym = unsafe { symbols.unchecked_symbol(*id) };
                     if sym.is_subtable() {
                         let mut inner = Operands::new(arena);
-                        walker
-                            .unchecked_constructor()
+                        unsafe { walker.unchecked_constructor() }
                             .collect_operands(arena, &mut inner, walker, symbols);
                         operands.append(inner);
                     } else {
@@ -554,10 +551,10 @@ impl Symbol {
                 operands.push(walker.address());
             }
             Self::End { .. } => {
-                operands.push(walker.unchecked_next_address());
+                operands.push(unsafe { walker.unchecked_next_address() });
             }
             Self::Next2 { .. } => {
-                operands.push(walker.unchecked_next2_address());
+                operands.push(unsafe { walker.unchecked_next2_address() });
             }
             _ => unreachable!(),
         }
@@ -580,9 +577,7 @@ impl Symbol {
                 if let Some(id) = subsym_id {
                     let sym = unsafe { symbols.unchecked_symbol(*id) };
                     if sym.is_subtable() {
-                        walker
-                            .unchecked_constructor()
-                            .format(fmt, walker, symbols)?;
+                        unsafe { walker.unchecked_constructor() }.format(fmt, walker, symbols)?;
                     } else {
                         sym.format(fmt, walker, symbols)?;
                     }
@@ -660,10 +655,18 @@ impl Symbol {
                 write!(fmt, "{:#x}", walker.address().offset())
             }
             Self::End { .. } => {
-                write!(fmt, "{:#x}", walker.unchecked_next_address().offset())
+                write!(
+                    fmt,
+                    "{:#x}",
+                    unsafe { walker.unchecked_next_address() }.offset()
+                )
             }
             Self::Next2 { .. } => {
-                write!(fmt, "{:#x}", walker.unchecked_next2_address().offset())
+                write!(
+                    fmt,
+                    "{:#x}",
+                    unsafe { walker.unchecked_next2_address() }.offset()
+                )
             }
             _ => unreachable!(),
         }
@@ -686,8 +689,7 @@ impl Symbol {
                 if let Some(id) = subsym_id {
                     let sym = unsafe { symbols.unchecked_symbol(*id) };
                     if sym.is_subtable() {
-                        walker
-                            .unchecked_constructor()
+                        unsafe { walker.unchecked_constructor() }
                             .tokens_aux(tokens, walker, symbols);
                     } else {
                         sym.tokens(tokens, walker, symbols);
@@ -754,10 +756,10 @@ impl Symbol {
                 tokens.push(walker.address());
             }
             Self::End { .. } => {
-                tokens.push(walker.unchecked_next_address());
+                tokens.push(unsafe { walker.unchecked_next_address() });
             }
             Self::Next2 { .. } => {
-                tokens.push(walker.unchecked_next2_address());
+                tokens.push(unsafe { walker.unchecked_next2_address() });
             }
             _ => unreachable!(),
         }
