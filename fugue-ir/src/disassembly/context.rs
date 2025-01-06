@@ -472,14 +472,11 @@ impl ContextDatabase {
 
     pub fn set_context_change_point(
         &mut self,
-        current_address: AddressValue,
         commit_address: AddressValue,
         num: usize,
         mask: u32,
         value: u32,
     ) {
-        self.database.split(&current_address);
-
         get_region_to_change_point(&mut self.database, commit_address, num, mask, |change| {
             let val = &mut change[num];
             *val &= !mask;
