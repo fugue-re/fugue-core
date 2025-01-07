@@ -187,7 +187,8 @@ pub enum BranchTarget {
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum BranchLabel {
     Named(Ident),
-    Relative(u64, u32),
+    Computed(Expr),
+    // Relative(u64, u32),
 }
 
 pub type Ident = String;
@@ -240,11 +241,72 @@ impl CodeBlock {
     }
 
     fn parse_assignment(assign: Pair<'_, Rule>) -> Result<Stmt, AstError> {
-        todo!("assign: {assign:#?}")
+        let mut pairs = assign.into_inner();
+
+        let lvalue = pairs.next().unwrap().into_inner().next().unwrap();
+        let expr = Self::parse_expr(pairs.next().unwrap())?;
+
+        let assign = match lvalue.as_rule() {
+            Rule::sembitrange => {
+                // ??
+                todo!()
+            }
+            Rule::sized_identifier => {
+                let (name, size) = Self::parse_sized(lvalue, Self::parse_identifier)?;
+
+                Stmt::Assign {
+                    name,
+                    size: Some(size),
+                    source: expr,
+                }
+            }
+            Rule::identifier => Stmt::Assign {
+                name: Self::parse_identifier(lvalue)?,
+                size: None,
+                source: expr,
+            },
+            Rule::sized_star_expr => {
+                let mut pairs = lvalue.into_inner();
+                let (space, size) = Self::parse_sized_star(pairs.next().unwrap())?;
+                let target = Self::parse_expr(pairs.next().unwrap())?;
+
+                Stmt::Store {
+                    space,
+                    size,
+                    target,
+                    source: expr,
+                }
+            }
+            _ => unimplemented!(),
+        };
+
+        Ok(assign)
     }
 
     fn parse_declaration(decl: Pair<'_, Rule>) -> Result<Stmt, AstError> {
-        todo!("decl: {decl:#?}")
+        let mut pairs = decl.into_inner();
+        let decl = pairs.next().unwrap();
+
+        let decl = match decl.as_rule() {
+            Rule::declaration_ => Stmt::Declare {
+                name: Self::parse_identifier(decl.into_inner().next().unwrap())?,
+                size: None,
+            },
+            Rule::declaration_with_size => {
+                let mut pairs = decl.into_inner();
+
+                let ident = Self::parse_identifier(pairs.next().unwrap())?;
+                let size = Self::parse_size(pairs.next().unwrap())?;
+
+                Stmt::Declare {
+                    name: ident,
+                    size: Some(size),
+                }
+            }
+            _ => unreachable!(),
+        };
+
+        Ok(decl)
     }
 
     fn parse_expr(expr: Pair<'_, Rule>) -> Result<Expr, AstError> {
@@ -468,7 +530,17 @@ impl CodeBlock {
                 "~" => UnOp::Not,
                 "-" => UnOp::Neg,
                 "f-" => UnOp::FloatNeg,
-                _ => Self::parse_sized_star(op_or_expr)?,
+                _ => {
+                    let (space, size) =
+                        Self::parse_sized_star(op_or_expr.into_inner().next().unwrap())?;
+                    let source = Self::parse_expr_func(pairs.next().unwrap())?;
+
+                    return Ok(Expr::Load {
+                        space,
+                        size,
+                        source: Box::new(source),
+                    });
+                }
             };
 
             Ok(Expr::UnOp {
@@ -509,7 +581,7 @@ impl CodeBlock {
         match expr.as_rule() {
             Rule::varnode => Self::parse_varnode(expr),
             Rule::sembitrange => Self::parse_sembitrange(expr),
-            _ => Self::parse_expr(pairs.next().unwrap()),
+            _ => Self::parse_expr(expr),
         }
     }
 
@@ -526,6 +598,10 @@ impl CodeBlock {
                 value: Self::parse_identifier(target)?,
                 size: None,
             },
+            Rule::addressof => Expr::AddressOf {
+                value: Self::parse_identifier(target.into_inner().next().unwrap())?,
+                size: None,
+            },
             Rule::integer_with_size => {
                 let (value, size) = Self::parse_sized(target, Self::parse_integer)?;
                 Expr::Literal {
@@ -536,6 +612,17 @@ impl CodeBlock {
             Rule::identifier_with_size => {
                 let (value, size) = Self::parse_sized(target, Self::parse_identifier)?;
                 Expr::Ident {
+                    value,
+                    size: Some(size),
+                }
+            }
+            Rule::addressof_with_size => {
+                let mut pairs = target.into_inner();
+
+                let size = Self::parse_size(pairs.next().unwrap())?;
+                let value = Self::parse_identifier(pairs.next().unwrap())?;
+
+                Expr::AddressOf {
                     value,
                     size: Some(size),
                 }
@@ -600,8 +687,24 @@ impl CodeBlock {
         Ok((t, s))
     }
 
-    fn parse_sized_star(target: Pair<'_, Rule>) -> Result<UnOp, AstError> {
-        todo!("sized star: {target:#?}")
+    fn parse_sized_star(target: Pair<'_, Rule>) -> Result<(Option<Ident>, Option<u32>), AstError> {
+        let mut pairs = target.into_inner();
+
+        let Some(ident_or_size) = pairs.next() else {
+            return Ok((None, None));
+        };
+
+        let ident = if ident_or_size.as_rule() == Rule::identifier {
+            Self::parse_identifier(ident_or_size)?
+        } else {
+            return Ok((None, Some(Self::parse_size(ident_or_size)?)));
+        };
+
+        let Some(size) = pairs.next() else {
+            return Ok((Some(ident), None));
+        };
+
+        Ok((Some(ident), Some(Self::parse_size(size)?)))
     }
 
     fn parse_branch_target(target: Pair<'_, Rule>) -> Result<BranchTarget, AstError> {
@@ -680,13 +783,17 @@ mod test {
 
     #[test]
     fn test_parse() -> Result<(), Box<dyn std::error::Error>> {
-        let _ast = CodeBlock::parse(
-            r#"memcpy(a || b || c, b, 10 + 20);
-return [10];
-local b:20 = 10;
-a = 30;
+        let ast = CodeBlock::parse(
+            r#"memcpy(a || b || c, *[other] b, 10 + 20);
+            local b:32 = 10;
+            *[ram] (a + 10) = b;
+            local a = *b;
+
+            < labelll >
 "#,
         )?;
+
+        println!("{ast:#?}");
 
         Ok(())
     }

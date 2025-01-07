@@ -27,14 +27,13 @@ statement = {
 }
 
 // Assignment and declarations
-assignment = { assignment_ | assignment_with_local }
+assignment = { assignment_with_local | assignment_ }
 
 assignment_ = { lvalue ~ "=" ~ expr }
 assignment_with_local = { "local" ~ lvalue ~ "=" ~ expr }
 
-declaration = {
-    "local" ~ (declaration_with_size | declaration)
-}
+declaration = { "local" ~ declarations }
+declarations = { declaration_with_size | declaration_ }
 declaration_ = { identifier }
 declaration_with_size = { identifier ~ ":" ~ constant }
 
@@ -69,7 +68,7 @@ jumpdest = {
 
 cond_stmt = { "if" ~ expr ~ goto_stmt }
 call_stmt = { "call" ~ jumpdest }
-return_stmt = { "return" ~ "[" ~ expr ~ "]" }
+return_stmt = { "return" ~ "[" ~ jumpdest ~ "]" }
 
 // Expression hierarchy
 expr = { expr_boolor }
@@ -119,11 +118,13 @@ expr_term = {
 varnode = {
     integer_with_size |
     identifier_with_size |
+    addressof_with_size |
     integer |
     identifier |
-    ("&" ~ ":" ~ constant ~ varnode) |
-    ("&" ~ varnode)
+    addressof
 }
+addressof = { "&" ~ identifier }
+addressof_with_size = { "&" ~ ":" ~ constant ~ identifier }
 integer_with_size = { integer ~ ":" ~ constant }
 identifier_with_size = { identifier ~ ":" ~ constant }
 
