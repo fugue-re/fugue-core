@@ -7,6 +7,7 @@ use pest::error::Error;
 use pest::iterators::Pair;
 use pest::{Parser, Span};
 use thiserror::Error;
+use ustr::Ustr;
 
 use crate::{Rule, SleighParser};
 
@@ -192,7 +193,7 @@ pub enum BranchLabel {
     Varnode { name: Ident },
 }
 
-pub type Ident = String;
+pub type Ident = Ustr;
 
 #[derive(Debug, Error)]
 pub enum AstError {
@@ -701,7 +702,7 @@ impl CodeBlock {
     }
 
     fn parse_identifier(target: Pair<'_, Rule>) -> Result<Ident, AstError> {
-        Ok(target.as_str().to_owned())
+        Ok(target.as_str().into())
     }
 
     fn parse_sembitrange(target: Pair<'_, Rule>) -> Result<(Ident, Range<u32>, u32), AstError> {
@@ -823,7 +824,7 @@ impl CodeBlock {
                     .unwrap_or_default();
 
                 Ok(Stmt::Intrinsic {
-                    name: name.as_str().to_owned(),
+                    name: name.as_str().into(),
                     arguments: args,
                 })
             }
@@ -854,7 +855,7 @@ impl CodeBlock {
             Rule::label => {
                 let label = pair.into_inner().next().unwrap();
                 Ok(Stmt::Label {
-                    label: label.as_str().to_owned(),
+                    label: label.as_str().into(),
                 })
             }
             rule => unreachable!("{rule:?}"),
@@ -888,6 +889,10 @@ mod test {
 
             return [dest3];
             return [0x10];
+
+            *:4 sp = inst_next;
+            sp = sp-4;
+            call dest;
 "#,
         )?;
 
