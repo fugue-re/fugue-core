@@ -23,12 +23,8 @@ pub struct ContextPreAction {
 
 impl ContextPreAction {
     #[inline]
-    pub fn apply(
-        &self,
-        input: &mut LiftingContextState<'_>,
-        ctor_resolver: ConstructorResolver,
-    ) -> Option<()> {
-        let value = (self.value.resolve(input, ctor_resolver)? as u32) << self.shift;
+    pub fn apply<R: ConstructorResolver>(&self, input: &mut LiftingContextState<'_>) -> Option<()> {
+        let value = (self.value.resolve::<R>(input)? as u32) << self.shift;
         input.input().set_context_word(self.num, value, self.mask);
         Some(())
     }
@@ -57,10 +53,9 @@ impl ContextPostAction {
     }
 
     #[inline]
-    pub fn apply(
+    pub fn apply<R: ConstructorResolver>(
         &self,
         input: &mut LiftingContextState<'_>,
-        ctor_resolver: ConstructorResolver,
         commit: &ContextCommit,
     ) -> Option<()> {
         let FixedHandle {
@@ -68,9 +63,7 @@ impl ContextPostAction {
             offset_offset: mut offset,
             ..
         } = match self.handle {
-            ContextPostActionHandle::Symbol(symbol) => {
-                symbol.resolve_handle(input, ctor_resolver)?
-            }
+            ContextPostActionHandle::Symbol(symbol) => symbol.resolve_handle::<R>(input)?,
             ContextPostActionHandle::Operand(index) => unsafe {
                 input
                     .input()

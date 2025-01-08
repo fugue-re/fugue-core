@@ -1,37 +1,18 @@
 use std::fmt::Debug;
 
-use crate::runtime::input::{FixedHandle, INVALID_HANDLE};
+use crate::runtime::context::{ContextPostAction, ContextPreAction};
+use crate::runtime::input::{ContextCommit, FixedHandle, INVALID_HANDLE};
 use crate::runtime::pattern::PatternExpression;
 use crate::runtime::pcode::LiftingContextState;
 use crate::runtime::symbol::Symbol;
+use crate::runtime::template::{ConstructTpl, HandleTpl};
 
 pub type ContextActionSet = fn(&mut LiftingContextState<'_>) -> Option<()>;
-
-pub struct ContextPreAction {
-    pattern: PatternExpression,
-    num: usize,
-    mask: u32,
-    shift: u32,
-}
-
-impl ContextPreAction {
-    #[inline(always)]
-    pub fn apply(
-        &self,
-        input: &mut LiftingContextState<'_>,
-        ctor_resolver: ConstructorResolver,
-    ) -> Option<()> {
-        let value = (self.pattern.resolve(input, ctor_resolver)? as u32) << self.shift;
-        input.input().set_context_word(self.num, value, self.mask);
-        Some(())
-    }
-}
 
 pub enum OperandResolver {
     None,
     Constructor(fn(&mut LiftingContextState<'_>) -> Option<&'static Constructor>),
     Filter(&'static OperandFilter),
-    // Filter(fn(&mut LiftingContextState<'_>) -> Option<()>), //(&'static OperandFilter),
 }
 
 pub struct OperandFilter {
@@ -42,12 +23,11 @@ pub struct OperandFilter {
 
 impl OperandFilter {
     #[inline]
-    pub fn validate(
+    pub fn validate<R: ConstructorResolver>(
         &self,
         input: &mut LiftingContextState,
-        ctor_resolver: ConstructorResolver,
     ) -> Option<()> {
-        let index = self.pattern.resolve(input, ctor_resolver)? as usize;
+        let index = self.pattern.resolve::<R>(input)? as usize;
         if index >= self.limit || self.indices.contains(&index) {
             None
         } else {
@@ -56,7 +36,6 @@ impl OperandFilter {
     }
 }
 
-// fn(&mut LiftingContextState) -> Option<()>;
 pub enum OperandHandleResolver {
     None,
     Symbol(&'static Symbol),
@@ -71,16 +50,27 @@ pub struct Operand {
     pub minimum_length: usize,
 }
 
-pub type ConstructorResolver = fn(&mut LiftingContextState) -> Option<&'static Constructor>;
+pub trait ConstructorResolver {
+    const ADDRESS_SIZE: u64;
+    const DEFAULT_SPACE: u8;
+    const UNIQUE_SPACE: u8;
+
+    fn resolve(input: &mut LiftingContextState) -> Option<&'static Constructor>;
+    fn resolve_upper_bound(space: u8) -> u64;
+}
+
 pub type ConstructorResult = fn(&mut LiftingContextState<'_>) -> FixedHandle;
 
 pub type PCodeBuildAction = fn(&mut LiftingContextState<'_>) -> Option<()>;
 
 pub struct Constructor {
     pub id: u32,
-    pub context_actions: Option<ContextActionSet>,
+    pub context_pre_actions: &'static [ContextPreAction],
+    pub context_post_actions: &'static [ContextPostAction],
     pub operands: &'static [Operand],
+    // pub result: Option<HandleTpl>,
     pub result: Option<ConstructorResult>,
+    // pub build_action: Option<ConstructTpl>,
     pub build_action: Option<PCodeBuildAction>,
     pub print_pieces: &'static [&'static str],
     pub delay_slot_length: usize,
@@ -105,16 +95,35 @@ impl Eq for Constructor {}
 
 impl Constructor {
     #[inline]
-    pub fn resolve_operands(
+    pub fn apply_context_actions<R: ConstructorResolver>(
         &'static self,
         state: &mut LiftingContextState,
-        ctor_resolver: ConstructorResolver,
+    ) -> Option<()> {
+        for action in self.context_pre_actions {
+            action.apply::<R>(state)?;
+        }
+
+        for action in self.context_post_actions {
+            let value = action.extract(state);
+            let commit = ContextCommit {
+                action,
+                point: state.input().point,
+                value,
+            };
+            state.input().register_context_commit(commit);
+        }
+
+        Some(())
+    }
+
+    #[inline]
+    pub fn resolve_operands<R: ConstructorResolver>(
+        &'static self,
+        state: &mut LiftingContextState,
     ) -> Option<()> {
         state.input().set_constructor(self);
 
-        if let Some(actions) = self.context_actions {
-            (actions)(state)?;
-        }
+        self.apply_context_actions::<R>(state)?;
 
         if self.operands.is_empty() {
             state
@@ -148,16 +157,14 @@ impl Constructor {
                 match opnd.resolver {
                     OperandResolver::None => (),
                     OperandResolver::Filter(filter) => {
-                        filter.validate(state, ctor_resolver)?;
+                        filter.validate::<R>(state)?;
                     }
                     OperandResolver::Constructor(resolver) => {
                         let ctor = (resolver)(state)?;
 
                         state.input().set_constructor(ctor);
 
-                        if let Some(actions) = ctor.context_actions {
-                            (actions)(state)?;
-                        }
+                        ctor.apply_context_actions::<R>(state)?;
 
                         if !ctor.operands.is_empty() {
                             state.input().allocate_operands(ctor.operands.len())?;
@@ -185,10 +192,9 @@ impl Constructor {
     }
 
     #[inline]
-    pub fn resolve_handles(
+    pub fn resolve_handles<R: ConstructorResolver>(
         &'static self,
         state: &mut LiftingContextState,
-        ctor_resolver: ConstructorResolver,
     ) -> Option<()> {
         state.input().base_state();
 
@@ -204,11 +210,11 @@ impl Constructor {
                         continue 'outer;
                     }
                     OperandHandleResolver::Symbol(ref symbol) => {
-                        let handle = symbol.resolve_handle(state, ctor_resolver)?;
+                        let handle = symbol.resolve_handle::<R>(state)?;
                         state.input().set_parent_handle(handle);
                     }
                     OperandHandleResolver::Expression(ref expr) => {
-                        let offset = expr.resolve(state, ctor_resolver)? as u64;
+                        let offset = expr.resolve::<R>(state)? as u64;
 
                         if let Some(handle) = state.input().parent_handle_mut() {
                             handle.space = 0;

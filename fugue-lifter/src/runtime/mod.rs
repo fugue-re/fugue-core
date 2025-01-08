@@ -5,9 +5,12 @@ pub mod partmap;
 pub mod pattern;
 pub mod pcode;
 pub mod symbol;
+pub mod template;
 pub mod varnode;
 
-pub use constructor::{Constructor, Operand, OperandHandleResolver, OperandResolver};
+pub use constructor::{
+    Constructor, ConstructorResolver, Operand, OperandHandleResolver, OperandResolver,
+};
 pub use context::ContextDatabase;
 pub use input::{ContextCommit, FixedHandle, ParserInput, ParserInputs};
 pub use pcode::{LiftingContext, LiftingContextState};

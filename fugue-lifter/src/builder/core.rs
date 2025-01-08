@@ -14,6 +14,7 @@ use proc_macro2::{Literal, Span, TokenStream};
 use quote::{format_ident, quote, ToTokens, TokenStreamExt};
 use syn::Ident;
 
+use crate::builder::types::context::ContextAdaptor;
 use crate::builder::types::pattern::PatternExpressionAdaptor;
 use crate::builder::types::symbol::SymbolAdaptor;
 use crate::runtime::pcode::Op;
@@ -245,7 +246,7 @@ impl<'a> LifterGenerator<'a> {
     pub fn generate_pattern_resolver(&self, pattern: &PatternExpression) -> TokenStream {
         let expr = PatternExpressionAdaptor::new(self.translator, pattern);
 
-        quote! { (#expr).resolve(input, resolve_constructor)? }
+        quote! { (#expr).resolve::<Instruction>(input)? }
 
         /*
         match pattern {
@@ -689,8 +690,7 @@ impl<'a> LifterGenerator<'a> {
                         };
 
                         let ident = format_ident!("__SYM{id}");
-                        let handle_resolver =
-                            quote! { fugue_lifter::runtime::OperandHandleResolver::Symbol(&#ident) };
+                        let handle_resolver = quote! { fugue_lifter::runtime::OperandHandleResolver::Symbol(&#ident) };
 
                         (resolver, handle_resolver)
                     }
@@ -758,8 +758,7 @@ impl<'a> LifterGenerator<'a> {
                         };
 
                         let ident = format_ident!("__SYM{id}");
-                        let handle_resolver =
-                            quote! { fugue_lifter::runtime::OperandHandleResolver::Symbol(&#ident) };
+                        let handle_resolver = quote! { fugue_lifter::runtime::OperandHandleResolver::Symbol(&#ident) };
 
                         (resolver, handle_resolver)
                     }
@@ -830,8 +829,7 @@ impl<'a> LifterGenerator<'a> {
                         };
 
                         let ident = format_ident!("__SYM{id}");
-                        let handle_resolver =
-                            quote! { fugue_lifter::runtime::OperandHandleResolver::Symbol(&#ident) };
+                        let handle_resolver = quote! { fugue_lifter::runtime::OperandHandleResolver::Symbol(&#ident) };
 
                         (resolver, handle_resolver)
                     }
@@ -860,8 +858,7 @@ impl<'a> LifterGenerator<'a> {
 
                         let id = symbol.id();
                         let ident = format_ident!("__SYM{id}");
-                        let handle_resolver =
-                            quote! { fugue_lifter::runtime::OperandHandleResolver::Symbol(&#ident) };
+                        let handle_resolver = quote! { fugue_lifter::runtime::OperandHandleResolver::Symbol(&#ident) };
 
                         (resolver, handle_resolver)
                     }
@@ -928,172 +925,24 @@ impl<'a> LifterGenerator<'a> {
         scope: usize,
         cid: usize,
         ctor: &Constructor,
-    ) -> (TokenStream, TokenStream) {
+    ) -> (Vec<TokenStream>, Vec<TokenStream>) {
         let mut pre_actions = Vec::new();
         let mut post_actions = Vec::new();
-        let mut post_context_extractors = Vec::new();
 
         for action in ctor.context().iter() {
             match action {
-                Context::Operator {
-                    num,
-                    shift,
-                    mask,
-                    pattern_value,
-                } => {
-                    let num = *num;
-                    let shift = *shift;
-                    let mask = *mask;
-                    let value = self.generate_pattern_resolver(pattern_value);
-
-                    pre_actions.push(quote! {
-                        let value = (#value as u32) << #shift;
-                        input.inputs.input.set_context_word(#num, value, #mask);
-                    });
+                Context::Operator { .. } => {
+                    pre_actions
+                        .push(ContextAdaptor::new(&self.translator, action).to_token_stream());
                 }
-                Context::Commit {
-                    symbol_id,
-                    num,
-                    mask,
-                    flow,
-                } => {
-                    let index = post_actions.len();
-                    let symbol = self.translator.symbol_table().unchecked_symbol(*symbol_id);
-                    let handle = if let Symbol::Operand { handle_index, .. } = &symbol {
-                        let opid = *handle_index as u8;
-                        quote! {
-                            let id = input.inputs.input.context.constructors[point as usize].operands + #opid;
-                            input.inputs.input.context.constructors[id as usize]
-                                .handle
-                                .as_ref()
-                                .map(|handle| (handle.space, handle.offset_offset))
-                                .unwrap_or_default()
-                        }
-                    } else {
-                        let resolver = self.generate_handle_resolver(symbol);
-                        quote! {
-                            let handle = #resolver;
-                            (handle.space, handle.offset_offset)
-                        }
-                    };
-
-                    let space = self.translator.manager().default_space_ref();
-                    let word_size = space.word_size() as u64;
-
-                    let space_fix = quote! {
-                        let (space, mut offset) = { #handle };
-                        if space == 0 {
-                            offset = offset * #word_size;
-                        }
-                    };
-
-                    let number = *num;
-                    let mask = *mask;
-
-                    let flow = if *flow {
-                        quote! {
-                            input.inputs.context
-                                .set_context_change_point(
-                                    offset,
-                                    #number,
-                                    #mask,
-                                    commit.values[#index],
-                                );
-                        }
-                    } else {
-                        // we wrap the address with respect to the space
-                        let highest = space.highest_offset();
-                        quote! {
-                            let noffset = fugue_lifter::runtime::wrap_offset(#highest, offset.wrapping_add(1u64));
-                            if noffset < offset {
-                                input.inputs.context
-                                    .set_context_change_point(
-                                        offset,
-                                        #number,
-                                        #mask,
-                                        commit.values[#index],
-                                    );
-                            } else {
-                                input.inputs.context
-                                    .set_context_region(
-                                        offset,
-                                        Some(noffset),
-                                        #number,
-                                        #mask,
-                                        commit.values[#index],
-                                    );
-                            }
-                        }
-                    };
-
-                    post_context_extractors
-                        .push(quote! { (input.inputs.input.context.context[#num] & #mask) });
-                    post_actions.push(quote! {
-                        {
-                            #space_fix
-                            #flow
-                        }
-                    });
+                Context::Commit { .. } => {
+                    post_actions
+                        .push(ContextAdaptor::new(&self.translator, action).to_token_stream());
                 }
             }
         }
 
-        if post_actions.is_empty() && pre_actions.is_empty() {
-            return (TokenStream::new(), quote! { None });
-        }
-
-        let (post_field, post_fcn) = if !post_actions.is_empty() {
-            let ctor_post_apply_context = format_ident!("apply_post_context_{id}_{scope}_{cid}");
-            let post_fcn = quote! {
-                #[inline]
-                fn #ctor_post_apply_context(
-                    input: &mut fugue_lifter::runtime::LiftingContextState,
-                    commit: &fugue_lifter::runtime::ContextCommit,
-                ) -> Option<()> {
-                    let point = commit.point;
-
-                    #(#post_actions);*
-
-                    Some(())
-                }
-            };
-            (Some(ctor_post_apply_context), post_fcn)
-        } else {
-            (None, TokenStream::new())
-        };
-
-        let ctor_pre_apply_context = format_ident!("apply_pre_context_{id}_{scope}_{cid}");
-
-        let post_register = post_field.as_ref().map(|fcn| {
-            quote! {
-                let commit = fugue_lifter::runtime::ContextCommit {
-                    applier: #fcn,
-                    point: input.inputs.input.point,
-                    values: [
-                        #(#post_context_extractors),*
-                    ].into_iter().collect(),
-                };
-                input.inputs.input.register_context_commit(commit);
-            }
-        });
-
-        let pre_fcn = quote! {
-            #[inline]
-            fn #ctor_pre_apply_context(input: &mut fugue_lifter::runtime::LiftingContextState) -> Option<()> {
-                #(#pre_actions)*
-
-                #post_register
-
-                Some(())
-            }
-        };
-
-        let fcns = quote! {
-            #post_fcn
-            #pre_fcn
-        };
-
-        (fcns, quote! { Some(#ctor_pre_apply_context) })
+        (pre_actions, post_actions)
     }
 
     pub fn generate_const_template(&self, tmpl: &ConstTpl) -> TokenStream {
@@ -1647,7 +1496,7 @@ impl<'a> LifterGenerator<'a> {
             let pieces = ctor.print_pieces();
 
             let (operand_helpers, operands) = self.generate_constructor_operand_resolvers(id, scope, cid, ctor);
-            let (context_helpers, apply_context) = self.generate_constructor_context_actions(id, scope, cid, ctor);
+            let (pre_actions, post_actions) = self.generate_constructor_context_actions(id, scope, cid, ctor);
 
             let (template_helpers, template_result) = self.generate_constructor_template_resolvers(id, scope, cid, ctor);
             let (lifting_helper, lifting_action) = self.generate_constructor_lifting_actions(id, scope, cid, ctor);
@@ -1655,7 +1504,8 @@ impl<'a> LifterGenerator<'a> {
             quote! {
                 pub static #ctor_vname: fugue_lifter::runtime::Constructor = fugue_lifter::runtime::Constructor {
                     id: #ctor_id,
-                    context_actions: #apply_context,
+                    context_pre_actions: &[#(#pre_actions),*],
+                    context_post_actions: &[#(#post_actions),*],
                     operands: &[#(#operands),*],
                     result: #template_result,
                     build_action: #lifting_action,
@@ -1663,8 +1513,6 @@ impl<'a> LifterGenerator<'a> {
                     delay_slot_length: #delay_slot_length,
                     minimum_length: #minimum_length,
                 };
-
-                #context_helpers
 
                 #(#operand_helpers)*
 
@@ -1742,7 +1590,7 @@ impl<'a> LifterGenerator<'a> {
     pub fn generate_inner_dtree_aux(&self, id: usize, scope: usize, cid: usize) -> TokenStream {
         let ctor_name = Self::ctor_vname(id, scope, cid);
         quote! {
-            #ctor_name.resolve_operands(input)?;
+            #ctor_name.resolve_operands::<Instruction>(input)?;
         }
     }
 
@@ -2201,6 +2049,26 @@ impl<'a> ToTokens for LifterGenerator<'a> {
                 }
             }
 
+            pub struct Instruction;
+
+            impl fugue_lifter::runtime::ConstructorResolver for Instruction {
+                const ADDRESS_SIZE: u64 = ADDRESS_SIZE;
+                const DEFAULT_SPACE: u8 = DEFAULT_SPACE;
+                const UNIQUE_SPACE: u8 = UNIQUE_SPACE;
+
+                #[inline(always)]
+                fn resolve(
+                    state: &mut fugue_lifter::runtime::LiftingContextState,
+                ) -> Option<&'static fugue_lifter::runtime::Constructor> {
+                    resolve_constructor(state)
+                }
+
+                #[inline(always)]
+                fn resolve_upper_bound(space: u8) -> u64 {
+                    SPACE_UPPER_BOUND[space as usize]
+                }
+            }
+
             #[inline(always)]
             pub fn resolve_constructor(
                 state: &mut fugue_lifter::runtime::LiftingContextState,
@@ -2217,7 +2085,7 @@ impl<'a> ToTokens for LifterGenerator<'a> {
                 let ctor = resolve_constructor(state)?;
                 ctor.resolve_handles(state, resolve_constructor)?;
                 state.inputs.input.base_state();
-                state.apply_commits();
+                state.apply_commits(resolve_constructor);
                 Some(ctor)
             }
 
@@ -2234,9 +2102,9 @@ impl<'a> ToTokens for LifterGenerator<'a> {
                 let ctor = resolve_constructor(&mut state)?;
 
                 if apply_commits {
-                    ctor.resolve_handles(&mut state, resolve_constructor)?;
+                    ctor.resolve_handles::<Instruction>(&mut state)?;
                     state.inputs.input.base_state();
-                    state.apply_commits();
+                    state.apply_commits::<Instruction>();
                 } else {
                     state.inputs.input.base_state();
                 }

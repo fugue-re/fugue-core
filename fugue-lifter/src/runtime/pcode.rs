@@ -121,9 +121,9 @@ impl<'a> LiftingContextState<'a> {
     }
 
     #[inline]
-    pub fn apply_commits(&mut self, ctor_resolver: ConstructorResolver) {
+    pub fn apply_commits<R: ConstructorResolver>(&mut self) {
         for commit in mem::take(&mut self.inputs.input.context.commits) {
-            commit.action.apply(self, ctor_resolver, &commit);
+            commit.action.apply::<R>(self, &commit);
         }
     }
 
@@ -230,27 +230,46 @@ impl<'a> LiftingContextState<'a> {
         self.unique_offset = (address & self.context.unique_mask) << 4;
     }
 
-    #[doc(hidden)]
     #[inline]
-    pub fn operand_handle(&self, index: usize) -> &FixedHandle {
-        unsafe {
-            let opnds = self
-                .inputs
-                .input
-                .context
-                .constructors
-                .get_unchecked(self.inputs.input.point as usize)
-                .operands as usize;
+    #[doc(hidden)]
+    pub unsafe fn operand_handle(&self, index: usize) -> &FixedHandle {
+        let opnds = self
+            .inputs
+            .input
+            .context
+            .constructors
+            .get_unchecked(self.inputs.input.point as usize)
+            .operands as usize;
 
-            self.inputs
-                .input
-                .context
-                .constructors
-                .get_unchecked(opnds + index)
-                .handle
-                .as_ref()
-                .unwrap_unchecked()
-        }
+        self.inputs
+            .input
+            .context
+            .constructors
+            .get_unchecked(opnds + index)
+            .handle
+            .as_ref()
+            .unwrap_unchecked()
+    }
+
+    #[inline]
+    #[doc(hidden)]
+    pub unsafe fn operand_handle_mut(&mut self, index: usize) -> &mut FixedHandle {
+        let opnds = self
+            .inputs
+            .input
+            .context
+            .constructors
+            .get_unchecked(self.inputs.input.point as usize)
+            .operands as usize;
+
+        self.inputs
+            .input
+            .context
+            .constructors
+            .get_unchecked_mut(opnds + index)
+            .handle
+            .as_mut()
+            .unwrap_unchecked()
     }
 
     #[inline]

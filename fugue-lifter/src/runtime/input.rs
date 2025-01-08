@@ -66,7 +66,7 @@ impl Default for ConstructorNode {
 
 #[derive(Clone)]
 pub struct ContextCommit {
-    pub action: ContextPostAction,
+    pub action: &'static ContextPostAction,
     pub point: u8,
     pub value: u32,
 }

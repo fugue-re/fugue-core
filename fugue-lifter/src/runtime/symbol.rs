@@ -80,10 +80,9 @@ impl Symbol {
     }
     */
 
-    pub fn resolve_handle(
+    pub fn resolve_handle<R: ConstructorResolver>(
         &self,
         input: &mut LiftingContextState<'_>,
-        ctor_resolver: ConstructorResolver,
     ) -> Option<FixedHandle> {
         Some(match self {
             Symbol::Epsilon => FixedHandle {
@@ -91,7 +90,7 @@ impl Symbol {
                 ..Default::default()
             },
             Symbol::Name { pattern_value, .. } | Symbol::Value { pattern_value } => {
-                let value = pattern_value.resolve(input, ctor_resolver)?;
+                let value = pattern_value.resolve::<R>(input)?;
                 FixedHandle {
                     space: 0,
                     offset_offset: value as u64,
@@ -130,7 +129,7 @@ impl Symbol {
                     next2_address
                 } else {
                     let mut ninput = input.next_input()?;
-                    ctor_resolver(&mut ninput)?;
+                    R::resolve(&mut ninput)?;
                     ninput.next_address()
                 },
                 ..Default::default()
@@ -139,23 +138,23 @@ impl Symbol {
                 pattern_value,
                 varnode_table,
             } => {
-                let index = pattern_value.resolve(input, ctor_resolver)? as usize;
+                let index = pattern_value.resolve::<R>(input)? as usize;
                 let symbol = varnode_table.get(index)?.as_ref()?;
-                symbol.resolve_handle(input, ctor_resolver)?
+                symbol.resolve_handle::<R>(input)?
             }
             Symbol::VarnodeListFilled {
                 pattern_value,
                 varnode_table,
             } => {
-                let index = pattern_value.resolve(input, ctor_resolver)? as usize;
+                let index = pattern_value.resolve::<R>(input)? as usize;
                 let symbol = varnode_table.get(index)?;
-                symbol.resolve_handle(input, ctor_resolver)?
+                symbol.resolve_handle::<R>(input)?
             }
             Symbol::ValueMap {
                 pattern_value,
                 value_table,
             } => {
-                let index = pattern_value.resolve(input, ctor_resolver)? as usize;
+                let index = pattern_value.resolve::<R>(input)? as usize;
                 let value = *value_table.get(index)?.as_ref()? as u64;
 
                 FixedHandle {
@@ -168,7 +167,7 @@ impl Symbol {
                 pattern_value,
                 value_table,
             } => {
-                let index = pattern_value.resolve(input, ctor_resolver)? as usize;
+                let index = pattern_value.resolve::<R>(input)? as usize;
                 let value = *value_table.get(index)? as u64;
 
                 FixedHandle {

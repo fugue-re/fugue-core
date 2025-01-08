@@ -54,10 +54,9 @@ pub enum PatternExpression {
 
 impl PatternExpression {
     #[inline]
-    pub fn resolve(
+    pub fn resolve<R: ConstructorResolver>(
         &self,
         input: &mut LiftingContextState<'_>,
-        ctor_resolver: ConstructorResolver,
     ) -> Option<i64> {
         match self {
             Self::Constant { value } => Some(*value),
@@ -66,65 +65,65 @@ impl PatternExpression {
             Self::Next2Instruction => input.next2_address().map_or_else(
                 || {
                     let mut ninput = input.next_input()?;
-                    ctor_resolver(&mut ninput)?;
+                    R::resolve(&mut ninput)?;
                     Some(ninput.next_address() as i64)
                 },
                 |v| Some(v as i64),
             ),
             Self::And(lhs, rhs) => {
-                let lhs = lhs.resolve(input, ctor_resolver)?;
-                let rhs = rhs.resolve(input, ctor_resolver)?;
+                let lhs = lhs.resolve::<R>(input)?;
+                let rhs = rhs.resolve::<R>(input)?;
                 Some(lhs & rhs)
             }
             Self::Or(lhs, rhs) => {
-                let lhs = lhs.resolve(input, ctor_resolver)?;
-                let rhs = rhs.resolve(input, ctor_resolver)?;
+                let lhs = lhs.resolve::<R>(input)?;
+                let rhs = rhs.resolve::<R>(input)?;
                 Some(lhs | rhs)
             }
             Self::Xor(lhs, rhs) => {
-                let lhs = lhs.resolve(input, ctor_resolver)?;
-                let rhs = rhs.resolve(input, ctor_resolver)?;
+                let lhs = lhs.resolve::<R>(input)?;
+                let rhs = rhs.resolve::<R>(input)?;
                 Some(lhs ^ rhs)
             }
             Self::Plus(lhs, rhs) => {
-                let lhs = lhs.resolve(input, ctor_resolver)?;
-                let rhs = rhs.resolve(input, ctor_resolver)?;
+                let lhs = lhs.resolve::<R>(input)?;
+                let rhs = rhs.resolve::<R>(input)?;
                 Some(lhs.wrapping_add(rhs))
             }
             Self::Sub(lhs, rhs) => {
-                let lhs = lhs.resolve(input, ctor_resolver)?;
-                let rhs = rhs.resolve(input, ctor_resolver)?;
+                let lhs = lhs.resolve::<R>(input)?;
+                let rhs = rhs.resolve::<R>(input)?;
                 Some(lhs.wrapping_sub(rhs))
             }
             Self::Div(lhs, rhs) => {
-                let lhs = lhs.resolve(input, ctor_resolver)?;
-                let rhs = rhs.resolve(input, ctor_resolver)?;
+                let lhs = lhs.resolve::<R>(input)?;
+                let rhs = rhs.resolve::<R>(input)?;
                 (rhs == 0).then(|| lhs.wrapping_div(rhs))
             }
             Self::Mult(lhs, rhs) => {
-                let lhs = lhs.resolve(input, ctor_resolver)?;
-                let rhs = rhs.resolve(input, ctor_resolver)?;
+                let lhs = lhs.resolve::<R>(input)?;
+                let rhs = rhs.resolve::<R>(input)?;
                 Some(lhs.wrapping_mul(rhs))
             }
             Self::LeftShift(lhs, rhs) => {
-                let lhs = lhs.resolve(input, ctor_resolver)?;
-                let rhs = rhs.resolve(input, ctor_resolver)?;
+                let lhs = lhs.resolve::<R>(input)?;
+                let rhs = rhs.resolve::<R>(input)?;
                 Some(lhs.checked_shl(rhs as u8 as u32).unwrap_or(0))
             }
             Self::RightShift(lhs, rhs) => {
-                let lhs = lhs.resolve(input, ctor_resolver)?;
-                let rhs = rhs.resolve(input, ctor_resolver)?;
+                let lhs = lhs.resolve::<R>(input)?;
+                let rhs = rhs.resolve::<R>(input)?;
                 Some(
                     lhs.checked_shr(rhs as u8 as u32)
                         .unwrap_or(if lhs < 0 { -1 } else { 0 }),
                 )
             }
             Self::Not(rhs) => {
-                let rhs = rhs.resolve(input, ctor_resolver)?;
+                let rhs = rhs.resolve::<R>(input)?;
                 Some(!rhs)
             }
             Self::Minus(rhs) => {
-                let rhs = rhs.resolve(input, ctor_resolver)?;
+                let rhs = rhs.resolve::<R>(input)?;
                 Some(-rhs)
             }
             Self::TokenField {
@@ -244,7 +243,7 @@ impl PatternExpression {
                         }
 
                         // compute the value in the modified context
-                        let value = value.resolve(input, ctor_resolver)?;
+                        let value = value.resolve::<R>(input)?;
 
                         // restore old state
                         {
@@ -284,11 +283,13 @@ impl PatternExpression {
                 // preserve old and init new state
                 let old_point = input.inputs.input.point;
                 let old_depth = std::mem::take(&mut input.inputs.input.depth);
-                let old_breadcrumb = std::mem::replace(&mut input.inputs.input.breadcrumb, [0u8; BREADCRUMBS]);
+                let old_breadcrumb =
+                    std::mem::replace(&mut input.inputs.input.breadcrumb, [0u8; BREADCRUMBS]);
 
                 input.inputs.input.point = input.inputs.input.context.alloc;
                 {
-                    let cstate = &mut input.inputs.input.context.constructors[input.inputs.input.point as usize];
+                    let cstate = &mut input.inputs.input.context.constructors
+                        [input.inputs.input.point as usize];
 
                     cstate.constructor = Some(*&constructor);
                     cstate.handle = None;
@@ -299,11 +300,12 @@ impl PatternExpression {
                 }
 
                 // compute the value in the modified context
-                let value = value.resolve(input, ctor_resolver)?;
+                let value = value.resolve::<R>(input)?;
 
                 // restore old state
                 {
-                    let cstate = &mut input.inputs.input.context.constructors[input.inputs.input.point as usize];
+                    let cstate = &mut input.inputs.input.context.constructors
+                        [input.inputs.input.point as usize];
 
                     cstate.constructor = None;
                     cstate.handle = None;
