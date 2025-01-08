@@ -60,15 +60,24 @@ goto_stmt = { "goto" ~ jumpdest }
 
 jumpdest = {
     identifier |
-    ("[" ~ expr ~ "]") |
+    offset_in_space |
     integer |
-    (constant ~ "[" ~ identifier ~ "]") |
+    label |
+    ("[" ~ expr ~ "]")
+}
+
+direct_jumpdest = {
+    identifier |
+    offset_in_space |
+    integer |
     label
 }
 
-cond_stmt = { "if" ~ expr ~ goto_stmt }
+offset_in_space = { constant ~ "[" ~ identifier ~ "]" }
+
+cond_stmt = { "if" ~ expr ~ "goto" ~ direct_jumpdest }
 call_stmt = { "call" ~ jumpdest }
-return_stmt = { "return" ~ "[" ~ jumpdest ~ "]" }
+return_stmt = { "return" ~ "[" ~ expr ~ "]" }
 
 // Expression hierarchy
 expr = { expr_boolor }
@@ -110,8 +119,8 @@ expr_operands = { "(" ~ expr_list? ~ ")" }
 expr_list = { expr ~ ("," ~ expr)* }
 
 expr_term = {
-    varnode |
     sembitrange |
+    varnode |
     ("(" ~ expr ~ ")")
 }
 
