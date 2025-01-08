@@ -340,7 +340,7 @@ impl Symbol {
         walker: &mut ParserWalker<'b, 'c, 'z>,
         manager: &'b SpaceManager,
         symbols: &'b SymbolTable,
-    ) -> Result<FixedHandle, Error> {
+    ) -> Result<FixedHandle<'b>, Error> {
         Ok(match self {
             Self::Epsilon { .. } => FixedHandle {
                 space: manager.constant_space_ref(),

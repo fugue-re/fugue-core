@@ -436,6 +436,10 @@ impl OpTpl {
         &self.inputs[index]
     }
 
+    pub fn inputs(&self) -> &[VarnodeTpl] {
+        &self.inputs
+    }
+
     pub fn output(&self) -> Option<&VarnodeTpl> {
         self.output.as_ref()
     }
