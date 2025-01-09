@@ -89,7 +89,25 @@ pub struct ConstructTpl {
 impl ConstructTpl {
     #[inline]
     pub fn build<R: ConstructorResolver>(&self, input: &mut LiftingContextState<'_>) -> Option<()> {
-        todo!()
+        let old_base = input.context.label_base;
+
+        input.context.label_base = input.context.label_count;
+        input.context.label_count += self.labels;
+
+        for operation in self.operations {
+            operation.build::<R>(input)?;
+        }
+
+        input.context.label_base = old_base;
+
+        Some(())
+    }
+
+    pub fn build_result<R: ConstructorResolver>(
+        &self,
+        input: &mut LiftingContextState<'_>,
+    ) -> Option<FixedHandle> {
+        self.result.as_ref()?.build::<R>(input)
     }
 }
 
@@ -221,12 +239,77 @@ impl ConstTpl {
         };
         Some(value)
     }
+
+    pub fn real(&self) -> u64 {
+        match self {
+            Self::Real(value) => *value,
+            _ => 0,
+        }
+    }
+
+    pub fn is_dynamic(&self) -> bool {
+        matches!(self, Self::Real(_))
+    }
+
+    pub fn is_real(&self) -> bool {
+        matches!(self, Self::Real(_))
+    }
 }
 
 pub struct OpTpl {
     pub op: Op,
     pub inputs: &'static [VarnodeTpl],
     pub output: Option<VarnodeTpl>,
+}
+
+impl OpTpl {
+    pub fn build<R: ConstructorResolver>(&self, input: &mut LiftingContextState) -> Option<()> {
+        match self.op {
+            Op::Build => self.append_build_action::<R>(input),
+            Op::DelaySlot => self.delay_slot_action::<R>(input),
+            Op::Label => {
+                // NOTE: the original logic here checks if the index exceeds the current
+                // size of the allocated labels, and if so, then creates a range of invalid
+                // labels. Since we have a fixed allocation, we get this by default, so we
+                // can just set the label value.
+                //
+                let offset = self.inputs[0].offset.real() as usize;
+                unsafe {
+                    *input
+                        .context
+                        .labels
+                        .get_unchecked_mut(offset + input.context.label_base as usize) =
+                        input.issued.len() as i16;
+                }
+                Some(())
+            }
+            Op::CrossBuild => {
+                unimplemented!("cross-build is not supported")
+            }
+            _ => self.dump_action::<R>(input),
+        }
+    }
+
+    pub fn append_build_action<R: ConstructorResolver>(
+        &self,
+        input: &mut LiftingContextState,
+    ) -> Option<()> {
+        todo!()
+    }
+
+    pub fn delay_slot_action<R: ConstructorResolver>(
+        &self,
+        input: &mut LiftingContextState,
+    ) -> Option<()> {
+        todo!()
+    }
+
+    pub fn dump_action<R: ConstructorResolver>(
+        &self,
+        input: &mut LiftingContextState,
+    ) -> Option<()> {
+        todo!()
+    }
 }
 
 pub struct HandleTpl {
@@ -237,6 +320,15 @@ pub struct HandleTpl {
     pub ptr_size: ConstTpl,
     pub tmp_space: ConstTpl,
     pub tmp_offset: ConstTpl,
+}
+
+impl HandleTpl {
+    pub fn build<R: ConstructorResolver>(
+        &self,
+        input: &mut LiftingContextState,
+    ) -> Option<FixedHandle> {
+        todo!()
+    }
 }
 
 pub struct VarnodeTpl {
