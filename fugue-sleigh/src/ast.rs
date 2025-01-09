@@ -65,6 +65,42 @@ pub enum Stmt {
     },
 }
 
+impl Stmt {
+    pub fn is_branch(&self) -> bool {
+        matches!(
+            self,
+            Self::Branch { .. } | Stmt::CBranch { .. } | Stmt::Call { .. } | Stmt::Return { .. }
+        )
+    }
+
+    pub fn has_fall(&self) -> bool {
+        !matches!(self, Self::Return { .. } | Self::Branch { .. })
+    }
+
+    pub fn branch_target(&self) -> Option<Ident> {
+        if let Self::Branch {
+            target: BranchTarget::Label(label),
+        }
+        | Self::CBranch {
+            target: BranchTarget::Label(label),
+            ..
+        } = self
+        {
+            Some(*label)
+        } else {
+            None
+        }
+    }
+
+    pub fn label(&self) -> Option<Ident> {
+        if let Self::Label { label } = self {
+            Some(*label)
+        } else {
+            None
+        }
+    }
+}
+
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum Expr {
     Ident {
@@ -205,6 +241,10 @@ pub enum AstError {
     BitRange(ErrorSpan),
     #[error("{0}: invalid size")]
     Size(ErrorSpan),
+    #[error("attempt to define label `{0}` more than once")]
+    DuplicateLabel(Ustr),
+    #[error("reference to undefined label `{0}`")]
+    UndefinedLabel(Ustr),
 }
 
 #[derive(Debug)]
@@ -241,9 +281,13 @@ impl CodeBlock {
         Ok(Self {
             stmts: parsed
                 .into_inner()
-                .map(|stmt| Self::parse_stmt(stmt.into_inner().next().unwrap()))
+                .map(|stmt| Self::parse_stmt(stmt))
                 .collect::<Result<Vec<_>, _>>()?,
         })
+    }
+
+    pub fn statements(&self) -> &[Stmt] {
+        &self.stmts
     }
 
     fn parse_assignment(assign: Pair<'_, Rule>) -> Result<Stmt, AstError> {
@@ -798,6 +842,8 @@ impl CodeBlock {
     }
 
     fn parse_stmt(pair: Pair<'_, Rule>) -> Result<Stmt, AstError> {
+        let pair = pair.into_inner().next().unwrap();
+
         match pair.as_rule() {
             Rule::assignment => {
                 let assign = pair.into_inner().next().unwrap();
@@ -869,13 +915,15 @@ mod test {
 
     #[test]
     fn test_parse() -> Result<(), Box<dyn std::error::Error>> {
-        let ast = CodeBlock::parse(
-            r#"memcpy(a || b || c, *[other] b, 10 + 20);
+        let ast = CodeBlock::parse(r#"
+            memcpy(a || b || c, *[other] b, 10 + 20);
+
             local b:32 = 10;
-            *[ram] (a + 10) = b;
             local a = *b;
 
-            < labelll >
+            *[ram] (a + 10) = b;
+
+            < label >
 
             a[0,1] = b[0,2] * c[0,10] + d:10 / b(10);
 

@@ -4,6 +4,7 @@ version = "0.2.0"
 edition = "2021"
 
 [dependencies]
+arrayvec = "0.7"
 fugue-ir = { path = "../fugue-ir", version = "0.2" }
 itertools = "0.13"
 pest = "2.6"

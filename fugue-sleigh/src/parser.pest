@@ -8,8 +8,8 @@ keyword = @{
 }
 
 // Main rules
-code_block = { statements | "" }
-statements = { statement+ }
+code_block = { SOI ~ statements ~ EOI }
+statements = { statement* }
 
 // Labels and sections
 label = { "<" ~ identifier ~ ">" }
