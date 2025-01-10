@@ -20,6 +20,7 @@ pub struct CodeBlock {
 pub enum Stmt {
     Assign {
         name: Ident,
+        decl: bool,
         size: Option<u32>,
         bits: Option<Range<u32>>,
         source: Expr,
@@ -29,10 +30,6 @@ pub enum Stmt {
         size: Option<u32>,
     },
 
-    Copy {
-        target: Expr,
-        source: Expr,
-    },
     Store {
         space: Option<Ident>,
         size: Option<u32>,
@@ -290,7 +287,7 @@ impl CodeBlock {
         &self.stmts
     }
 
-    fn parse_assignment(assign: Pair<'_, Rule>) -> Result<Stmt, AstError> {
+    fn parse_assignment(assign: Pair<'_, Rule>, decl: bool) -> Result<Stmt, AstError> {
         let mut pairs = assign.into_inner();
 
         let lvalue = pairs.next().unwrap().into_inner().next().unwrap();
@@ -302,6 +299,7 @@ impl CodeBlock {
 
                 Stmt::Assign {
                     name,
+                    decl,
                     size: Some(size),
                     bits: Some(bits),
                     source: expr,
@@ -312,6 +310,7 @@ impl CodeBlock {
 
                 Stmt::Assign {
                     name,
+                    decl,
                     size: Some(size),
                     bits: None,
                     source: expr,
@@ -319,6 +318,7 @@ impl CodeBlock {
             }
             Rule::identifier => Stmt::Assign {
                 name: Self::parse_identifier(lvalue)?,
+                decl,
                 size: None,
                 bits: None,
                 source: expr,
@@ -847,7 +847,8 @@ impl CodeBlock {
         match pair.as_rule() {
             Rule::assignment => {
                 let assign = pair.into_inner().next().unwrap();
-                Self::parse_assignment(assign)
+                let decl = assign.as_rule() == Rule::assignment_with_local;
+                Self::parse_assignment(assign, decl)
             }
             Rule::declaration => {
                 let decl = pair.into_inner().next().unwrap();
