@@ -7,6 +7,7 @@ use fugue_ir::{AddressSpace, Translator, VarnodeData};
 use thiserror::Error;
 use ustr::{Ustr, UstrMap};
 
+use crate::ast::Expr;
 use crate::ast::{AstError, CodeBlock, Stmt};
 use crate::cfg::CFG;
 
@@ -20,6 +21,8 @@ pub enum IRBuilderError {
         size: usize,
         old_size: usize,
     },
+    #[error("use of undefined temporary {name}")]
+    LocalUndef { name: Ustr },
     #[error("redefinition of register {name}")]
     RegDup { name: Ustr },
     #[error(transparent)]
@@ -104,13 +107,14 @@ impl<'a> Locals<'a> {
         match self.mapping.entry(name) {
             Entry::Vacant(entry) => {
                 let id = self.locals.len();
-                self.locals.push(LocalVar { name: Some(name), size });
+                self.locals.push(LocalVar {
+                    name: Some(name),
+                    size,
+                });
                 entry.insert(id);
                 Ok(id)
             }
-            Entry::Occupied(_) => {
-                Err(IRBuilderError::LocalDup { name })
-            }
+            Entry::Occupied(_) => Err(IRBuilderError::LocalDup { name }),
         }
     }
 
@@ -120,12 +124,20 @@ impl<'a> Locals<'a> {
         id
     }
 
-    pub fn get_or_insert(&mut self, name: Ustr, size: Option<u32>) -> Result<LocalId, IRBuilderError> {
+    pub fn get_or_insert(
+        &mut self,
+        name: Ustr,
+        size: Option<u32>,
+    ) -> Result<LocalId, IRBuilderError> {
         if let Some(id) = self.mapping.get(&name) {
-            return Ok(*id)
+            return Ok(*id);
         }
 
         self.new_named(name, size)
+    }
+
+    pub fn get(&self, name: Ustr) -> Option<LocalId> {
+        self.mapping.get(&name).copied()
     }
 
     pub fn size_of(&self, id: LocalId) -> Option<u32> {
@@ -154,7 +166,12 @@ impl<'a> IRBuilder<'a> {
         todo!()
     }
 
-    fn emit_op(&mut self, op: Opcode, mut inputs: Vec<IRValue>, mut output: Option<IRValue>) -> Option<IRValue> {
+    fn emit_op(
+        &mut self,
+        op: Opcode,
+        mut inputs: Vec<IRValue>,
+        mut output: Option<IRValue>,
+    ) -> Option<IRValue> {
         self.update_varnodes(op, &mut inputs, output.as_mut());
         self.emitted.emit(op, inputs, output);
         output
@@ -162,22 +179,58 @@ impl<'a> IRBuilder<'a> {
 
     fn emit_stmt(&mut self, stmt: &Stmt) -> Result<(), IRBuilderError> {
         match stmt {
-            Stmt::Assign { name, decl, size, bits, source } => {
+            Stmt::Assign {
+                name,
+                decl,
+                size,
+                bits,
+                source,
+            } => {
                 let target = self.resolve_name(*decl, *name, *size)?;
 
                 todo!()
-
             }
             Stmt::Declare { name, size } => {
                 let target = self.locals.new_named(*name, *size)?;
 
                 todo!()
             }
-            _ => todo!()
+            _ => todo!(),
         }
     }
 
-    fn resolve_name(&mut self, decl: bool, name: Ustr, size: Option<u32>) -> Result<IRValue, IRBuilderError> {
+    fn emit_expr(&mut self, expr: &Expr) -> Result<IRExpr, IRBuilderError> {
+        let expr = match expr {
+            Expr::Ident { value: name, size } => {
+                let ident = self.resolve_existing_name(*name)?;
+                todo!()
+            }
+            Expr::Literal { value, size } => IRExpr::Const {
+                value: *value,
+                size: *size,
+            },
+            _ => todo!(),
+        };
+        Ok(expr)
+    }
+
+    fn resolve_existing_name(&self, name: Ustr) -> Result<IRValue, IRBuilderError> {
+        if let Some(reg) = self.translator.register_by_name(name) {
+            Ok(IRValue::Register(reg))
+        } else {
+            self.locals
+                .get(name)
+                .map(IRValue::Temporary)
+                .ok_or_else(|| IRBuilderError::LocalUndef { name })
+        }
+    }
+
+    fn resolve_name(
+        &mut self,
+        decl: bool,
+        name: Ustr,
+        size: Option<u32>,
+    ) -> Result<IRValue, IRBuilderError> {
         if let Some(reg) = self.translator.register_by_name(name) {
             return if decl {
                 Err(IRBuilderError::RegDup { name })
@@ -190,10 +243,16 @@ impl<'a> IRBuilder<'a> {
             self.locals.new_named(name, size)
         } else {
             self.locals.get_or_insert(name, size)
-        }.map(IRValue::Temporary)
+        }
+        .map(IRValue::Temporary)
     }
 
-    fn update_varnodes(&mut self, op: Opcode, inputs: &mut [IRValue], output: Option<&mut IRValue>) {
+    fn update_varnodes(
+        &mut self,
+        op: Opcode,
+        inputs: &mut [IRValue],
+        output: Option<&mut IRValue>,
+    ) {
         // apply size updates
         todo!()
     }
