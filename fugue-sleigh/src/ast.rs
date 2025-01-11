@@ -2,6 +2,7 @@ use std::fmt::Display;
 use std::num::ParseIntError;
 use std::ops::Range;
 
+use fugue_ir::disassembly::Opcode;
 use itertools::Itertools;
 use pest::error::Error;
 use pest::iterators::Pair;
@@ -152,7 +153,7 @@ pub enum Expr {
     },
 }
 
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum BinOp {
     BoolOr,
     BoolAnd,
@@ -181,7 +182,7 @@ pub enum BinOp {
     FloatDiv,
 }
 
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum BinRel {
     Eq,
     NotEq,
@@ -205,7 +206,7 @@ pub enum BinRel {
     FloatGreaterEq,
 }
 
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum UnOp {
     BoolNot,
     Not,
