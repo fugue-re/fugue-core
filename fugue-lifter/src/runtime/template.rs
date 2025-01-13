@@ -314,14 +314,116 @@ impl OpTpl {
         &self,
         input: &mut LiftingContextState,
     ) -> Option<()> {
-        todo!()
+        input.emit_delay_slots()
     }
 
     pub fn dump_action<R: ConstructorResolver>(
         &self,
-        input: &mut LiftingContextState,
+        state: &mut LiftingContextState,
     ) -> Option<()> {
-        todo!()
+        let (index, op) = self.build_op::<R>(state)?;
+
+        for input in &self.inputs[index..] {
+            input.build_input::<R>(state)?;
+        }
+
+        if !self.inputs.is_empty() {
+            state.context.inputs.0[0].offset += state.context.label_base as u64;
+            state.context.label_refs.push(pcode::RelativeRecord {
+                operation: state.issued.len() as u8,
+                index: 0,
+            });
+        }
+
+        let Some(ref output) = self.output else {
+            state.issue(op, pcode::Varnode::INVALID);
+            return Some(());
+        };
+
+        output.build_output::<R>(state, op)
+    }
+
+    #[inline]
+    fn build_op<R: ConstructorResolver>(
+        &self,
+        input: &mut LiftingContextState<'_>,
+    ) -> Option<(usize, pcode::Op)> {
+        let (index, op) = match self.op {
+            Op::Load => {
+                let space = self.inputs[0].offset.value::<R>(input)? as u8;
+                (1, pcode::Op::Load(space))
+            }
+            Op::Store => {
+                let space = self.inputs[0].offset.value::<R>(input)? as u8;
+                (1, pcode::Op::Store(space))
+            }
+            Op::CallOther => {
+                // NOTE: we could resolve the UserOp here at the cost of a larger
+                // representation for Op...
+                let index = self.inputs[0].offset.value::<R>(input)? as u16;
+                (1, pcode::Op::UserOp(index))
+            }
+            Op::Copy => (0, pcode::Op::Copy),
+            Op::Branch => (0, pcode::Op::Branch),
+            Op::CBranch => (0, pcode::Op::CBranch),
+            Op::IBranch => (0, pcode::Op::IBranch),
+            Op::Call => (0, pcode::Op::Call),
+            Op::ICall => (0, pcode::Op::ICall),
+            Op::Return => (0, pcode::Op::Return),
+            Op::IntEq => (0, pcode::Op::IntEq),
+            Op::IntNotEq => (0, pcode::Op::IntNotEq),
+            Op::IntSLess => (0, pcode::Op::IntSignedLess),
+            Op::IntSLessEq => (0, pcode::Op::IntSignedLessEq),
+            Op::IntLess => (0, pcode::Op::IntLess),
+            Op::IntLessEq => (0, pcode::Op::IntLessEq),
+            Op::IntZExt => (0, pcode::Op::ZeroExt),
+            Op::IntSExt => (0, pcode::Op::SignExt),
+            Op::IntNeg => (0, pcode::Op::IntNeg),
+            Op::IntNot => (0, pcode::Op::IntNot),
+            Op::IntAdd => (0, pcode::Op::IntAdd),
+            Op::IntSub => (0, pcode::Op::IntSub),
+            Op::IntMul => (0, pcode::Op::IntMul),
+            Op::IntDiv => (0, pcode::Op::IntDiv),
+            Op::IntSDiv => (0, pcode::Op::IntSignedDiv),
+            Op::IntRem => (0, pcode::Op::IntRem),
+            Op::IntSRem => (0, pcode::Op::IntSignedRem),
+            Op::IntCarry => (0, pcode::Op::IntCarry),
+            Op::IntSCarry => (0, pcode::Op::IntSignedCarry),
+            Op::IntSBorrow => (0, pcode::Op::IntSignedBorrow),
+            Op::IntAnd => (0, pcode::Op::IntAnd),
+            Op::IntOr => (0, pcode::Op::IntOr),
+            Op::IntXor => (0, pcode::Op::IntXor),
+            Op::IntLShift => (0, pcode::Op::IntLeftShift),
+            Op::IntRShift => (0, pcode::Op::IntRightShift),
+            Op::IntSRShift => (0, pcode::Op::IntSignedRightShift),
+            Op::BoolNot => (0, pcode::Op::BoolNot),
+            Op::BoolAnd => (0, pcode::Op::BoolAnd),
+            Op::BoolOr => (0, pcode::Op::BoolOr),
+            Op::BoolXor => (0, pcode::Op::BoolXor),
+            Op::FloatEq => (0, pcode::Op::FloatEq),
+            Op::FloatNotEq => (0, pcode::Op::FloatNotEq),
+            Op::FloatLess => (0, pcode::Op::FloatLess),
+            Op::FloatLessEq => (0, pcode::Op::FloatLessEq),
+            Op::FloatIsNaN => (0, pcode::Op::FloatIsNaN),
+            Op::FloatAdd => (0, pcode::Op::FloatAdd),
+            Op::FloatSub => (0, pcode::Op::FloatSub),
+            Op::FloatMul => (0, pcode::Op::FloatMul),
+            Op::FloatDiv => (0, pcode::Op::FloatDiv),
+            Op::FloatNeg => (0, pcode::Op::FloatNeg),
+            Op::FloatAbs => (0, pcode::Op::FloatAbs),
+            Op::FloatSqrt => (0, pcode::Op::FloatSqrt),
+            Op::FloatOfInt => (0, pcode::Op::IntToFloat),
+            Op::FloatOfFloat => (0, pcode::Op::FloatToFloat),
+            Op::FloatTruncate => (0, pcode::Op::FloatTruncate),
+            Op::FloatCeiling => (0, pcode::Op::FloatCeiling),
+            Op::FloatFloor => (0, pcode::Op::FloatFloor),
+            Op::FloatRound => (0, pcode::Op::FloatRound),
+            Op::Subpiece => (0, pcode::Op::Subpiece),
+            Op::PopCount => (0, pcode::Op::CountOnes),
+            Op::LZCount => (0, pcode::Op::CountZeros),
+            _ => unreachable!("state should be unreachable via generated code"),
+        };
+        Some((index, op))
     }
 }
 
@@ -394,7 +496,7 @@ pub struct VarnodeTpl {
 }
 
 impl VarnodeTpl {
-    pub fn is_dynamic(&self, input: &LiftingContextState<'_>) -> bool {
+    fn is_dynamic(&self, input: &LiftingContextState<'_>) -> bool {
         let ConstTpl::Handle(index, _) = self.offset else {
             return false;
         };
@@ -446,7 +548,10 @@ impl VarnodeTpl {
         ))
     }
 
-    pub fn build<R: ConstructorResolver>(&self, input: &mut LiftingContextState<'_>) -> Option<()> {
+    pub fn build_input<R: ConstructorResolver>(
+        &self,
+        input: &mut LiftingContextState<'_>,
+    ) -> Option<()> {
         let location = self.location::<R>(input)?;
 
         if self.is_dynamic(input) {
@@ -459,6 +564,27 @@ impl VarnodeTpl {
         }
 
         input.push_input(location);
+
+        Some(())
+    }
+
+    pub fn build_output<R: ConstructorResolver>(
+        &self,
+        input: &mut LiftingContextState<'_>,
+        op: pcode::Op,
+    ) -> Option<()> {
+        let out = self.location::<R>(input)?;
+        input.issue(op, out);
+
+        if self.is_dynamic(input) {
+            let (space, pointer) = self.pointer::<R>(input)?;
+            input.issue_with(
+                pcode::Op::Store(space),
+                pcode::Inputs::two(pointer, out),
+                pcode::Varnode::INVALID,
+            );
+        }
+
         Some(())
     }
 }
