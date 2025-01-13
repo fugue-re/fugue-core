@@ -57,6 +57,8 @@ pub trait ConstructorResolver {
 
     fn resolve(input: &mut LiftingContextState) -> Option<&'static Constructor>;
     fn resolve_upper_bound(space: u8) -> u64;
+    fn resolve_word_size(space: u8) -> usize;
+    fn resolve_location_offset(unique_offset: u64, space: u8, offset: u64, size: u16) -> u64;
 }
 
 pub type ConstructorResult = fn(&mut LiftingContextState<'_>) -> FixedHandle;

@@ -3,7 +3,7 @@ use std::mem;
 use arrayvec::ArrayVec;
 
 use crate::runtime::calculate_mask;
-use crate::runtime::constructor::ConstructorResolver;
+use crate::runtime::constructor::{Constructor, ConstructorResolver};
 use crate::runtime::context::ContextDatabase;
 use crate::runtime::input::{FixedHandle, ParserInput, ParserInputs, INVALID_HANDLE};
 
@@ -228,6 +228,25 @@ impl<'a> LiftingContextState<'a> {
     #[doc(hidden)]
     pub fn set_unique_offset(&mut self, address: u64) {
         self.unique_offset = (address & self.context.unique_mask) << 4;
+    }
+
+    #[inline]
+    #[doc(hidden)]
+    pub unsafe fn operand_constructor(&self, index: usize) -> Option<&'static Constructor> {
+        let opnds = self
+            .inputs
+            .input
+            .context
+            .constructors
+            .get_unchecked(self.inputs.input.point as usize)
+            .operands as usize;
+
+        self.inputs
+            .input
+            .context
+            .constructors
+            .get(opnds + index)?
+            .constructor
     }
 
     #[inline]

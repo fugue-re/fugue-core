@@ -1,5 +1,6 @@
 use crate::runtime::constructor::ConstructorResolver;
 use crate::runtime::input::{FixedHandle, INVALID_HANDLE};
+use crate::runtime::pcode;
 use crate::runtime::{wrap_offset, LiftingContextState};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -247,12 +248,16 @@ impl ConstTpl {
         }
     }
 
-    pub fn is_dynamic(&self) -> bool {
+    pub fn is_real(&self) -> bool {
         matches!(self, Self::Real(_))
     }
 
-    pub fn is_real(&self) -> bool {
-        matches!(self, Self::Real(_))
+    pub fn handle_index(&self) -> Option<usize> {
+        if let Self::Handle(index, _) = self {
+            Some(*index)
+        } else {
+            None
+        }
     }
 }
 
@@ -294,7 +299,15 @@ impl OpTpl {
         &self,
         input: &mut LiftingContextState,
     ) -> Option<()> {
-        todo!()
+        let index = self.inputs[0].offset.real() as usize;
+        if let Some(operand) = unsafe { input.operand_constructor(index) } {
+            input.input().push_operand(index);
+
+            todo!("apply build action");
+
+            input.input().pop_operand();
+        }
+        Some(())
     }
 
     pub fn delay_slot_action<R: ConstructorResolver>(
@@ -327,7 +340,50 @@ impl HandleTpl {
         &self,
         input: &mut LiftingContextState,
     ) -> Option<FixedHandle> {
-        todo!()
+        let handle = if self.ptr_space.is_real() {
+            let space = self.space.space::<R>(input);
+            let size = self.size.value::<R>(input)? as u16;
+
+            let mut handle = FixedHandle {
+                space,
+                size,
+                ..Default::default()
+            };
+
+            self.ptr_offset.update_offset::<R>(input, &mut handle)?;
+
+            handle
+        } else {
+            let space = self.space.space::<R>(input);
+            let size = self.size.value::<R>(input)? as u16;
+
+            let offset_offset = self.ptr_offset.value::<R>(input)?;
+
+            let mut handle = FixedHandle {
+                space,
+                size,
+                offset_offset,
+                ..Default::default()
+            };
+
+            let offset_space = self.ptr_space.space::<R>(input);
+
+            if offset_space == 0 {
+                let hoffset = R::resolve_upper_bound(space);
+                let word_size = R::resolve_word_size(space) as u64;
+
+                handle.offset_offset = wrap_offset(hoffset, handle.offset_offset * word_size);
+            } else {
+                handle.offset_space = offset_space;
+                handle.offset_size = self.ptr_size.value::<R>(input)? as u16;
+
+                handle.temporary_offset = self.tmp_offset.value::<R>(input)?;
+                handle.temporary_space = self.tmp_space.space::<R>(input);
+            }
+
+            handle
+        };
+        Some(handle)
     }
 }
 
@@ -335,4 +391,74 @@ pub struct VarnodeTpl {
     pub space: ConstTpl,
     pub offset: ConstTpl,
     pub size: ConstTpl,
+}
+
+impl VarnodeTpl {
+    pub fn is_dynamic(&self, input: &LiftingContextState<'_>) -> bool {
+        let ConstTpl::Handle(index, _) = self.offset else {
+            return false;
+        };
+
+        let handle = unsafe { input.operand_handle(index) };
+
+        handle.offset_space != INVALID_HANDLE
+    }
+
+    pub fn location<R: ConstructorResolver>(
+        &self,
+        input: &mut LiftingContextState<'_>,
+    ) -> Option<pcode::Varnode> {
+        let space = self.space.space::<R>(input);
+        let size = self.space.value::<R>(input)? as u16;
+        let offset = R::resolve_location_offset(
+            input.unique_offset,
+            space,
+            self.offset.value::<R>(input)?,
+            size,
+        );
+
+        Some(pcode::Varnode {
+            space,
+            offset,
+            size,
+        })
+    }
+
+    pub fn pointer<R: ConstructorResolver>(
+        &self,
+        input: &mut LiftingContextState<'_>,
+    ) -> Option<(u8, pcode::Varnode)> {
+        let index = self.offset.handle_index().expect("handle");
+        let handle = unsafe { input.operand_handle(index) };
+
+        let space = handle.offset_space;
+        let size = handle.offset_size;
+        let offset =
+            R::resolve_location_offset(input.unique_offset, space, handle.offset_offset, size);
+
+        Some((
+            handle.space,
+            pcode::Varnode {
+                space,
+                offset,
+                size,
+            },
+        ))
+    }
+
+    pub fn build<R: ConstructorResolver>(&self, input: &mut LiftingContextState<'_>) -> Option<()> {
+        let location = self.location::<R>(input)?;
+
+        if self.is_dynamic(input) {
+            let (space, pointer) = self.pointer::<R>(input)?;
+            input.issue_with(
+                pcode::Op::Load(space),
+                pcode::Inputs::one(pointer),
+                location,
+            );
+        }
+
+        input.push_input(location);
+        Some(())
+    }
 }

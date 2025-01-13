@@ -1198,7 +1198,7 @@ impl<'a> LifterGenerator<'a> {
 
                 let mut offset = #offset;
 
-                offset = fixup_location_offset(input, space, offset, size);
+                offset = fixup_location_offset(input.unique_offset, space, offset, size);
 
                 fugue_lifter::runtime::pcode::Varnode {
                     space,
@@ -1219,7 +1219,7 @@ impl<'a> LifterGenerator<'a> {
                 let size = handle.offset_size;
                 let mut offset = handle.offset_offset;
 
-                offset = fixup_location_offset(input, space, offset, size);
+                offset = fixup_location_offset(input.unique_offset, space, offset, size);
 
                 (
                     handle.space,
@@ -1835,7 +1835,7 @@ impl<'a> ToTokens for LifterGenerator<'a> {
                     // constant
                     quote! { #i => offset & fugue_lifter::runtime::calculate_mask(size as usize) }
                 } else if spc.id().is_unique() {
-                    quote! { #i => offset | builder.unique_offset }
+                    quote! { #i => offset | unique_offset }
                 } else {
                     let highest = spc.highest_offset();
                     quote! { #i => fugue_lifter::runtime::wrap_offset(#highest, offset) }
@@ -1994,7 +1994,7 @@ impl<'a> ToTokens for LifterGenerator<'a> {
 
             #[inline(always)]
             fn fixup_location_offset(
-                builder: &fugue_lifter::runtime::LiftingContextState,
+                unique_offset: u64,
                 space: u8,
                 offset: u64,
                 size: u16,
@@ -2066,6 +2066,21 @@ impl<'a> ToTokens for LifterGenerator<'a> {
                 #[inline(always)]
                 fn resolve_upper_bound(space: u8) -> u64 {
                     SPACE_UPPER_BOUND[space as usize]
+                }
+
+                #[inline(always)]
+                fn resolve_word_size(space: u8) -> usize {
+                    SPACE_WORD_SIZE[space as usize]
+                }
+
+                #[inline(always)]
+                fn resolve_location_offset(
+                    unique_offset: u64,
+                    space: u8,
+                    offset: u64,
+                    size: u16,
+                ) -> u64 {
+                    fixup_location_offset(unique_offset, space, offset, size)
                 }
             }
 
