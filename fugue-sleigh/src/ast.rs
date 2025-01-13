@@ -806,6 +806,10 @@ impl CodeBlock {
         let target = pairs.next().unwrap();
 
         let target = match target.as_rule() {
+            // NOTE: I'm not sure about this--we'd get this as a dynamic address,
+            // but we don't really have a notion of that in our restricted version
+            // of PCode.
+            //
             Rule::identifier => BranchTarget::Direct(BranchLabel::Varnode {
                 name: Self::parse_identifier(target)?,
             }),

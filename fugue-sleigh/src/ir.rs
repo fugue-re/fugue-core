@@ -1,5 +1,5 @@
-use std::cmp::Ordering;
 use std::collections::hash_map::Entry;
+use std::sync::Arc;
 
 use fugue_ir::disassembly::{ArenaVec, IRBuilderArena, Opcode, PCodeRaw};
 use fugue_ir::{AddressSpace, Translator, VarnodeData};
@@ -8,6 +8,7 @@ use thiserror::Error;
 use ustr::{Ustr, UstrMap};
 
 use crate::ast::BinRel;
+use crate::ast::BranchLabel;
 use crate::ast::BranchTarget;
 use crate::ast::{AstError, BinOp, CodeBlock, Expr, Stmt, UnOp};
 use crate::cfg::CFG;
@@ -28,6 +29,8 @@ pub enum IRBuilderError {
     RegDup { name: Ustr },
     #[error(transparent)]
     Parse(#[from] AstError),
+    #[error("unknown space {space}")]
+    UnknownSpace { space: Ustr },
 }
 
 #[derive(Debug, Clone, Default, Eq, PartialEq)]
@@ -46,6 +49,7 @@ pub enum IRValue {
     Const(u64, Option<u32>),
     Register(VarnodeData),
     Temporary(LocalId),
+    Address(u64, Option<Ustr>),
     Label(Ustr),
 }
 
@@ -68,6 +72,11 @@ pub enum IRExpr {
         op: Opcode,
         lvalue: IRValue,
         rvalue: IRValue,
+    },
+    Load {
+        space: Option<Ustr>,
+        size: Option<u32>,
+        source: IRValue,
     },
 }
 
@@ -215,6 +224,22 @@ impl<'a> IRBuilder<'a> {
         self.emit_with_output(op, vec![lvalue, rvalue], output)
     }
 
+    fn emit_load(
+        &mut self,
+        space: Option<Ustr>,
+        _size: Option<u32>,
+        source: IRValue,
+        output: Option<IRValue>,
+    ) -> Result<IRValue, IRBuilderError> {
+        let space = self.resolve_space(space)?;
+        let space_id = IRValue::Const(space.index() as _, None);
+
+        // TODO: fix size!
+
+        let output = self.emit_with_output(Opcode::Load, vec![space_id, source], output);
+        Ok(output)
+    }
+
     fn new_named_local(
         &mut self,
         name: Ustr,
@@ -272,11 +297,59 @@ impl<'a> IRBuilder<'a> {
         target: &Expr,
         source: &Expr,
     ) -> Result<(), IRBuilderError> {
-        todo!()
+        let source = self.resolve_expr(source)?;
+        let target = self.resolve_expr(target)?;
+
+        // store => index, target, source
+
+        let space = self.resolve_space(space)?;
+
+        let source_vnd = self.expr_to_value(source, None)?;
+        let target_vnd = self.expr_to_value(target, None)?;
+
+        // TODO: fix size!
+        // assert_eq!(size, size_of(source_vnd));
+
+        let space_id = IRValue::Const(space.index() as _, None);
+
+        self.emit_op(Opcode::Store, vec![space_id, target_vnd, source_vnd], None);
+
+        Ok(())
+    }
+
+    fn resolve_space(&mut self, space: Option<Ustr>) -> Result<Arc<AddressSpace>, IRBuilderError> {
+        let manager = self.translator.manager();
+        if let Some(space) = space {
+            manager
+                .space_by_name(space)
+                .ok_or(IRBuilderError::UnknownSpace { space })
+        } else {
+            Ok(manager.default_space())
+        }
     }
 
     fn resolve_branch(&mut self, target: &BranchTarget) -> Result<(), IRBuilderError> {
-        todo!()
+        let (op, target) = match target {
+            BranchTarget::Label(label) => (Opcode::Branch, IRValue::Label(*label)),
+            BranchTarget::Direct(target) => {
+                let BranchLabel::Offset { offset, space } = target else {
+                    unreachable!()
+                };
+
+                let varnode = IRValue::Address(*offset, *space);
+
+                (Opcode::Branch, varnode)
+            }
+            BranchTarget::Indirect(target) => {
+                let expr = self.resolve_expr(target)?;
+                let value = self.expr_to_value(expr, None)?;
+                (Opcode::IBranch, value)
+            }
+        };
+
+        self.emit_op(op, vec![target], None);
+
+        Ok(())
     }
 
     fn resolve_cbranch(
@@ -284,18 +357,66 @@ impl<'a> IRBuilder<'a> {
         target: &BranchTarget,
         condition: &Expr,
     ) -> Result<(), IRBuilderError> {
-        todo!()
+        let expr = self.resolve_expr(condition)?;
+        let condition = self.expr_to_value(expr, None)?;
+
+        let target = match target {
+            BranchTarget::Label(label) => IRValue::Label(*label),
+            BranchTarget::Direct(target) => {
+                let BranchLabel::Offset { offset, space } = target else {
+                    unreachable!()
+                };
+
+                IRValue::Address(*offset, *space)
+            }
+            _ => unreachable!()
+        };
+
+        self.emit_op(Opcode::CBranch, vec![target, condition], None);
+
+        Ok(())
     }
 
     fn resolve_call(&mut self, target: &BranchTarget) -> Result<(), IRBuilderError> {
-        todo!()
+        let (op, target) = match target {
+            BranchTarget::Label(label) => (Opcode::Call, IRValue::Label(*label)),
+            BranchTarget::Direct(target) => {
+                let BranchLabel::Offset { offset, space } = target else {
+                    unreachable!()
+                };
+
+                let varnode = IRValue::Address(*offset, *space);
+
+                (Opcode::Branch, varnode)
+            }
+            BranchTarget::Indirect(target) => {
+                let expr = self.resolve_expr(target)?;
+                let value = self.expr_to_value(expr, None)?;
+                (Opcode::ICall, value)
+            }
+        };
+
+        self.emit_op(op, vec![target], None);
+
+        Ok(())
     }
 
     fn resolve_return(&mut self, target: &BranchTarget) -> Result<(), IRBuilderError> {
-        todo!()
+        let (op, target) = if let BranchTarget::Indirect(target) = target {
+            let expr = self.resolve_expr(target)?;
+            let value = self.expr_to_value(expr, None)?;
+            (Opcode::ICall, value)
+        } else {
+            unreachable!("non-indirect return cannot be constructed")
+        };
+
+        self.emit_op(op, vec![target], None);
+
+        Ok(())
     }
 
     fn resolve_intrinsic(&mut self, name: Ustr, arguments: &[Expr]) -> Result<(), IRBuilderError> {
+        // NOTE: could be truncation!
         todo!()
     }
 
@@ -316,6 +437,11 @@ impl<'a> IRBuilder<'a> {
             }
             IRExpr::UnOp { op, value } => self.emit_unop(op, value, output),
             IRExpr::BinOp { op, lvalue, rvalue } => self.emit_binop(op, lvalue, rvalue, output),
+            IRExpr::Load {
+                space,
+                size,
+                source,
+            } => self.emit_load(space, size, source, output)?,
         };
         Ok(value)
     }
@@ -372,6 +498,20 @@ impl<'a> IRBuilder<'a> {
                 };
 
                 IRExpr::BinOp { op, lvalue, rvalue }
+            }
+            Expr::Load {
+                space,
+                size,
+                source,
+            } => {
+                let source = self.resolve_expr(source)?;
+                let value = self.expr_to_value(source, None)?;
+
+                IRExpr::Load {
+                    space: *space,
+                    size: *size,
+                    source: value,
+                }
             }
             _ => todo!(),
         };
@@ -530,7 +670,9 @@ mod test {
             local v1:8 = 20;
             local counter:8 = 0;
 
+            <label1>
             v2 = v0 + v1;
+            if v2 < 10 goto <label1>;
             "#,
         )?;
 
