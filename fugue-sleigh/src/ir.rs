@@ -1,4 +1,5 @@
 use std::collections::hash_map::Entry;
+use std::fmt::Display;
 use std::iter::once;
 use std::sync::Arc;
 
@@ -26,18 +27,45 @@ static BUILTINS: Lazy<UstrMap<(Opcode, usize)>> = Lazy::new(|| {
     )
 });
 
+#[derive(Debug, Clone)]
+pub enum LocalIdent {
+    Named(Ustr),
+    Unnamed(LocalId),
+}
+
+impl From<Ustr> for LocalIdent {
+    fn from(value: Ustr) -> Self {
+        Self::Named(value)
+    }
+}
+
+impl From<LocalId> for LocalIdent {
+    fn from(value: LocalId) -> Self {
+        Self::Unnamed(value)
+    }
+}
+
+impl Display for LocalIdent {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Named(name) => name.fmt(f),
+            Self::Unnamed(id) => write!(f, "unnamed {id}"),
+        }
+    }
+}
+
 #[derive(Debug, Error)]
 pub enum IRBuilderError {
     #[error("redefinition of temporary {name}")]
-    LocalDup { name: Ustr },
+    LocalDup { name: LocalIdent },
     #[error("inconsistent size for {name}: {old_size} vs {size}")]
     LocalSize {
-        name: Ustr,
-        size: usize,
-        old_size: usize,
+        name: LocalIdent,
+        size: u32,
+        old_size: u32,
     },
     #[error("use of undefined temporary {name}")]
-    LocalUndef { name: Ustr },
+    LocalUndef { name: LocalIdent },
     #[error("inconsistent arity for {op:?}; expected {expected}, got {actual}")]
     OpcodeArity {
         op: Opcode,
@@ -46,12 +74,28 @@ pub enum IRBuilderError {
     },
     #[error("redefinition of register {name}")]
     RegDup { name: Ustr },
+    #[error("inconsistent size for {name}: {old_size} vs {size}")]
+    RegSize {
+        name: Ustr,
+        size: u32,
+        old_size: u32,
+    },
     #[error(transparent)]
     Parse(#[from] AstError),
     #[error("unknown intrinsic `{name}`")]
     UnknownIntrinsic { name: Ustr },
     #[error("unknown space `{space}`")]
     UnknownSpace { space: Ustr },
+    #[error("unable to reconcile size of {v1:?} with expected size {size}")]
+    UpdateSize1 { v1: IRValue, size: u32 },
+    #[error("unable to reconcile size of {v1:?} and {v2:?}")]
+    UpdateSize2 { v1: IRValue, v2: IRValue },
+    #[error("unable to reconcile size of {v1:?}, {v2:?}, and {v3:?}")]
+    UpdateSize3 {
+        v1: IRValue,
+        v2: IRValue,
+        v3: IRValue,
+    },
 }
 
 #[derive(Debug, Clone, Default, Eq, PartialEq)]
@@ -73,6 +117,12 @@ pub enum IRValue {
     Address(u64, Option<Ustr>),
     Label(Ustr),
     Pending,
+}
+
+impl IRValue {
+    fn is_const(&self) -> bool {
+        matches!(self, Self::Const(_, _))
+    }
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -125,12 +175,14 @@ pub struct IRStmt {
 pub struct IRBuilder<'a> {
     emitted: IRBlock,
     locals: Locals<'a>,
+    default_size: u32,
     user_ops: UstrMap<usize>,
     translator: &'a Translator,
 }
 
 pub type LocalId = usize;
 
+#[derive(Debug)]
 pub struct LocalVar {
     name: Option<Ustr>,
     size: Option<u32>,
@@ -162,7 +214,7 @@ impl<'a> Locals<'a> {
                 entry.insert(id);
                 Ok(id)
             }
-            Entry::Occupied(_) => Err(IRBuilderError::LocalDup { name }),
+            Entry::Occupied(_) => Err(IRBuilderError::LocalDup { name: name.into() }),
         }
     }
 
@@ -188,6 +240,26 @@ impl<'a> Locals<'a> {
         self.mapping.get(&name).copied()
     }
 
+    pub fn update_size(&mut self, id: LocalId, size: u32) -> Result<(), IRBuilderError> {
+        let Some(var) = self.locals.get_mut(id) else {
+            panic!("local `{id}` undefined")
+        };
+
+        if matches!(var.size, Some(old_size) if old_size != size) {
+            return Err(IRBuilderError::LocalSize {
+                name: var
+                    .name
+                    .map(LocalIdent::Named)
+                    .unwrap_or(LocalIdent::Unnamed(id)),
+                size,
+                old_size: var.size.unwrap(),
+            });
+        }
+        var.size = Some(size);
+
+        Ok(())
+    }
+
     pub fn size_of(&self, id: LocalId) -> Option<u32> {
         self.locals.get(id).and_then(|v| v.size)
     }
@@ -196,6 +268,7 @@ impl<'a> Locals<'a> {
 impl<'a> IRBuilder<'a> {
     pub fn new(translator: &'a Translator) -> Self {
         Self {
+            default_size: translator.manager().default_space().address_size() as _,
             user_ops: translator
                 .user_ops()
                 .iter()
@@ -224,7 +297,7 @@ impl<'a> IRBuilder<'a> {
             }
         }
 
-        todo!("{:#?}", self.emitted)
+        todo!("{:#?}\n\n{:#?}", self.emitted, self.locals.locals)
     }
 
     fn emit_op(
@@ -232,15 +305,16 @@ impl<'a> IRBuilder<'a> {
         op: Opcode,
         mut inputs: Vec<IRValue>,
         mut output: Option<IRValue>,
-    ) -> Option<IRValue> {
-        self.update_varnodes(op, &mut inputs, output.as_mut());
+    ) -> Result<Option<IRValue>, IRBuilderError> {
+        self.update_varnodes(op, &mut inputs, output.as_mut())?;
         self.emitted.emit(op, inputs, output);
-        output
+        Ok(output)
     }
 
-    fn emit_copy(&mut self, input: IRValue, output: IRValue) -> IRValue {
-        self.emit_op(Opcode::Copy, vec![input], Some(output))
-            .expect("has output")
+    fn emit_copy(&mut self, input: IRValue, output: IRValue) -> Result<IRValue, IRBuilderError> {
+        let output = self.emit_op(Opcode::Copy, vec![input], Some(output))?
+            .expect("has output");
+        Ok(output)
     }
 
     fn emit_with_output(
@@ -248,12 +322,13 @@ impl<'a> IRBuilder<'a> {
         op: Opcode,
         inputs: Vec<IRValue>,
         output: Option<IRValue>,
-    ) -> IRValue {
+    ) -> Result<IRValue, IRBuilderError> {
         let output = output.unwrap_or_else(|| self.new_local(None));
-        self.emit_op(op, inputs, Some(output)).expect("has output")
+        let output = self.emit_op(op, inputs, Some(output))?.expect("has output");
+        Ok(output)
     }
 
-    fn emit_unop(&mut self, op: Opcode, input: IRValue, output: Option<IRValue>) -> IRValue {
+    fn emit_unop(&mut self, op: Opcode, input: IRValue, output: Option<IRValue>) -> Result<IRValue, IRBuilderError> {
         self.emit_with_output(op, vec![input], output)
     }
 
@@ -263,7 +338,7 @@ impl<'a> IRBuilder<'a> {
         lvalue: IRValue,
         rvalue: IRValue,
         output: Option<IRValue>,
-    ) -> IRValue {
+    ) -> Result<IRValue, IRBuilderError> {
         self.emit_with_output(op, vec![lvalue, rvalue], output)
     }
 
@@ -273,23 +348,26 @@ impl<'a> IRBuilder<'a> {
         lvalue: IRValue,
         rvalue: IRValue,
         output: Option<IRValue>,
-    ) -> IRValue {
+    ) -> Result<IRValue, IRBuilderError> {
         self.emit_with_output(op, vec![lvalue, rvalue], output)
     }
 
     fn emit_load(
         &mut self,
         space: Option<Ustr>,
-        _size: Option<u32>,
+        size: Option<u32>,
         source: IRValue,
         output: Option<IRValue>,
     ) -> Result<IRValue, IRBuilderError> {
         let space = self.resolve_space(space)?;
         let space_id = IRValue::Const(space.index() as _, None);
 
-        // TODO: fix size!
+        let mut output = self.emit_with_output(Opcode::Load, vec![space_id, source], output)?;
 
-        let output = self.emit_with_output(Opcode::Load, vec![space_id, source], output);
+        if let Some(sz) = size {
+            self.update_varnode(&mut output, sz)?;
+        }
+
         Ok(output)
     }
 
@@ -365,7 +443,7 @@ impl<'a> IRBuilder<'a> {
 
         let space_id = IRValue::Const(space.index() as _, None);
 
-        self.emit_op(Opcode::Store, vec![space_id, target_vnd, source_vnd], None);
+        self.emit_op(Opcode::Store, vec![space_id, target_vnd, source_vnd], None)?;
 
         Ok(())
     }
@@ -400,7 +478,7 @@ impl<'a> IRBuilder<'a> {
             }
         };
 
-        self.emit_op(op, vec![target], None);
+        self.emit_op(op, vec![target], None)?;
 
         Ok(())
     }
@@ -425,7 +503,7 @@ impl<'a> IRBuilder<'a> {
             _ => unreachable!(),
         };
 
-        self.emit_op(Opcode::CBranch, vec![target, condition], None);
+        self.emit_op(Opcode::CBranch, vec![target, condition], None)?;
 
         Ok(())
     }
@@ -449,7 +527,7 @@ impl<'a> IRBuilder<'a> {
             }
         };
 
-        self.emit_op(op, vec![target], None);
+        self.emit_op(op, vec![target], None)?;
 
         Ok(())
     }
@@ -463,7 +541,7 @@ impl<'a> IRBuilder<'a> {
             unreachable!("non-indirect return cannot be constructed")
         };
 
-        self.emit_op(op, vec![target], None);
+        self.emit_op(op, vec![target], None)?;
 
         Ok(())
     }
@@ -479,7 +557,7 @@ impl<'a> IRBuilder<'a> {
                 }))
                 .collect::<Result<Vec<_>, _>>()?;
 
-            self.emit_op(Opcode::CallOther, inputs, None);
+            self.emit_op(Opcode::CallOther, inputs, None)?;
 
             Ok(())
         } else {
@@ -560,15 +638,15 @@ impl<'a> IRBuilder<'a> {
         expr: IRExpr,
         output: Option<IRValue>,
     ) -> Result<IRValue, IRBuilderError> {
-        let value = match expr {
+        match expr {
             IRExpr::Var {
                 value,
                 offset,
                 size,
-            } => output.map_or(value, |output| self.emit_copy(value, output)),
+            } => output.map_or(Ok(value), |output| self.emit_copy(value, output)),
             IRExpr::Const { value, size } => {
                 let value = IRValue::Const(value, size);
-                output.map_or(value, |output| self.emit_copy(value, output))
+                output.map_or(Ok(value), |output| self.emit_copy(value, output))
             }
             IRExpr::UnOp { op, value } => self.emit_unop(op, value, output),
             IRExpr::BinOp { op, lvalue, rvalue } => self.emit_binop(op, lvalue, rvalue, output),
@@ -577,7 +655,7 @@ impl<'a> IRBuilder<'a> {
                 space,
                 size,
                 source,
-            } => self.emit_load(space, size, source, output)?,
+            } => self.emit_load(space, size, source, output),
             IRExpr::Intrinsic { id, arguments } => self.emit_with_output(
                 Opcode::CallOther,
                 once(IRValue::Const(id as _, None))
@@ -590,8 +668,7 @@ impl<'a> IRBuilder<'a> {
                 vec![input, IRValue::Const(bytes as _, None)],
                 output,
             ),
-        };
-        Ok(value)
+        }
     }
 
     fn resolve_expr(&mut self, expr: &Expr) -> Result<IRExpr, IRBuilderError> {
@@ -664,6 +741,7 @@ impl<'a> IRBuilder<'a> {
             Expr::Intrinsic { name, arguments } => self.resolve_expr_intrinsic(*name, arguments)?,
             _ => todo!(),
         };
+
         Ok(expr)
     }
 
@@ -674,7 +752,7 @@ impl<'a> IRBuilder<'a> {
             self.locals
                 .get(name)
                 .map(IRValue::Temporary)
-                .ok_or_else(|| IRBuilderError::LocalUndef { name })
+                .ok_or_else(|| IRBuilderError::LocalUndef { name: name.into() })
         }
     }
 
@@ -784,13 +862,212 @@ impl<'a> IRBuilder<'a> {
         (flip, opcode)
     }
 
+    fn size_of(&self, value: &IRValue) -> Option<u32> {
+        match value {
+            IRValue::Const(_, sz) => *sz,
+            IRValue::Register(vnd) => Some(vnd.size() as _),
+            IRValue::Temporary(id) => self.locals.size_of(*id),
+            IRValue::Address(_, _) => Some(self.default_size),
+            _ => None,
+        }
+    }
+
     fn update_varnodes(
         &mut self,
         op: Opcode,
         inputs: &mut [IRValue],
-        output: Option<&mut IRValue>,
-    ) {
-        // apply size updates
+        mut output: Option<&mut IRValue>,
+    ) -> Result<(), IRBuilderError> {
+        match op {
+            Opcode::Copy
+            | Opcode::IntNeg
+            | Opcode::IntNot
+            | Opcode::FloatAbs
+            | Opcode::FloatCeiling
+            | Opcode::FloatFloor
+            | Opcode::FloatNeg
+            | Opcode::FloatRound
+            | Opcode::FloatTruncate => {
+                self.update_varnode_pair(&mut inputs[0], output.as_mut().unwrap())?;
+            }
+            Opcode::IntLShift | Opcode::IntRShift | Opcode::IntSRShift => {
+                self.update_varnode_pair(&mut inputs[0], output.as_mut().unwrap())?;
+
+                if self.size_of(&inputs[1]).is_none() {
+                    self.update_varnode(&mut inputs[1], self.default_size)?;
+                }
+            }
+            Opcode::IntAdd
+            | Opcode::IntSub
+            | Opcode::IntMul
+            | Opcode::IntDiv
+            | Opcode::IntRem
+            | Opcode::IntSDiv
+            | Opcode::IntSRem
+            | Opcode::IntAnd
+            | Opcode::IntOr
+            | Opcode::IntXor
+            | Opcode::FloatAdd
+            | Opcode::FloatSub
+            | Opcode::FloatMul
+            | Opcode::FloatDiv => {
+                let mut inputs = inputs.into_iter();
+
+                self.update_varnode_triple(
+                    inputs.next().unwrap(),
+                    inputs.next().unwrap(),
+                    output.as_mut().unwrap(),
+                )?;
+            }
+            Opcode::IntCarry
+            | Opcode::IntSCarry
+            | Opcode::IntSBorrow
+            | Opcode::IntEq
+            | Opcode::IntNotEq
+            | Opcode::IntLess
+            | Opcode::IntSLess
+            | Opcode::IntLessEq
+            | Opcode::IntSLessEq
+            | Opcode::FloatEq
+            | Opcode::FloatNotEq
+            | Opcode::FloatLess
+            | Opcode::FloatLessEq => {
+                let mut inputs = inputs.into_iter();
+
+                self.update_varnode_pair(inputs.next().unwrap(), inputs.next().unwrap())?;
+                self.update_varnode(output.as_mut().unwrap(), 1)?;
+            }
+            Opcode::BoolNot => {
+                self.update_varnode(&mut inputs[0], 1)?;
+                self.update_varnode(output.as_mut().unwrap(), 1)?;
+            }
+            Opcode::BoolAnd | Opcode::BoolOr | Opcode::BoolXor => {
+                self.update_varnode(&mut inputs[0], 1)?;
+                self.update_varnode(&mut inputs[1], 1)?;
+                self.update_varnode(output.as_mut().unwrap(), 1)?;
+            }
+            Opcode::Load => {
+                // size of pointer expression (source)
+                self.update_varnode(&mut inputs[1], self.default_size)?;
+            }
+            Opcode::Store => {
+                // size of pointer expression (source) ??
+                self.update_varnode(&mut inputs[2], self.default_size)?;
+            }
+            _ => (),
+        }
+
+        Ok(())
+    }
+
+    fn update_varnode_pair(
+        &mut self,
+        vnd1: &mut IRValue,
+        vnd2: &mut IRValue,
+    ) -> Result<(), IRBuilderError> {
+        let vnd1_size = self.size_of(vnd1);
+        let vnd2_size = self.size_of(vnd2);
+
+        match (vnd1_size, vnd2_size) {
+            (None, None) => {
+                let sz = vnd1
+                    .is_const()
+                    .then(|| self.default_size)
+                    .or_else(|| vnd2.is_const().then(|| self.default_size));
+
+                if let Some(sz) = sz {
+                    self.update_varnode(vnd1, sz)?;
+                    self.update_varnode(vnd2, sz)?;
+                }
+
+                Ok(())
+            }
+            (None, Some(sz)) => self.update_varnode(vnd1, sz),
+            (Some(sz), None) => self.update_varnode(vnd2, sz),
+            (Some(sz1), Some(sz2)) => {
+                if sz1 == sz2 {
+                    Ok(())
+                } else {
+                    Err(IRBuilderError::UpdateSize2 {
+                        v1: *vnd1,
+                        v2: *vnd2,
+                    })
+                }
+            }
+        }
+    }
+
+    fn update_varnode_triple(
+        &mut self,
+        vnd1: &mut IRValue,
+        vnd2: &mut IRValue,
+        vnd3: &mut IRValue,
+    ) -> Result<(), IRBuilderError> {
+        let vnd1_size = self.size_of(vnd1);
+        let vnd2_size = self.size_of(vnd2);
+        let vnd3_size = self.size_of(vnd3);
+
+        match (vnd1_size, vnd2_size, vnd3_size) {
+            (None, None, None) => {
+                todo!()
+            }
+            (Some(sz1), Some(sz2), Some(sz3)) => {
+                if !(sz1 == sz2 && sz2 == sz3) {
+                    return Err(IRBuilderError::UpdateSize3 {
+                        v1: *vnd1,
+                        v2: *vnd2,
+                        v3: *vnd3,
+                    });
+                }
+            }
+            (Some(sz), _, _) => {
+                self.update_varnode(vnd2, sz)?;
+                self.update_varnode(vnd3, sz)?;
+            }
+            (_, Some(sz), _) => {
+                self.update_varnode(vnd1, sz)?;
+                self.update_varnode(vnd3, sz)?;
+            }
+            (_, _, Some(sz)) => {
+                self.update_varnode(vnd1, sz)?;
+                self.update_varnode(vnd2, sz)?;
+            }
+        }
+
+        Ok(())
+    }
+
+    fn update_varnode(&mut self, input: &mut IRValue, size: u32) -> Result<(), IRBuilderError> {
+        match input {
+            IRValue::Const(_, ref mut sz) => {
+                if matches!(sz, Some(sz) if size != *sz) {
+                    return Err(IRBuilderError::UpdateSize1 { v1: *input, size });
+                } else {
+                    *sz = Some(size);
+                }
+            }
+            IRValue::Register(vnd) => {
+                let expected = vnd.size() as u32;
+                if expected != size {
+                    let name = self
+                        .translator
+                        .registers()
+                        .get(vnd.offset(), vnd.size())
+                        .copied()
+                        .unwrap();
+
+                    return Err(IRBuilderError::RegSize {
+                        name,
+                        size,
+                        old_size: expected,
+                    });
+                }
+            }
+            IRValue::Temporary(index) => self.locals.update_size(*index, size)?,
+            _ => (),
+        }
+
+        Ok(())
     }
 }
 
@@ -825,8 +1102,8 @@ mod test {
 
             v2 = RAX(4);
 
-            v3 = sext(0);
-            v4 = zext(0);
+            v3:4 = sext(0);
+            v4:8 = zext(0);
             "#,
         )?;
 
