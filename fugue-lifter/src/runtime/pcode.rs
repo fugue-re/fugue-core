@@ -161,12 +161,12 @@ impl<'a> LiftingContextState<'a> {
     }
 
     #[inline]
-    pub fn emit(&mut self) -> Option<()> {
+    pub fn emit<R: ConstructorResolver>(&mut self) -> Option<()> {
         self.inputs.input.base_state();
         self.issued.clear();
 
-        if let Some(builder) = self.inputs.input.constructor().build_action {
-            (builder)(self)?;
+        if let Some(builder) = &self.inputs.input.constructor().build_action {
+            builder.build::<R>(self)?;
         }
 
         self.resolve_relatives();
@@ -182,7 +182,7 @@ impl<'a> LiftingContextState<'a> {
 
     #[doc(hidden)]
     #[inline]
-    pub fn emit_delay_slots(&mut self) -> Option<()> {
+    pub fn emit_delay_slots<R: ConstructorResolver>(&mut self) -> Option<()> {
         let unique_offset = self.unique_offset;
 
         let delay_slot_bytes = self.delay_slot_length();
@@ -197,8 +197,8 @@ impl<'a> LiftingContextState<'a> {
 
                 nself.inputs.input.base_state();
 
-                if let Some(builder) = nself.inputs.input.constructor().build_action {
-                    (builder)(&mut nself)?;
+                if let Some(builder) = &nself.inputs.input.constructor().build_action {
+                    builder.build::<R>(&mut nself)?;
                 }
 
                 length

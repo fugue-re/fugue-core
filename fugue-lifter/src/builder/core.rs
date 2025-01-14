@@ -17,6 +17,7 @@ use syn::Ident;
 use crate::builder::types::context::ContextAdaptor;
 use crate::builder::types::pattern::PatternExpressionAdaptor;
 use crate::builder::types::symbol::SymbolAdaptor;
+use crate::builder::types::template::TplAdaptor;
 use crate::runtime::pcode::Op;
 use crate::LifterGeneratorError;
 
@@ -589,12 +590,8 @@ impl<'a> LifterGenerator<'a> {
 
     pub fn generate_constructor_operand_resolvers(
         &self,
-        id: usize,
-        scope: usize,
-        cid: usize,
         ctor: &Constructor,
-    ) -> (Vec<TokenStream>, Vec<TokenStream>) {
-        let mut helpers = Vec::new();
+    ) -> Vec<TokenStream> {
         let mut operands = Vec::new();
 
         for oid in 0..ctor.operand_count() {
@@ -916,14 +913,11 @@ impl<'a> LifterGenerator<'a> {
             });
         }
 
-        (helpers, operands)
+        operands
     }
 
     pub fn generate_constructor_context_actions(
         &self,
-        id: usize,
-        scope: usize,
-        cid: usize,
         ctor: &Constructor,
     ) -> (Vec<TokenStream>, Vec<TokenStream>) {
         let mut pre_actions = Vec::new();
@@ -1151,6 +1145,7 @@ impl<'a> LifterGenerator<'a> {
         }
     }
 
+    /*
     pub fn generate_constructor_template_resolvers(
         &self,
         id: usize,
@@ -1184,6 +1179,18 @@ impl<'a> LifterGenerator<'a> {
         }
 
         (helpers, result_resolver)
+    }
+    */
+
+    pub fn generate_constructor_template_resolvers(&self, ctor: &Constructor) -> TokenStream {
+        if let Some(templ) = ctor.template() {
+            let action = self.generate_constructor_build_action(templ);
+            quote! {
+                Some(#action)
+            }
+        } else {
+            quote! { None }
+        }
     }
 
     pub fn generate_build_action_location(&self, tmpl: &VarnodeTpl) -> TokenStream {
@@ -1428,6 +1435,7 @@ impl<'a> LifterGenerator<'a> {
         }
     }
 
+    /*
     pub fn generate_constructor_build_action(
         &self,
         id: usize,
@@ -1460,7 +1468,13 @@ impl<'a> LifterGenerator<'a> {
 
         (action_name, action_fcn)
     }
+    */
 
+    pub fn generate_constructor_build_action(&self, tmpl: &ConstructTpl) -> TokenStream {
+        TplAdaptor::new(&self.translator, tmpl).to_token_stream()
+    }
+
+    /*
     pub fn generate_constructor_lifting_actions(
         &self,
         id: usize,
@@ -1476,6 +1490,16 @@ impl<'a> LifterGenerator<'a> {
         };
 
         (action_fcn, action_name)
+    }
+    */
+
+    pub fn generate_constructor_lifting_actions(&self, ctor: &Constructor) -> TokenStream {
+        if let Some(tmpl) = ctor.template() {
+            let template = self.generate_constructor_build_action(tmpl);
+            quote! { Some(#template) }
+        } else {
+            quote! { None }
+        }
     }
 
     pub fn generate_constructors<'b>(
@@ -1495,11 +1519,11 @@ impl<'a> LifterGenerator<'a> {
 
             let pieces = ctor.print_pieces();
 
-            let (operand_helpers, operands) = self.generate_constructor_operand_resolvers(id, scope, cid, ctor);
-            let (pre_actions, post_actions) = self.generate_constructor_context_actions(id, scope, cid, ctor);
+            let operands = self.generate_constructor_operand_resolvers(ctor);
+            let (pre_actions, post_actions) = self.generate_constructor_context_actions(ctor);
 
-            let (template_helpers, template_result) = self.generate_constructor_template_resolvers(id, scope, cid, ctor);
-            let (lifting_helper, lifting_action) = self.generate_constructor_lifting_actions(id, scope, cid, ctor);
+            let template_result = self.generate_constructor_template_resolvers(ctor);
+            let lifting_action = self.generate_constructor_lifting_actions(ctor);
 
             quote! {
                 pub static #ctor_vname: fugue_lifter::runtime::Constructor = fugue_lifter::runtime::Constructor {
@@ -1513,12 +1537,6 @@ impl<'a> LifterGenerator<'a> {
                     delay_slot_length: #delay_slot_length,
                     minimum_length: #minimum_length,
                 };
-
-                #(#operand_helpers)*
-
-                #template_helpers
-
-                #lifting_helper
             }
         })
     }
@@ -2089,7 +2107,7 @@ impl<'a> ToTokens for LifterGenerator<'a> {
                 state: &mut fugue_lifter::runtime::LiftingContextState,
             ) -> Option<&'static fugue_lifter::runtime::Constructor> {
                 let ctor = SubTable0In0::resolve(state)?;
-                ctor.resolve_operands(state, resolve_constructor)?;
+                ctor.resolve_operands::<Instruction>(state)?;
                 Some(ctor)
             }
 
@@ -2098,9 +2116,9 @@ impl<'a> ToTokens for LifterGenerator<'a> {
                 state: &mut fugue_lifter::runtime::LiftingContextState,
             ) -> Option<&'static fugue_lifter::runtime::Constructor> {
                 let ctor = resolve_constructor(state)?;
-                ctor.resolve_handles(state, resolve_constructor)?;
+                ctor.resolve_handles::<Instruction>(state)?;
                 state.inputs.input.base_state();
-                state.apply_commits(resolve_constructor);
+                state.apply_commits::<Instruction>();
                 Some(ctor)
             }
 
@@ -2141,7 +2159,7 @@ impl<'a> ToTokens for LifterGenerator<'a> {
                 let delay_slot_bytes = state.delay_slot_length();
 
                 if delay_slot_bytes == 0 {
-                    state.emit()?;
+                    state.emit::<Instruction>()?;
                     return Some(state.len());
                 }
 
@@ -2174,7 +2192,7 @@ impl<'a> ToTokens for LifterGenerator<'a> {
                     index += 1;
                 }
 
-                state.emit()?;
+                state.emit::<Instruction>()?;
 
                 Some(fall_offset)
             }

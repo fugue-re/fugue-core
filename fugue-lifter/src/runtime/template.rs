@@ -1,7 +1,6 @@
 use crate::runtime::constructor::ConstructorResolver;
 use crate::runtime::input::{FixedHandle, INVALID_HANDLE};
-use crate::runtime::pcode;
-use crate::runtime::{wrap_offset, LiftingContextState};
+use crate::runtime::{pcode, wrap_offset, LiftingContextState};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u16)]
@@ -303,7 +302,9 @@ impl OpTpl {
         if let Some(operand) = unsafe { input.operand_constructor(index) } {
             input.input().push_operand(index);
 
-            todo!("apply build action");
+            if let Some(builder) = &operand.build_action {
+                builder.build::<R>(input)?;
+            }
 
             input.input().pop_operand();
         }
@@ -314,7 +315,7 @@ impl OpTpl {
         &self,
         input: &mut LiftingContextState,
     ) -> Option<()> {
-        input.emit_delay_slots()
+        input.emit_delay_slots::<R>()
     }
 
     pub fn dump_action<R: ConstructorResolver>(

@@ -70,10 +70,10 @@ pub struct Constructor {
     pub context_pre_actions: &'static [ContextPreAction],
     pub context_post_actions: &'static [ContextPostAction],
     pub operands: &'static [Operand],
-    // pub result: Option<HandleTpl>,
-    pub result: Option<ConstructorResult>,
-    // pub build_action: Option<ConstructTpl>,
-    pub build_action: Option<PCodeBuildAction>,
+    pub result: Option<HandleTpl>,
+    // pub result: Option<ConstructorResult>,
+    pub build_action: Option<ConstructTpl>,
+    // pub build_action: Option<PCodeBuildAction>,
     pub print_pieces: &'static [&'static str],
     pub delay_slot_length: usize,
     pub minimum_length: usize,
@@ -236,8 +236,8 @@ impl Constructor {
                 state.input().pop_operand();
             }
 
-            if let Some(resolver) = ctor.result {
-                let handle = (resolver)(state);
+            if let Some(tmpl) = &ctor.result {
+                let handle = tmpl.build::<R>(state)?;
                 state.input().set_parent_handle(handle);
             }
 
