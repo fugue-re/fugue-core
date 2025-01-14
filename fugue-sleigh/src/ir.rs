@@ -1,17 +1,30 @@
 use std::collections::hash_map::Entry;
+use std::iter::once;
 use std::sync::Arc;
 
 use fugue_ir::disassembly::{ArenaVec, IRBuilderArena, Opcode, PCodeRaw};
 use fugue_ir::{AddressSpace, Translator, VarnodeData};
 
+use once_cell::sync::Lazy;
 use thiserror::Error;
-use ustr::{Ustr, UstrMap};
+use ustr::{ustr, Ustr, UstrMap};
 
-use crate::ast::BinRel;
-use crate::ast::BranchLabel;
-use crate::ast::BranchTarget;
-use crate::ast::{AstError, BinOp, CodeBlock, Expr, Stmt, UnOp};
+use crate::ast::{AstError, BinOp, BinRel, BranchLabel, BranchTarget, CodeBlock, Expr, Stmt, UnOp};
 use crate::cfg::CFG;
+
+static BUILTINS: Lazy<UstrMap<(Opcode, usize)>> = Lazy::new(|| {
+    UstrMap::from_iter(
+        [
+            ("carry", (Opcode::IntCarry, 2)),
+            ("scarry", (Opcode::IntSCarry, 2)),
+            ("sborrow", (Opcode::IntSBorrow, 2)),
+            ("sext", (Opcode::IntSExt, 1)),
+            ("zext", (Opcode::IntZExt, 1)),
+        ]
+        .into_iter()
+        .map(|(n, a)| (ustr(n), a)),
+    )
+});
 
 #[derive(Debug, Error)]
 pub enum IRBuilderError {
@@ -25,11 +38,19 @@ pub enum IRBuilderError {
     },
     #[error("use of undefined temporary {name}")]
     LocalUndef { name: Ustr },
+    #[error("inconsistent arity for {op:?}; expected {expected}, got {actual}")]
+    OpcodeArity {
+        op: Opcode,
+        expected: usize,
+        actual: usize,
+    },
     #[error("redefinition of register {name}")]
     RegDup { name: Ustr },
     #[error(transparent)]
     Parse(#[from] AstError),
-    #[error("unknown space {space}")]
+    #[error("unknown intrinsic `{name}`")]
+    UnknownIntrinsic { name: Ustr },
+    #[error("unknown space `{space}`")]
     UnknownSpace { space: Ustr },
 }
 
@@ -51,6 +72,7 @@ pub enum IRValue {
     Temporary(LocalId),
     Address(u64, Option<Ustr>),
     Label(Ustr),
+    Pending,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -73,10 +95,23 @@ pub enum IRExpr {
         lvalue: IRValue,
         rvalue: IRValue,
     },
+    BinRel {
+        op: Opcode,
+        lvalue: IRValue,
+        rvalue: IRValue,
+    },
     Load {
         space: Option<Ustr>,
         size: Option<u32>,
         source: IRValue,
+    },
+    Intrinsic {
+        id: usize,
+        arguments: Vec<IRValue>,
+    },
+    Subpiece {
+        input: IRValue,
+        bytes: u32,
     },
 }
 
@@ -90,6 +125,7 @@ pub struct IRStmt {
 pub struct IRBuilder<'a> {
     emitted: IRBlock,
     locals: Locals<'a>,
+    user_ops: UstrMap<usize>,
     translator: &'a Translator,
 }
 
@@ -160,6 +196,13 @@ impl<'a> Locals<'a> {
 impl<'a> IRBuilder<'a> {
     pub fn new(translator: &'a Translator) -> Self {
         Self {
+            user_ops: translator
+                .user_ops()
+                .iter()
+                .copied()
+                .enumerate()
+                .map(|(i, v)| (v, i))
+                .collect(),
             translator,
             locals: Locals::new(translator),
             emitted: IRBlock::default(),
@@ -215,6 +258,16 @@ impl<'a> IRBuilder<'a> {
     }
 
     fn emit_binop(
+        &mut self,
+        op: Opcode,
+        lvalue: IRValue,
+        rvalue: IRValue,
+        output: Option<IRValue>,
+    ) -> IRValue {
+        self.emit_with_output(op, vec![lvalue, rvalue], output)
+    }
+
+    fn emit_binrel(
         &mut self,
         op: Opcode,
         lvalue: IRValue,
@@ -369,7 +422,7 @@ impl<'a> IRBuilder<'a> {
 
                 IRValue::Address(*offset, *space)
             }
-            _ => unreachable!()
+            _ => unreachable!(),
         };
 
         self.emit_op(Opcode::CBranch, vec![target, condition], None);
@@ -405,7 +458,7 @@ impl<'a> IRBuilder<'a> {
         let (op, target) = if let BranchTarget::Indirect(target) = target {
             let expr = self.resolve_expr(target)?;
             let value = self.expr_to_value(expr, None)?;
-            (Opcode::ICall, value)
+            (Opcode::Return, value)
         } else {
             unreachable!("non-indirect return cannot be constructed")
         };
@@ -416,8 +469,90 @@ impl<'a> IRBuilder<'a> {
     }
 
     fn resolve_intrinsic(&mut self, name: Ustr, arguments: &[Expr]) -> Result<(), IRBuilderError> {
-        // NOTE: could be truncation!
-        todo!()
+        // check if known intrinsic
+        if let Some(intrinsic) = self.user_ops.get(&name) {
+            let id = IRValue::Const(*intrinsic as _, None);
+            let inputs = once(Ok(id))
+                .chain(arguments.into_iter().map(|expr| {
+                    let expr = self.resolve_expr(expr)?;
+                    self.expr_to_value(expr, None)
+                }))
+                .collect::<Result<Vec<_>, _>>()?;
+
+            self.emit_op(Opcode::CallOther, inputs, None);
+
+            Ok(())
+        } else {
+            // as a stmt
+            Err(IRBuilderError::UnknownIntrinsic { name })
+        }
+    }
+
+    fn resolve_expr_intrinsic(
+        &mut self,
+        name: Ustr,
+        arguments: &[Expr],
+    ) -> Result<IRExpr, IRBuilderError> {
+        if let Some(id) = self.user_ops.get(&name).copied() {
+            let arguments = arguments
+                .into_iter()
+                .map(|expr| {
+                    let expr = self.resolve_expr(expr)?;
+                    self.expr_to_value(expr, None)
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+
+            return Ok(IRExpr::Intrinsic { id, arguments });
+        }
+
+        let expr = if let Some((op, expected_arity)) = BUILTINS.get(&name).copied() {
+            let actual_arity = arguments.len();
+            if expected_arity != actual_arity {
+                return Err(IRBuilderError::OpcodeArity {
+                    op,
+                    expected: expected_arity,
+                    actual: actual_arity,
+                });
+            }
+
+            let mut inputs = arguments.into_iter().map(|expr| {
+                let expr = self.resolve_expr(expr)?;
+                self.expr_to_value(expr, None)
+            });
+
+            match op {
+                Opcode::IntCarry | Opcode::IntSCarry | Opcode::IntSBorrow => IRExpr::BinRel {
+                    op,
+                    lvalue: inputs.next().unwrap()?,
+                    rvalue: inputs.next().unwrap()?,
+                },
+                Opcode::IntZExt | Opcode::IntSExt => IRExpr::UnOp {
+                    op,
+                    value: inputs.next().unwrap()?,
+                },
+                _ => unreachable!(),
+            }
+        } else {
+            // check if subpiece operation, e.g., r1(4)
+            if arguments.len() != 1 {
+                return Err(IRBuilderError::UnknownIntrinsic { name });
+            }
+
+            let Expr::Literal { value, size: None } = &arguments[0] else {
+                return Err(IRBuilderError::UnknownIntrinsic { name });
+            };
+
+            let Ok(varnode) = self.resolve_existing_name(name) else {
+                return Err(IRBuilderError::UnknownIntrinsic { name });
+            };
+
+            IRExpr::Subpiece {
+                input: varnode,
+                bytes: *value as _,
+            }
+        };
+
+        Ok(expr)
     }
 
     fn expr_to_value(
@@ -437,11 +572,24 @@ impl<'a> IRBuilder<'a> {
             }
             IRExpr::UnOp { op, value } => self.emit_unop(op, value, output),
             IRExpr::BinOp { op, lvalue, rvalue } => self.emit_binop(op, lvalue, rvalue, output),
+            IRExpr::BinRel { op, lvalue, rvalue } => self.emit_binrel(op, lvalue, rvalue, output),
             IRExpr::Load {
                 space,
                 size,
                 source,
             } => self.emit_load(space, size, source, output)?,
+            IRExpr::Intrinsic { id, arguments } => self.emit_with_output(
+                Opcode::CallOther,
+                once(IRValue::Const(id as _, None))
+                    .chain(arguments)
+                    .collect(),
+                output,
+            ),
+            IRExpr::Subpiece { input, bytes } => self.emit_with_output(
+                Opcode::Subpiece,
+                vec![input, IRValue::Const(bytes as _, None)],
+                output,
+            ),
         };
         Ok(value)
     }
@@ -513,6 +661,7 @@ impl<'a> IRBuilder<'a> {
                     source: value,
                 }
             }
+            Expr::Intrinsic { name, arguments } => self.resolve_expr_intrinsic(*name, arguments)?,
             _ => todo!(),
         };
         Ok(expr)
@@ -673,6 +822,11 @@ mod test {
             <label1>
             v2 = v0 + v1;
             if v2 < 10 goto <label1>;
+
+            v2 = RAX(4);
+
+            v3 = sext(0);
+            v4 = zext(0);
             "#,
         )?;
 
