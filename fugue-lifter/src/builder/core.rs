@@ -1085,6 +1085,11 @@ impl<'a> LifterGenerator<'a> {
     }
 
     pub fn generate_handle_template(&self, tmpl: &HandleTpl) -> TokenStream {
+        TplAdaptor::new(&self.translator, tmpl).to_token_stream()
+    }
+
+    /*
+    pub fn generate_handle_template(&self, tmpl: &HandleTpl) -> TokenStream {
         if tmpl.ptr_space().is_real() {
             let space = self.generate_const_template_space(tmpl.space());
             let size = self.generate_const_template(tmpl.size());
@@ -1144,6 +1149,7 @@ impl<'a> LifterGenerator<'a> {
             }
         }
     }
+    */
 
     /*
     pub fn generate_constructor_template_resolvers(
@@ -1183,8 +1189,8 @@ impl<'a> LifterGenerator<'a> {
     */
 
     pub fn generate_constructor_template_resolvers(&self, ctor: &Constructor) -> TokenStream {
-        if let Some(templ) = ctor.template() {
-            let action = self.generate_constructor_build_action(templ);
+        if let Some(templ) = ctor.template().and_then(ConstructTpl::result) {
+            let action = self.generate_handle_template(templ);
             quote! {
                 Some(#action)
             }
@@ -2008,69 +2014,10 @@ impl<'a> ToTokens for LifterGenerator<'a> {
                 }
             }
 
-            // Helpers below
-
-            #[inline(always)]
-            fn fixup_location_offset(
-                unique_offset: u64,
-                space: u8,
-                offset: u64,
-                size: u16,
-            ) -> u64 {
-                #space_match
-            }
-
-            #[inline(always)]
-            fn is_dynamic(
-                builder: &fugue_lifter::runtime::LiftingContextState,
-                index: usize,
-            ) -> bool {
-                unsafe {
-                    let opnds = builder
-                        .inputs
-                        .input
-                        .context
-                        .constructors
-                        .get_unchecked(builder.inputs.input.point as usize).operands as usize;
-
-                    let space = builder.inputs.input.context.constructors.get_unchecked(opnds + index)
-                        .handle
-                        .as_ref()
-                        .unwrap_unchecked()
-                        .offset_space;
-
-                    space != fugue_lifter::runtime::input::INVALID_HANDLE
-                }
-            }
-
-            #[inline]
-            fn append_build(
-                builder: &mut fugue_lifter::runtime::LiftingContextState,
-                index: usize,
-            ) {
-                unsafe {
-                    let opnds = builder
-                        .inputs
-                        .input
-                        .context
-                        .constructors.get_unchecked(builder.inputs.input.point as usize).operands as usize;
-
-                    if let Some(ctor) = builder.inputs.input.context.constructors.get_unchecked(opnds + index).constructor {
-                        builder.inputs.input.push_operand(index);
-
-                        if let Some(action) = ctor.build_action {
-                            (action)(builder);
-                        }
-
-                        builder.inputs.input.pop_operand();
-                    }
-                }
-            }
-
             pub struct Instruction;
 
             impl fugue_lifter::runtime::ConstructorResolver for Instruction {
-                const ADDRESS_SIZE: u64 = ADDRESS_SIZE;
+                const ADDRESS_SIZE: usize = ADDRESS_SIZE;
                 const DEFAULT_SPACE: u8 = DEFAULT_SPACE;
                 const UNIQUE_SPACE: u8 = UNIQUE_SPACE;
 
@@ -2098,7 +2045,7 @@ impl<'a> ToTokens for LifterGenerator<'a> {
                     offset: u64,
                     size: u16,
                 ) -> u64 {
-                    fixup_location_offset(unique_offset, space, offset, size)
+                    #space_match
                 }
             }
 

@@ -51,7 +51,7 @@ pub struct Operand {
 }
 
 pub trait ConstructorResolver {
-    const ADDRESS_SIZE: u64;
+    const ADDRESS_SIZE: usize;
     const DEFAULT_SPACE: u8;
     const UNIQUE_SPACE: u8;
 

@@ -191,7 +191,7 @@ impl ConstTpl {
                     ninput.next_address()
                 }
             }
-            ConstTpl::CurrentSpaceSize => R::ADDRESS_SIZE,
+            ConstTpl::CurrentSpaceSize => R::ADDRESS_SIZE as u64,
             ConstTpl::CurrentSpace => R::DEFAULT_SPACE as u64,
             ConstTpl::Relative(value) | ConstTpl::Real(value) => *value,
             ConstTpl::SpaceId(space) => *space as u64,
