@@ -89,7 +89,7 @@ impl<'a> ToTokens for SymbolAdaptor<'a> {
                     quote! {
                         fugue_lifter::runtime::symbol::Symbol::ValueMapFilled {
                             pattern_value: #pvalue,
-                            value_map: &[#(#values),*],
+                            value_table: &[#(#values),*],
                         }
                     }
                 } else {
@@ -116,7 +116,7 @@ impl<'a> ToTokens for SymbolAdaptor<'a> {
                     quote! {
                         fugue_lifter::runtime::symbol::Symbol::ValueMap {
                             pattern_value: #pvalue,
-                            value_map: &[#(#values),*],
+                            value_table: &[#(#values),*],
                         }
                     }
                 }
