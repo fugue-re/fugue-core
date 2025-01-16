@@ -27,7 +27,8 @@ statement = {
 }
 
 // Assignment and declarations
-assignment = { assignment_with_local | assignment_ }
+// assignment = { assignment_with_local | assignment_ }
+assignment = { assignment_ | assignment_with_local }
 
 assignment_ = { lvalue ~ "=" ~ expr }
 assignment_with_local = { "local" ~ lvalue ~ "=" ~ expr }
@@ -141,9 +142,9 @@ identifier_with_size = { identifier ~ ":" ~ constant }
 constant = { integer }
 
 identifier = @{
-    !keyword ~  // Negative lookahead to prevent keywords being identifiers
-    ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "_")*
+    !keyword ~ basic_identifier | keyword ~ (ASCII_ALPHANUMERIC | "_")+
 }
+basic_identifier = { ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "_")* }
 
 integer = @{
     "0x" ~ ASCII_HEX_DIGIT+ |

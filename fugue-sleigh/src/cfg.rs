@@ -34,6 +34,11 @@ impl Labels {
             Entry::Occupied(_) => Err(AstError::DuplicateLabel(label)),
         }
     }
+
+    #[inline]
+    pub fn iter<'a>(&'a self) -> impl ExactSizeIterator<Item = (Ustr, usize)> + 'a {
+        self.0.iter().map(|(n, i)| (*n, *i))
+    }
 }
 
 impl<'a> CFG<'a> {
@@ -152,12 +157,14 @@ mod test {
             "#,
         )?;
 
-        println!("{ast_ok:#?}");
-
         let cfg = CFG::new(&ast_ok)?;
 
-        println!("{:#?}", cfg.blocks);
-        println!("{:#?}", cfg.edges);
+        assert_eq!(cfg.blocks.len(), 3);
+
+        assert_eq!(cfg.edges.len(), 3);
+        assert_eq!(cfg.edges[0].len(), 1);
+        assert_eq!(cfg.edges[1].len(), 1);
+        assert_eq!(cfg.edges[2].len(), 2);
 
         let ast_err = CodeBlock::parse(
             r#"

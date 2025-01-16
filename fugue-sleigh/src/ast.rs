@@ -2,11 +2,12 @@ use std::fmt::Display;
 use std::num::ParseIntError;
 use std::ops::Range;
 
-use fugue_ir::disassembly::Opcode;
 use itertools::Itertools;
+
 use pest::error::Error;
 use pest::iterators::Pair;
 use pest::{Parser, Span};
+
 use thiserror::Error;
 use ustr::Ustr;
 
@@ -806,10 +807,6 @@ impl CodeBlock {
         let target = pairs.next().unwrap();
 
         let target = match target.as_rule() {
-            // NOTE: I'm not sure about this--we'd get this as a dynamic address,
-            // but we don't really have a notion of that in our restricted version
-            // of PCode.
-            //
             Rule::identifier => BranchTarget::Direct(BranchLabel::Varnode {
                 name: Self::parse_identifier(target)?,
             }),
@@ -948,9 +945,10 @@ mod test {
             sp = sp-4;
             call dest;
 "#,
-        )?;
+        );
 
-        println!("{ast:#?}");
+        assert!(ast.is_ok());
+        assert_eq!(ast.unwrap().stmts.len(), 17);
 
         Ok(())
     }
