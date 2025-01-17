@@ -618,12 +618,14 @@ impl<'a> IRBuilder<'a> {
                 let mut bits = bits.clone();
 
                 // convert truncated assignment into bit range assignment
-                if let Ok(target) = self.resolve_existing_name(*name) {
-                    let existing = self.size_of(&target);
+                if bits.is_none() {
+                    if let Ok(target) = self.resolve_existing_name(*name) {
+                        let existing = self.size_of(&target);
 
-                    if matches!(existing.zip(*size), Some((s1, s2)) if s1 != s2) {
-                        let nbits = size.unwrap() * 8;
-                        bits = Some(0..nbits);
+                        if matches!(existing.zip(*size), Some((s1, s2)) if s1 != s2) {
+                            let nbits = size.unwrap() * 8;
+                            bits = Some(0..nbits);
+                        }
                     }
                 }
 
@@ -1635,6 +1637,7 @@ mod test {
             BL = addr[4,8];
             RBX[4,8] = AL;
             RBX[5,7] = AL;
+            RBX:1 = AL;
             "#,
         )?;
 
