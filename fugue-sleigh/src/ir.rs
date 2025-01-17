@@ -3,6 +3,8 @@ use std::collections::BTreeMap;
 use std::fmt::Display;
 use std::iter::{once, repeat};
 use std::mem::take;
+use std::ops::Index;
+use std::ops::Range;
 use std::sync::Arc;
 
 use fugue_ir::disassembly::PCodeData;
@@ -70,6 +72,8 @@ impl Display for LocalIdent {
 
 #[derive(Debug, Error)]
 pub enum IRBuilderError {
+    #[error("attempt to calculate address of temporary {name}")]
+    LocalAddr { name: LocalIdent },
     #[error("redefinition of temporary {name}")]
     LocalDup { name: LocalIdent },
     #[error("inconsistent size for {name}: {old_size} vs {size}")]
@@ -96,6 +100,10 @@ pub enum IRBuilderError {
         size: u32,
         old_size: u32,
     },
+    #[error("bit range {}..{} of {value:?} is invalid", range.start, range.end)]
+    BitRange { value: IRValue, range: Range<u32> },
+    #[error("masked bit range of {value:?} produces varnode larger than 64 bits")]
+    BitRangeSize { value: IRValue },
     #[error(transparent)]
     Parse(#[from] AstError),
     #[error("unknown intrinsic `{name}`")]
@@ -137,7 +145,7 @@ impl IRBlock {
     }
 }
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum IRValue {
     Const(u64, Option<u32>),
     Register(VarnodeData),
@@ -193,6 +201,15 @@ pub enum IRExpr {
     Subpiece {
         input: IRValue,
         bytes: u32,
+    },
+    AddressOf {
+        value: IRValue,
+        size: Option<u32>,
+    },
+    BitsOf {
+        value: IRValue,
+        range: Range<u32>,
+        size: u32,
     },
 }
 
@@ -323,6 +340,14 @@ impl Locals {
     pub fn clear(&mut self) {
         self.locals.clear();
         self.mapping.clear();
+    }
+}
+
+impl Index<LocalId> for Locals {
+    type Output = LocalVar;
+
+    fn index(&self, index: LocalId) -> &LocalVar {
+        &self.locals[index]
     }
 }
 
@@ -472,7 +497,7 @@ impl<'a> IRBuilder<'a> {
         mut output: Option<IRValue>,
     ) -> Result<Option<IRValue>, IRBuilderError> {
         self.update_varnodes(op, &mut inputs, output.as_mut(), false)?;
-        self.emitted.emit(op, inputs, output);
+        self.emitted.emit(op, inputs, output.clone());
         Ok(output)
     }
 
@@ -893,6 +918,77 @@ impl<'a> IRBuilder<'a> {
                 vec![input, IRValue::Const(bytes as _, None)],
                 output,
             ),
+            IRExpr::AddressOf { value, size } => {
+                let value = self.address_of(value, size)?;
+                output.map_or(Ok(value), |output| self.emit_copy(value, output))
+            }
+            IRExpr::BitsOf {
+                mut value,
+                mut range,
+                size,
+            } => {
+                let bits = range.end - range.start;
+                let mut mask_needed = bits % 8 != 0;
+                let mut trunc_needed = false;
+
+                if let Some(known_size) = self.size_of(&value) {
+                    let known_bits = known_size * 8;
+
+                    if range.start >= known_bits || range.end > known_bits {
+                        return Err(IRBuilderError::BitRange { value, range });
+                    }
+
+                    trunc_needed = size < known_size;
+
+                    if mask_needed && range.end == known_bits {
+                        mask_needed = false;
+                    }
+                }
+
+                let mask = (2u64 << (bits - 1)) - 1;
+                let mut trunc_shift = 0;
+
+                if trunc_needed && range.start % 8 == 0 {
+                    trunc_shift = range.start / 8;
+                    range.start = 0;
+                }
+
+                if range.start == 0 && !trunc_needed && !mask_needed {
+                    // superfluous bit range
+                    return Ok(value);
+                }
+
+                if mask_needed && size > 8 {
+                    return Err(IRBuilderError::BitRangeSize { value });
+                }
+
+                if range.start != 0 {
+                    value = self.emit_binop(
+                        Opcode::IntRShift,
+                        value,
+                        IRValue::Const(range.start as _, None),
+                        None,
+                    )?;
+                }
+
+                if trunc_needed {
+                    value = self.emit_with_output(
+                        Opcode::Subpiece,
+                        vec![value, IRValue::Const(trunc_shift as _, None)],
+                        None,
+                    )?;
+                    self.update_varnode(&mut value, size)?;
+                }
+
+                if mask_needed {
+                    value =
+                        self.emit_binop(Opcode::IntAnd, value, IRValue::Const(mask, None), None)?;
+                }
+
+                self.update_varnode(&mut value, size)?;
+
+                output.map_or(Ok(value), |output| self.emit_copy(value, output))
+            }
         }
     }
 
@@ -964,7 +1060,20 @@ impl<'a> IRBuilder<'a> {
                 }
             }
             Expr::Intrinsic { name, arguments } => self.resolve_expr_intrinsic(*name, arguments)?,
-            _ => todo!(),
+            Expr::AddressOf { value, size } => {
+                let value = self.resolve_existing_name(*value)?;
+
+                IRExpr::AddressOf { value, size: *size }
+            }
+            Expr::BitsOf { value, range, size } => {
+                let value = self.resolve_existing_name(*value)?;
+
+                IRExpr::BitsOf {
+                    value,
+                    range: range.clone(),
+                    size: *size,
+                }
+            }
         };
 
         Ok(expr)
@@ -1094,6 +1203,40 @@ impl<'a> IRBuilder<'a> {
             IRValue::Temporary(id) => self.locals.size_of(*id),
             IRValue::Address(_, _) => Some(self.default_size),
             _ => None,
+        }
+    }
+
+    fn address_of(&self, value: IRValue, size: Option<u32>) -> Result<IRValue, IRBuilderError> {
+        let space = self.space(&value);
+        let value = match value {
+            IRValue::Const(v, _) => v,
+            IRValue::Register(vnd) => vnd.offset(),
+            IRValue::Address(v, _) => v,
+            IRValue::Temporary(id) => {
+                return Err(IRBuilderError::LocalAddr {
+                    name: self.locals[id]
+                        .name
+                        .map(LocalIdent::Named)
+                        .unwrap_or(LocalIdent::Unnamed(id)),
+                });
+            }
+            IRValue::Label(_) => panic!("labels do not have an offset"),
+        };
+
+        Ok(IRValue::Const(
+            value,
+            Some(size.unwrap_or_else(|| space.address_size() as u32)),
+        ))
+    }
+
+    fn space(&self, value: &IRValue) -> &AddressSpace {
+        let spaces = self.translator.manager();
+        match value {
+            IRValue::Const(_, _) => spaces.constant_space_ref(),
+            IRValue::Register(_) => spaces.register_space_ref(),
+            IRValue::Temporary(_) => spaces.unique_space_ref(),
+            IRValue::Address(_, _) => spaces.default_space_ref(),
+            IRValue::Label(_) => panic!("labels do not have a space"),
         }
     }
 
@@ -1377,7 +1520,7 @@ mod test {
     use super::IRBuilder;
 
     #[test]
-    fn test_build() -> Result<(), Box<dyn std::error::Error>> {
+    fn test_features() -> Result<(), Box<dyn std::error::Error>> {
         let ldb = LanguageDB::from_directory_with(std::env::var("FUGUE_DATA")?, true)?;
         let translator = ldb
             .lookup_str("x86:LE:64:default")?
@@ -1408,6 +1551,33 @@ mod test {
             v3:4 = sext(0);
             v4:8 = zext(10:10);
             v5:4 = popcount(nvar);
+            "#,
+        )?;
+
+        for (i, stmt) in ir.into_iter().enumerate() {
+            println!("{i:03} {}", stmt.display(&translator));
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_bit_range() -> Result<(), Box<dyn std::error::Error>> {
+        let ldb = LanguageDB::from_directory_with(std::env::var("FUGUE_DATA")?, true)?;
+        let translator = ldb
+            .lookup_str("x86:LE:64:default")?
+            .expect("valid language")
+            .build()?;
+
+        let mut builder = IRBuilder::new(&translator);
+        let irb = IRBuilderArena::with_capacity(4096);
+
+        let ir = builder.translate(
+            &irb,
+            r#"
+            EAX = RCX[3,32];
+            EAX = RCX[32,32];
+            AL = RCX[7,7];
             "#,
         )?;
 

@@ -143,11 +143,6 @@ pub enum Expr {
         size: u32,
     },
 
-    Truncate {
-        value: Box<Expr>,
-        size: u32,
-    },
-
     Intrinsic {
         name: Ident,
         arguments: Vec<Expr>,
