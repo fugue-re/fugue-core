@@ -611,20 +611,73 @@ impl<'a> IRBuilder<'a> {
                 name,
                 decl,
                 size,
-                bits: _todo,
+                bits,
                 source,
             } => {
                 let source = self.resolve_expr(source)?;
-                let mut target = self.resolve_name(*decl, *name, *size)?;
+                let mut bits = bits.clone();
 
-                if let Some(size) = size {
-                    self.update_varnode(&mut target, *size)?;
+                // convert truncated assignment into bit range assignment
+                if let Ok(target) = self.resolve_existing_name(*name) {
+                    let existing = self.size_of(&target);
+
+                    if matches!(existing.zip(*size), Some((s1, s2)) if s1 != s2) {
+                        let nbits = size.unwrap() * 8;
+                        bits = Some(0..nbits);
+                    }
                 }
 
-                self.expr_to_value(source, Some(target))?;
+                if let Some(range) = bits {
+                    let target = self.resolve_name(*decl, *name, None)?;
+                    let size = size.expect("bit ranges have a known size");
+                    let bits = range.end - range.start;
 
-                // TODO: if bits != None -> bit range of target
-                // TODO: if size != target.size -> truncate target (slice it)
+                    let mask = !((2u64 << bits.wrapping_sub(1)).wrapping_sub(1) << range.start);
+                    let shift_needed = range.start != 0;
+                    let mut zext_needed = true;
+
+                    if let Some(known_size) = self.size_of(&target) {
+                        let known_bits = known_size * 8;
+
+                        zext_needed = known_size > size;
+
+                        if range.start >= known_bits || range.end > known_bits {
+                            return Err(IRBuilderError::BitRange { value: target, range });
+                        }
+
+                        if range.start == 0 && bits == known_bits {
+                            // superfluous
+                            self.expr_to_value(source, Some(target))?;
+                            return Ok(());
+                        }
+                    }
+
+                    if range.end > 64 {
+                        return Err(IRBuilderError::BitRangeSize { value: target });
+                    }
+
+                    let mut source = self.expr_to_value(source, None)?;
+
+                    source = self.emit_binop(Opcode::IntAnd, source, IRValue::Const(mask, None), None)?;
+
+                    if zext_needed {
+                        source = self.emit_unop(Opcode::IntZExt, source, None)?;
+                    }
+
+                    if shift_needed {
+                        source = self.emit_binop(Opcode::IntLShift, source, IRValue::Const(range.start as _, None), None)?;
+                    }
+
+                    self.emit_binop(Opcode::IntOr, target, source, Some(target))?;
+                } else {
+                    let mut target = self.resolve_name(*decl, *name, *size)?;
+
+                    if let Some(size) = size {
+                        self.update_varnode(&mut target, *size)?;
+                    }
+
+                    self.expr_to_value(source, Some(target))?;
+                }
 
                 Ok(())
             }
@@ -945,7 +998,7 @@ impl<'a> IRBuilder<'a> {
                     }
                 }
 
-                let mask = (2u64 << (bits - 1)) - 1;
+                let mask = (2u64 << bits.wrapping_sub(1)).wrapping_sub(1);
                 let mut trunc_shift = 0;
 
                 if trunc_needed && range.start % 8 == 0 {
@@ -1578,6 +1631,10 @@ mod test {
             EAX = RCX[3,32];
             EAX = RCX[32,32];
             AL = RCX[7,7];
+            addr = &BX + 4;
+            BL = addr[4,8];
+            RBX[4,8] = AL;
+            RBX[5,7] = AL;
             "#,
         )?;
 
