@@ -626,11 +626,42 @@ impl PatternGroup {
     }
 }
 
-#[derive(Clone, Deserialize, Serialize)]
+#[derive(Clone, Serialize)]
 pub struct PatternsWithContext {
     patterns: Vec<Pattern>,
     #[serde(default)]
     context: PatternContext,
+}
+
+impl<'de> Deserialize<'de> for PatternsWithContext {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum PatternWithContexT {
+            Pattern(Pattern),
+            PatternWithContext {
+                patterns: Vec<Pattern>,
+                #[serde(default)]
+                context: PatternContext,
+            }
+        }
+
+        let result = match PatternWithContexT::deserialize(deserializer)? {
+            PatternWithContexT::Pattern(pattern) => Self {
+                patterns: vec![pattern],
+                context: PatternContext::default(),
+            },
+            PatternWithContexT::PatternWithContext { patterns, context } => Self {
+                patterns,
+                context,
+            },
+        };
+
+        Ok(result)
+    }
 }
 
 impl PatternsWithContext {

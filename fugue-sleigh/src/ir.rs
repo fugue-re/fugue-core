@@ -367,13 +367,12 @@ impl<'a> IRBuilder<'a> {
         }
     }
 
-    pub fn translate<'ir>(
+    pub fn translate_parsed<'ir>(
         &mut self,
         irb: &'ir IRBuilderArena,
-        input: impl AsRef<str>,
+        ast: &CodeBlock,
     ) -> Result<PCodeBlock<'ir>, IRBuilderError> {
-        let ast = CodeBlock::parse(input.as_ref())?;
-        let cfg = CFG::new(&ast)?;
+        let cfg = CFG::new(ast)?;
 
         self.emitted.clear();
         self.locals.clear();
@@ -412,6 +411,15 @@ impl<'a> IRBuilder<'a> {
         }
 
         self.to_pcode(irb, emitted)
+    }
+
+    pub fn translate<'ir>(
+        &mut self,
+        irb: &'ir IRBuilderArena,
+        input: impl AsRef<str>,
+    ) -> Result<PCodeBlock<'ir>, IRBuilderError> {
+        let ast = CodeBlock::parse(input.as_ref())?;
+        self.translate_parsed(irb, &ast)
     }
 
     fn to_varnode(

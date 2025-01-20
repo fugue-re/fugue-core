@@ -7,6 +7,10 @@ use std::path::{Path, PathBuf};
 
 use bitflags::bitflags;
 
+use fugue_ir::disassembly::{IRBuilderArena, PCodeBlock};
+use fugue_ir::Translator;
+use fugue_sleigh::{CodeBlock, IRBuilder, IRBuilderError};
+
 use serde::de::value::StringDeserializer;
 use serde::ser::SerializeSeq;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -179,7 +183,54 @@ pub struct FunctionSpec {
     constraints: Option<GroupOrValue<PlatformConstraint>>,
     properties: FunctionProperties,
     patterns: FunctionPatterns,
-    fixup: Option<String>, // TODO: this will be PCode
+    fixup: Option<FunctionStub>,
+}
+
+#[derive(Clone)]
+pub struct FunctionStub {
+    source: String,
+    ast: CodeBlock,
+}
+
+impl<'de> Deserialize<'de> for FunctionStub {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let source = String::deserialize(deserializer)?;
+        let ast =
+            CodeBlock::parse(&source).map_err(|e| <D::Error as serde::de::Error>::custom(e))?;
+
+        Ok(Self { source, ast })
+    }
+}
+
+impl Serialize for FunctionStub {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        self.source.serialize(serializer)
+    }
+}
+
+impl FunctionStub {
+    pub fn ast(&self) -> &CodeBlock {
+        &self.ast
+    }
+
+    pub fn source(&self) -> &str {
+        &self.source
+    }
+
+    pub fn to_pcode<'ir>(
+        &self,
+        translator: &Translator,
+        irb: &'ir IRBuilderArena,
+    ) -> Result<PCodeBlock<'ir>, IRBuilderError> {
+        let mut builder = IRBuilder::new(translator);
+        builder.translate_parsed(irb, self.ast())
+    }
 }
 
 #[derive(Deserialize, Serialize)]
@@ -194,7 +245,7 @@ struct FunctionSpecRepr<'a> {
     #[serde(default, alias = "pattern")]
     patterns: Cow<'a, FunctionPatterns>,
     #[serde(default, alias = "stub")]
-    fixup: Cow<'a, Option<String>>,
+    fixup: Cow<'a, Option<FunctionStub>>,
 }
 
 impl<'de> Deserialize<'de> for FunctionSpec {
@@ -250,8 +301,8 @@ impl FunctionSpec {
         &self.patterns
     }
 
-    pub fn fixup(&self) -> Option<&str> {
-        self.fixup.as_deref()
+    pub fn fixup(&self) -> Option<&FunctionStub> {
+        self.fixup.as_ref()
     }
 
     pub fn matches<V>(&self, visitor: &V) -> bool
@@ -416,6 +467,30 @@ patterns:
             arch: Language::new("x86", Endian::Little),
             platform: "uefi",
         }));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_fixup() -> Result<(), Box<dyn std::error::Error>> {
+        let input1 = r#"
+name: get_pc_thunk_bx
+where:
+  all:
+  - arch: x86:LE:32
+  - platform: posix
+patterns:
+  - 8B 1C 24 C3
+fixup: |
+  EBX = *ESP;
+  ESP = ESP + 4;
+"#;
+
+        let fspec = serde_yaml::from_str::<FunctionSpec>(input1)?;
+
+        assert_eq!(fspec.name, "get_pc_thunk_bx");
+        assert_eq!(fspec.patterns.0.len(), 1);
+        assert!(fspec.fixup.is_some());
 
         Ok(())
     }
