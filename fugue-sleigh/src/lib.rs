@@ -1,9 +1,6 @@
-use pest_derive::Parser;
-
 pub mod ast;
 pub mod cfg;
 pub mod ir;
+pub mod parse;
 
-#[derive(Parser)]
-#[grammar = "parser.pest"]
-pub struct SleighParser;
+pub use ir::{IRBlock, IRBuilder, IRBuilderError};

@@ -11,7 +11,7 @@ use pest::{Parser, Span};
 use thiserror::Error;
 use ustr::Ustr;
 
-use crate::{Rule, SleighParser};
+use crate::parse::{Rule, SleighParser};
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct CodeBlock {

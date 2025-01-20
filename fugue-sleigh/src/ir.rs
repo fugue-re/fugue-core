@@ -3,12 +3,10 @@ use std::collections::BTreeMap;
 use std::fmt::Display;
 use std::iter::{once, repeat};
 use std::mem::take;
-use std::ops::Index;
-use std::ops::Range;
+use std::ops::{Index, Range};
 use std::sync::Arc;
 
-use fugue_ir::disassembly::PCodeData;
-use fugue_ir::disassembly::{ArenaVec, IRBuilderArena, Opcode, PCodeBlock};
+use fugue_ir::disassembly::{ArenaVec, IRBuilderArena, Opcode, PCodeBlock, PCodeData};
 use fugue_ir::{AddressSpace, Translator, VarnodeData};
 
 use once_cell::sync::Lazy;
@@ -413,18 +411,6 @@ impl<'a> IRBuilder<'a> {
             self.update_varnode_defaults(&mut emitted.inputs, emitted.output.as_mut())?;
         }
 
-        /*
-        for emitted in emitted.stmts.iter_mut() {
-            // final size inference (validation) pass
-            self.update_varnodes(
-                emitted.op,
-                &mut emitted.inputs,
-                emitted.output.as_mut(),
-                true,
-            )?;
-        }
-        */
-
         self.to_pcode(irb, emitted)
     }
 
@@ -644,7 +630,10 @@ impl<'a> IRBuilder<'a> {
                         zext_needed = known_size > size;
 
                         if range.start >= known_bits || range.end > known_bits {
-                            return Err(IRBuilderError::BitRange { value: target, range });
+                            return Err(IRBuilderError::BitRange {
+                                value: target,
+                                range,
+                            });
                         }
 
                         if range.start == 0 && bits == known_bits {
@@ -660,14 +649,20 @@ impl<'a> IRBuilder<'a> {
 
                     let mut source = self.expr_to_value(source, None)?;
 
-                    source = self.emit_binop(Opcode::IntAnd, source, IRValue::Const(mask, None), None)?;
+                    source =
+                        self.emit_binop(Opcode::IntAnd, source, IRValue::Const(mask, None), None)?;
 
                     if zext_needed {
                         source = self.emit_unop(Opcode::IntZExt, source, None)?;
                     }
 
                     if shift_needed {
-                        source = self.emit_binop(Opcode::IntLShift, source, IRValue::Const(range.start as _, None), None)?;
+                        source = self.emit_binop(
+                            Opcode::IntLShift,
+                            source,
+                            IRValue::Const(range.start as _, None),
+                            None,
+                        )?;
                     }
 
                     self.emit_binop(Opcode::IntOr, target, source, Some(target))?;
