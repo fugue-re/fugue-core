@@ -1,0 +1,153 @@
+WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
+COMMENT = _{ "/*" ~ (!"*/" ~ ANY)* ~ "*/" | "//" ~ (!"\n" ~ ANY)* ~ "\n" }
+
+// Keywords
+keyword = @{
+    "goto" | "if" | "local" | "build" | "crossbuild" |
+    "call" | "return" | "export"
+}
+
+// Main rules
+code_block = { SOI ~ statements ~ EOI }
+statements = { statement* }
+
+// Labels and sections
+label = { "<" ~ identifier ~ ">" }
+
+// Statements
+statement = {
+    ( assignment
+    | declaration
+    | funcall
+    | goto_stmt
+    | cond_stmt
+    | call_stmt
+    | return_stmt ) ~ ";"
+    | label
+}
+
+// Assignment and declarations
+// assignment = { assignment_with_local | assignment_ }
+assignment = { assignment_ | assignment_with_local }
+
+assignment_ = { lvalue ~ "=" ~ expr }
+assignment_with_local = { "local" ~ lvalue ~ "=" ~ expr }
+
+declaration = { "local" ~ declarations }
+declarations = { declaration_with_size | declaration_ }
+declaration_ = { identifier }
+declaration_with_size = { identifier ~ ":" ~ constant }
+
+lvalue = {
+    sembitrange |
+    sized_identifier |
+    identifier |
+    sized_star_expr
+}
+
+sembitrange = { identifier ~ "[" ~ constant ~ "," ~ constant ~ "]" }
+sized_identifier = { identifier ~ ":" ~ constant }
+sized_star_expr = { sized_star ~ expr }
+sized_star = {
+    ("*" ~ "[" ~ identifier ~ "]" ~ ":" ~ constant) |
+    ("*" ~ "[" ~ identifier ~ "]") |
+    ("*" ~ ":" ~ constant) |
+    "*"
+}
+
+// Function calls and control flow
+funcall = { expr_apply }
+goto_stmt = { "goto" ~ jumpdest }
+
+jumpdest = {
+    identifier |
+    offset_in_space |
+    integer |
+    label |
+    ("[" ~ expr ~ "]")
+}
+
+direct_jumpdest = {
+    identifier |
+    offset_in_space |
+    integer |
+    label
+}
+
+offset_in_space = { constant ~ "[" ~ identifier ~ "]" }
+
+cond_stmt = { "if" ~ expr ~ "goto" ~ direct_jumpdest }
+call_stmt = { "call" ~ jumpdest }
+return_stmt = { "return" ~ "[" ~ expr ~ "]" }
+
+// Expression hierarchy
+expr = { expr_boolor }
+expr_boolor = { expr_booland ~ (bool_or_op ~ expr_booland)* }
+bool_or_op = { "||" }
+
+expr_booland = { expr_or ~ (booland_op ~ expr_or)* }
+booland_op = { "&&" | "^^" }
+
+expr_or = { expr_xor ~ ("|" ~ expr_xor)* }
+expr_xor = { expr_and ~ ("^" ~ expr_and)* }
+expr_and = { expr_eq ~ ("&" ~ expr_eq)* }
+
+expr_eq = { expr_comp ~ (eq_op ~ expr_comp)* }
+eq_op = { "==" | "!=" | "f==" | "f!=" }
+
+expr_comp = { expr_shift ~ (compare_op ~ expr_shift)* }
+compare_op = {
+    "<" | ">=" | "<=" | ">" |
+    "s<" | "s>=" | "s<=" | "s>" |
+    "f<" | "f>=" | "f<=" | "f>"
+}
+
+expr_shift = { expr_add ~ (shift_op ~ expr_add)* }
+shift_op = { "<<" | ">>" | ">>>" }
+
+expr_add = { expr_mult ~ (add_op ~ expr_mult)* }
+add_op = { "+" | "-" | "f+" | "f-" }
+
+expr_mult = { expr_unary ~ (mult_op ~ expr_unary)* }
+mult_op = { "*" | "/" | "%" | "s/" | "s%" | "f*" | "f/" }
+
+expr_unary = { unary_op? ~ expr_func }
+unary_op = { "!" | "~" | "-" | "f-" | sized_star }
+
+expr_func = { expr_apply | expr_term }
+expr_apply = { identifier ~ expr_operands }
+expr_operands = { "(" ~ expr_list? ~ ")" }
+expr_list = { expr ~ ("," ~ expr)* }
+
+expr_term = {
+    sembitrange |
+    varnode |
+    ("(" ~ expr ~ ")")
+}
+
+varnode = {
+    integer_with_size |
+    identifier_with_size |
+    addressof_with_size |
+    integer |
+    identifier |
+    addressof
+}
+addressof = { "&" ~ identifier }
+addressof_with_size = { "&" ~ ":" ~ constant ~ identifier }
+integer_with_size = { integer ~ ":" ~ constant }
+identifier_with_size = { identifier ~ ":" ~ constant }
+
+// Basic tokens/types
+constant = { integer }
+
+identifier = @{
+    !keyword ~ basic_identifier | keyword ~ (ASCII_ALPHANUMERIC | "_")+
+}
+basic_identifier = { ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "_")* }
+
+integer = @{
+    "0x" ~ ASCII_HEX_DIGIT+ |
+    "0b" ~ ASCII_BIN_DIGIT+ |
+    ASCII_DIGIT+
+}
