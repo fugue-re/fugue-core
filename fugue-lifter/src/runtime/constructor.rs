@@ -1,3 +1,4 @@
+use std::fmt;
 use std::fmt::Debug;
 
 use crate::runtime::context::{ContextPostAction, ContextPreAction};
@@ -71,13 +72,21 @@ pub struct Constructor {
     pub context_post_actions: &'static [ContextPostAction],
     pub operands: &'static [Operand],
     pub result: Option<HandleTpl>,
-    // pub result: Option<ConstructorResult>,
     pub build_action: Option<ConstructTpl>,
-    // pub build_action: Option<PCodeBuildAction>,
-    pub print_pieces: &'static [&'static str],
+    pub print_pieces: &'static [PrintPiece],
     pub delay_slot_length: usize,
     pub minimum_length: usize,
 }
+
+pub enum PrintPiece {
+    Operand(usize),
+    Token(&'static str),
+}
+
+// print pieces:
+// - Symbol(operand index)
+// - Token
+
 
 impl Debug for Constructor {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -245,5 +254,35 @@ impl Constructor {
         }
 
         Some(())
+    }
+
+    pub fn format<R: ConstructorResolver>(
+        &self,
+        state: &mut LiftingContextState<'_>,
+        fmt: &mut fmt::Formatter,
+    ) -> Result<(), fmt::Error> {
+        for p in self.print_pieces {
+            match p {
+                PrintPiece::Operand(index) => {
+                    state.input().push_operand(*index);
+                    match &self.operands[*index].handle_resolver {
+                        OperandHandleResolver::None => {
+                            state.input().constructor().format::<R>(state, fmt)?;
+                        },
+                        OperandHandleResolver::Symbol(symbol) => {
+                            symbol.format::<R>(state, fmt)?;
+                        }
+                        OperandHandleResolver::Expression(expr) => {
+                            expr.format::<R>(state, fmt)?;
+                        }
+                    }
+                    state.input().pop_operand();
+                }
+                PrintPiece::Token(token) => {
+                    fmt.write_str(token)?;
+                }
+            }
+        }
+        Ok(())
     }
 }

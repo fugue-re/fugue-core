@@ -1523,7 +1523,12 @@ impl<'a> LifterGenerator<'a> {
             let delay_slot_length = ctor.template().map(|tpl| tpl.delay_slot()).unwrap_or_default();
             let minimum_length = ctor.minimum_length();
 
-            let pieces = ctor.print_pieces();
+            let pieces = ctor.print_pieces().iter().map(|piece| if piece.as_bytes()[0] == b'\n' {
+                let index = (piece.as_bytes()[1] - b'A') as usize;
+                quote! { fugue_lifter::runtime::constructor::PrintPiece::Operand(#index) }
+            } else {
+                quote! { fugue_lifter::runtime::constructor::PrintPiece::Token(#piece) }
+            });
 
             let operands = self.generate_constructor_operand_resolvers(ctor);
             let (pre_actions, post_actions) = self.generate_constructor_context_actions(ctor);
@@ -2100,8 +2105,15 @@ impl<'a> ToTokens for LifterGenerator<'a> {
                 issued: &mut Vec<fugue_lifter::runtime::pcode::PCodeOp>,
             ) -> Option<usize> {
                 let mut state = context.state_for(address, bytes, issued)?;
+                let buffer_limit = bytes.len();
 
                 resolve_state(&mut state)?;
+
+                let length = state.len();
+
+                if length == 0 || length > buffer_limit {
+                    return None;
+                }
 
                 let delay_slot_bytes = state.delay_slot_length();
 
@@ -2128,6 +2140,10 @@ impl<'a> ToTokens for LifterGenerator<'a> {
                     resolve_state(&mut dstate)?;
 
                     let length = dstate.len();
+
+                    if length == 0 || length > (buffer_limit - fall_offset) {
+                        return None;
+                    }
 
                     fall_offset += length;
                     delay_count += length;

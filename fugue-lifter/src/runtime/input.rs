@@ -651,11 +651,7 @@ impl ParserInput {
 
     #[inline(always)]
     pub unsafe fn unchecked_operand_via(&self, point: usize, index: usize) -> &ConstructorNode {
-        let opnds = self
-            .context
-            .constructors
-            .get_unchecked(point)
-            .operands as usize;
+        let opnds = self.context.constructors.get_unchecked(point).operands as usize;
         self.context.constructors.get_unchecked(opnds + index)
     }
 

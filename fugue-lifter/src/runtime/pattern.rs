@@ -1,3 +1,5 @@
+use std::fmt;
+
 use crate::runtime::constructor::{Constructor, ConstructorResolver};
 use crate::runtime::input::{BREADCRUMBS, INVALID_HANDLE};
 use crate::runtime::pcode::LiftingContextState;
@@ -53,6 +55,19 @@ pub enum PatternExpression {
 }
 
 impl PatternExpression {
+    pub fn format<R: ConstructorResolver>(
+        &self,
+        state: &mut LiftingContextState<'_>,
+        fmt: &mut fmt::Formatter,
+    ) -> Result<(), fmt::Error> {
+        let value = self.resolve::<R>(state).expect("value previously resolved");
+        if value < 0 {
+            write!(fmt, "-{:#x}", -(value as i128))
+        } else {
+            write!(fmt, "{:#x}", value)
+        }
+    }
+
     #[inline]
     pub fn resolve<R: ConstructorResolver>(
         &self,

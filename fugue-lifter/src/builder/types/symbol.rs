@@ -143,25 +143,36 @@ impl<'a> ToTokens for SymbolAdaptor<'a> {
 
                 // NOTE: we could merge those cases that are behaviourally similar
                 let pvalue = PatternExpressionAdaptor::new(&self.translator, pattern_value);
+                let symbols = name_table.iter().map(|v| {
+                    if v == "\t" {
+                        quote! { None }
+                    } else {
+                        quote! { Some(#v) }
+                    }
+                });
 
                 quote! {
                     fugue_lifter::runtime::symbol::Symbol::Name {
                         pattern_value: #pvalue,
+                        symbol_table: &[#(#symbols),*],
                     }
                 }
             }
             S::Varnode {
+                name,
                 space,
                 offset,
                 size,
                 ..
             } => {
+                let name = name.as_str();
                 let space = space.index() as u8;
                 let offset = *offset;
                 let size = *size as u16;
 
                 quote! {
                     fugue_lifter::runtime::symbol::Symbol::Varnode {
+                        name: #name,
                         space: #space,
                         offset: #offset,
                         size: #size,
@@ -182,10 +193,21 @@ impl<'a> ToTokens for SymbolAdaptor<'a> {
                         .copied()
                         .map(|id| self.identifier_for(id.expect("table is filled") as usize));
 
+                    let symbols = varnode_table.iter().copied().map(|id| {
+                        let name = self
+                            .translator
+                            .symbol_table()
+                            .symbol(id.expect("table is filled") as usize)
+                            .expect("valid symbol")
+                            .name();
+                        quote! { #name }
+                    });
+
                     quote! {
                         fugue_lifter::runtime::symbol::Symbol::VarnodeListFilled {
                             pattern_value: #pvalue,
                             varnode_table: &[#(& #values),*],
+                            symbol_table: &[#(#symbols),*],
                         }
                     }
                 } else {
@@ -201,20 +223,35 @@ impl<'a> ToTokens for SymbolAdaptor<'a> {
                     self.build_filter(pattern_value, bad_indices, limit)
                         .to_tokens(tokens);
 
-                    let values = varnode_table
-                        .iter()
-                        .copied()
-                        .map(|id| if let Some(id) = id {
+                    let values = varnode_table.iter().copied().map(|id| {
+                        if let Some(id) = id {
                             let ident = self.identifier_for(id as usize);
                             quote! { Some(& #ident) }
                         } else {
                             quote! { None }
-                        });
+                        }
+                    });
+
+                    let symbols = varnode_table.iter().copied().map(|id| {
+                        let Some(id) = id else {
+                            return quote! { None };
+                        };
+
+                        let name = self
+                            .translator
+                            .symbol_table()
+                            .symbol(id)
+                            .expect("valid symbol")
+                            .name();
+
+                        quote! { Some(#name) }
+                    });
 
                     quote! {
                         fugue_lifter::runtime::symbol::Symbol::VarnodeList {
                             pattern_value: #pvalue,
                             varnode_table: &[#(#values),*],
+                            symbol_table: &[#(#symbols),*],
                         }
                     }
                 }

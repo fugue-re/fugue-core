@@ -1,3 +1,5 @@
+use std::fmt;
+
 use crate::runtime::constructor::ConstructorResolver;
 use crate::runtime::input::FixedHandle;
 use crate::runtime::pattern::PatternExpression;
@@ -19,15 +21,10 @@ pub enum Symbol {
     },
     Name {
         pattern_value: PatternExpression,
-        // name_table: &'static [Option<&'static str>],
+        symbol_table: &'static [Option<&'static str>],
     },
-    /*
-    NameFilled {
-        pattern_value: PatternExpression,
-        name_table: &'static [&'static str],
-    },
-    */
     Varnode {
+        name: &'static str,
         space: u8,
         offset: u64,
         size: u16,
@@ -35,50 +32,90 @@ pub enum Symbol {
     VarnodeList {
         pattern_value: PatternExpression,
         varnode_table: &'static [Option<&'static Self>],
+        symbol_table: &'static [Option<&'static str>],
     },
     VarnodeListFilled {
         pattern_value: PatternExpression,
         varnode_table: &'static [&'static Self],
+        symbol_table: &'static [&'static str],
     },
     Operand {
         handle_index: usize,
-        /*
-        offset: usize,
-        base: Option<usize>,
-        min_length: usize,
-        subsym: Option<&'static Self>,
-        local_expr: PatternExpression,
-        def_expr: Option<PatternExpression>,
-        */
     },
     Start {
         space: u8,
         size: u16,
-        // pattern_value: PatternExpression,
     },
     End {
         space: u8,
         size: u16,
-        // pattern_value: PatternExpression,
     },
     Next2 {
         space: u8,
         size: u16,
-        // pattern_value: PatternExpression,
     },
 }
 
 impl Symbol {
-    // NOTE: this will be handled via core code generation
-    /*
-    pub fn resolve(
+    pub fn format<R: ConstructorResolver>(
         &self,
-        input: &mut LiftingContextState<'_>,
-        ctor_resolver: ConstructorResolver,
-    ) -> Option<&'static Constructor> {
-        todo!()
+        state: &mut LiftingContextState<'_>,
+        fmt: &mut fmt::Formatter,
+    ) -> Result<(), fmt::Error> {
+        match self {
+            Self::Varnode { name, .. } => {
+                fmt.write_str(name)?;
+            }
+            Self::Name {
+                pattern_value,
+                symbol_table,
+            }
+            | Self::VarnodeList {
+                pattern_value,
+                symbol_table,
+                ..
+            } => {
+                let index = pattern_value.resolve::<R>(state).expect("resolved");
+                if let Some(name) = symbol_table.get(index as usize).copied().flatten() {
+                    fmt.write_str(name)?;
+                }
+            }
+            Self::VarnodeListFilled {
+                pattern_value,
+                symbol_table,
+                ..
+            } => {
+                let index = pattern_value.resolve::<R>(state).expect("resolved");
+                if let Some(name) = symbol_table.get(index as usize).copied() {
+                    fmt.write_str(name)?;
+                }
+            }
+            Self::ValueMap {
+                pattern_value,
+                value_table,
+            } => {
+                let index = pattern_value.resolve::<R>(state).expect("resolved");
+                if let Some(value) = value_table.get(index as usize).copied().flatten() {
+                    if value < 0 {
+                        write!(fmt, "-{:#x}", -(value as i128))?;
+                    } else {
+                        write!(fmt, "{:#x}", value)?;
+                    }
+                }
+            }
+            Self::Start { .. } => {
+                write!(fmt, "{:#x}", state.address())?;
+            }
+            Self::End { .. } => {
+                write!(fmt, "{:#x}", state.next_address())?;
+            }
+            Self::Next2 { .. } => {
+                write!(fmt, "{:#x}", state.next2_address().expect("resolved"))?;
+            }
+            _ => unreachable!("this state should not be reachable"),
+        }
+        Ok(())
     }
-    */
 
     pub fn resolve_handle<R: ConstructorResolver>(
         &self,
@@ -101,6 +138,7 @@ impl Symbol {
                 space,
                 offset,
                 size,
+                ..
             } => FixedHandle {
                 space: *space,
                 size: *size,
@@ -137,6 +175,7 @@ impl Symbol {
             Symbol::VarnodeList {
                 pattern_value,
                 varnode_table,
+                ..
             } => {
                 let index = pattern_value.resolve::<R>(input)? as usize;
                 let symbol = varnode_table.get(index)?.as_ref()?;
@@ -145,6 +184,7 @@ impl Symbol {
             Symbol::VarnodeListFilled {
                 pattern_value,
                 varnode_table,
+                ..
             } => {
                 let index = pattern_value.resolve::<R>(input)? as usize;
                 let symbol = varnode_table.get(index)?;
