@@ -1,5 +1,4 @@
-use std::fmt;
-use std::fmt::Debug;
+use std::fmt::{self, Debug};
 
 use crate::runtime::context::{ContextPostAction, ContextPreAction};
 use crate::runtime::input::{ContextCommit, FixedHandle, INVALID_HANDLE};
@@ -24,10 +23,7 @@ pub struct OperandFilter {
 
 impl OperandFilter {
     #[inline]
-    pub fn validate<R: ConstructorResolver>(
-        &self,
-        input: &mut LiftingContextState,
-    ) -> Option<()> {
+    pub fn validate<R: ConstructorResolver>(&self, input: &mut LiftingContextState) -> Option<()> {
         let index = self.pattern.resolve::<R>(input)? as usize;
         if index >= self.limit || self.indices.contains(&index) {
             None
@@ -74,6 +70,8 @@ pub struct Constructor {
     pub result: Option<HandleTpl>,
     pub build_action: Option<ConstructTpl>,
     pub print_pieces: &'static [PrintPiece],
+    pub first_whitespace: Option<usize>,
+    pub flow_through_index: Option<usize>,
     pub delay_slot_length: usize,
     pub minimum_length: usize,
 }
@@ -87,9 +85,8 @@ pub enum PrintPiece {
 // - Symbol(operand index)
 // - Token
 
-
 impl Debug for Constructor {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let p0 = self.id & 0xff;
         let p1 = self.id >> 16;
         write!(f, "Constructor{p0}In{p1}")
@@ -256,10 +253,117 @@ impl Constructor {
         Some(())
     }
 
-    pub fn format<R: ConstructorResolver>(
+    pub fn format_mnemonic<R: ConstructorResolver, W: fmt::Write>(
         &self,
         state: &mut LiftingContextState<'_>,
-        fmt: &mut fmt::Formatter,
+        writer: &mut W,
+    ) -> fmt::Result {
+        if let Some(index) = self.flow_through_index {
+            if matches!(
+                &self.operands[index].handle_resolver,
+                OperandHandleResolver::None
+            ) {
+                state.input().push_operand(index);
+                state
+                    .input()
+                    .constructor()
+                    .format_mnemonic::<R, _>(state, writer)?;
+                state.input().pop_operand();
+                return Ok(());
+            }
+        }
+
+        let Some(pieces) = self.print_pieces.get(
+            ..self
+                .first_whitespace
+                .unwrap_or_else(|| self.print_pieces.len()),
+        ) else {
+            return Ok(());
+        };
+
+        for p in pieces {
+            match p {
+                PrintPiece::Operand(index) => match &self.operands[*index].handle_resolver {
+                    OperandHandleResolver::None => {
+                        state.input().push_operand(*index);
+                        state.input().constructor().format::<R, _>(state, writer)?;
+                        state.input().pop_operand();
+                    }
+                    OperandHandleResolver::Symbol(symbol) => {
+                        symbol.format::<R, _>(state, writer)?;
+                    }
+                    OperandHandleResolver::Expression(expr) => {
+                        expr.format::<R, _>(state, writer)?;
+                    }
+                },
+                PrintPiece::Token(token) => {
+                    writer.write_str(token)?;
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    pub fn format_body<R: ConstructorResolver, W: fmt::Write>(
+        &self,
+        state: &mut LiftingContextState<'_>,
+        writer: &mut W,
+    ) -> Result<(), fmt::Error> {
+        if let Some(index) = self.flow_through_index {
+            if matches!(
+                &self.operands[index].handle_resolver,
+                OperandHandleResolver::None
+            ) {
+                state.input().push_operand(index);
+                state
+                    .input()
+                    .constructor()
+                    .format_body::<R, _>(state, writer)?;
+                state.input().pop_operand();
+                return Ok(());
+            }
+        }
+
+        let Some(pieces) = self
+            .first_whitespace
+            .and_then(|start| self.print_pieces.get(start + 1..))
+        else {
+            return Ok(());
+        };
+
+        if !pieces.is_empty() {
+            writer.write_char(' ')?;
+        }
+
+        for p in pieces {
+            match p {
+                PrintPiece::Operand(index) => match &self.operands[*index].handle_resolver {
+                    OperandHandleResolver::None => {
+                        state.input().push_operand(*index);
+                        state.input().constructor().format::<R, _>(state, writer)?;
+                        state.input().pop_operand();
+                    }
+                    OperandHandleResolver::Symbol(symbol) => {
+                        symbol.format::<R, _>(state, writer)?;
+                    }
+                    OperandHandleResolver::Expression(expr) => {
+                        expr.format::<R, _>(state, writer)?;
+                    }
+                },
+                PrintPiece::Token(token) => {
+                    writer.write_str(token)?;
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    pub fn format<R: ConstructorResolver, W: fmt::Write>(
+        &self,
+        state: &mut LiftingContextState<'_>,
+        writer: &mut W,
     ) -> Result<(), fmt::Error> {
         for p in self.print_pieces {
             match p {
@@ -267,19 +371,19 @@ impl Constructor {
                     state.input().push_operand(*index);
                     match &self.operands[*index].handle_resolver {
                         OperandHandleResolver::None => {
-                            state.input().constructor().format::<R>(state, fmt)?;
-                        },
+                            state.input().constructor().format::<R, _>(state, writer)?;
+                        }
                         OperandHandleResolver::Symbol(symbol) => {
-                            symbol.format::<R>(state, fmt)?;
+                            symbol.format::<R, _>(state, writer)?;
                         }
                         OperandHandleResolver::Expression(expr) => {
-                            expr.format::<R>(state, fmt)?;
+                            expr.format::<R, _>(state, writer)?;
                         }
                     }
                     state.input().pop_operand();
                 }
                 PrintPiece::Token(token) => {
-                    fmt.write_str(token)?;
+                    writer.write_str(token)?;
                 }
             }
         }

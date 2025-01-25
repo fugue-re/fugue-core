@@ -588,10 +588,7 @@ impl<'a> LifterGenerator<'a> {
         */
     }
 
-    pub fn generate_constructor_operand_resolvers(
-        &self,
-        ctor: &Constructor,
-    ) -> Vec<TokenStream> {
+    pub fn generate_constructor_operand_resolvers(&self, ctor: &Constructor) -> Vec<TokenStream> {
         let mut operands = Vec::new();
 
         for oid in 0..ctor.operand_count() {
@@ -1530,6 +1527,12 @@ impl<'a> LifterGenerator<'a> {
                 quote! { fugue_lifter::runtime::constructor::PrintPiece::Token(#piece) }
             });
 
+            let first_whitespace = ctor.first_whitespace()
+                .map_or_else(|| quote! { None }, |index| quote! { Some(#index) });
+
+            let flow_through_index = ctor.flow_through_index()
+                .map_or_else(|| quote! { None }, |index| quote! { Some(#index) });
+
             let operands = self.generate_constructor_operand_resolvers(ctor);
             let (pre_actions, post_actions) = self.generate_constructor_context_actions(ctor);
 
@@ -1545,6 +1548,8 @@ impl<'a> LifterGenerator<'a> {
                     result: #template_result,
                     build_action: #lifting_action,
                     print_pieces: &[#(#pieces),*],
+                    first_whitespace: #first_whitespace,
+                    flow_through_index: #flow_through_index,
                     delay_slot_length: #delay_slot_length,
                     minimum_length: #minimum_length,
                 };
@@ -2086,15 +2091,61 @@ impl<'a> ToTokens for LifterGenerator<'a> {
 
                 let ctor = resolve_constructor(&mut state)?;
 
-                if apply_commits {
-                    ctor.resolve_handles::<Instruction>(&mut state)?;
-                    state.inputs.input.base_state();
-                    state.apply_commits::<Instruction>();
-                } else {
-                    state.inputs.input.base_state();
+                let buffer_limit = bytes.len();
+                let length = state.len();
+
+                if length == 0 || length > buffer_limit {
+                    return None;
                 }
 
-                Some(state.len())
+                if apply_commits {
+                    ctor.resolve_handles::<Instruction>(&mut state)?;
+                }
+
+                state.inputs.input.base_state();
+
+                if apply_commits {
+                    state.apply_commits::<Instruction>();
+                }
+
+                Some(length)
+            }
+
+            #[inline]
+            pub fn disassemble<W: std::fmt::Write>(
+                address: u64,
+                bytes: &[u8],
+                context: &mut fugue_lifter::runtime::LiftingContext,
+                writer: &mut W,
+            ) -> Result<Option<usize>, std::fmt::Error> {
+                let mut nop_issued = Vec::with_capacity(0);
+
+                let Some(mut state) = context.state_for(address, bytes, &mut nop_issued) else {
+                    return Ok(None);
+                };
+
+                let Some(ctor) = resolve_constructor(&mut state) else {
+                    return Ok(None);
+                };
+
+                let buffer_limit = bytes.len();
+                let length = state.len();
+
+                if length == 0 || length > buffer_limit {
+                    return Ok(None);
+                }
+
+                if ctor.resolve_handles::<Instruction>(&mut state).is_none() {
+                    return Ok(None);
+                }
+
+                state.inputs.input.base_state();
+
+                state.apply_commits::<Instruction>();
+
+                state.format::<Instruction, _>(writer)?;
+
+                Ok(Some(length))
             }
 
             #[inline]

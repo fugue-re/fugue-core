@@ -1,3 +1,4 @@
+use std::fmt;
 use std::mem;
 
 use arrayvec::ArrayVec;
@@ -116,6 +117,11 @@ impl<'a> LiftingContextState<'a> {
     }
 
     #[inline]
+    pub fn constructor(&self) -> &'static Constructor {
+        self.inputs.input.constructor()
+    }
+
+    #[inline]
     pub fn len(&self) -> usize {
         self.inputs.input.len()
     }
@@ -160,6 +166,20 @@ impl<'a> LiftingContextState<'a> {
         })
     }
 
+    #[doc(hidden)]
+    #[inline]
+    pub fn format<R: ConstructorResolver, W: fmt::Write>(&mut self, mut writer: W) -> fmt::Result {
+        self.inputs.input.base_state();
+
+        let ctor = &self.inputs.input.constructor();
+
+        ctor.format_mnemonic::<R, _>(self, &mut writer)?;
+        ctor.format_body::<R, _>(self, &mut writer)?;
+
+        Ok(())
+    }
+
+    #[doc(hidden)]
     #[inline]
     pub fn emit<R: ConstructorResolver>(&mut self) -> Option<()> {
         self.inputs.input.base_state();
@@ -366,246 +386,6 @@ impl<'a> LiftingContextState<'a> {
         Some(())
     }
 }
-
-/*
-impl<'a> PCodeBuilder<'a> {
-    pub fn new(
-        context: &'a mut PCodeBuilderContext,
-        input: &'a mut ParserInput,
-        delay_slots: &'a mut [ParserInput],
-        issued: &'a mut Vec<PCodeOp>,
-    ) -> Self {
-        input.base_state();
-        Self {
-            unique_offset: (input.address() & context.unique_mask) << 4,
-            context,
-            input,
-            delay_slots,
-            issued,
-        }
-    }
-
-    #[inline]
-    pub fn address(&self) -> u64 {
-        self.input.address()
-    }
-
-    #[inline]
-    pub fn next_address(&self) -> u64 {
-        self.input.next_address()
-    }
-
-    #[inline]
-    pub fn next2_address(&self) -> Option<u64> {
-        let address = self.input.address();
-        let offset = self.input.len();
-
-        let naddress = address + offset as u64;
-        let ninput = self.delay_slots.get(0)?;
-
-        if ninput.address() == naddress {
-            Some(ninput.next_address())
-        } else {
-            None
-        }
-    }
-
-    #[inline]
-    pub fn delay_slot_length(&self) -> usize {
-        self.input.delay_slot_length()
-    }
-
-    #[inline]
-    pub fn len(&self) -> usize {
-        self.input.len()
-    }
-
-    #[inline]
-    pub fn emit(&mut self) -> Option<()> {
-        self.input.base_state();
-        self.issued.clear();
-
-        if let Some(builder) = self.input.constructor().build_action {
-            (builder)(self)?;
-        }
-
-        self.resolve_relatives();
-
-        // reset
-        self.context.inputs_count = 0;
-        self.context.label_count = 0;
-        self.context.labels.fill(INVALID_LABEL);
-        self.context.label_refs.clear();
-
-        Some(())
-    }
-
-    #[doc(hidden)]
-    #[inline]
-    pub fn emit_delay_slots(&mut self) -> Option<()> {
-        let unique_offset = self.unique_offset;
-
-        let base_address = self.address();
-        let delay_slot_bytes = self.delay_slot_length();
-
-        let mut fall_offset = self.len();
-        let mut bytes = 0usize;
-        let mut index = 0usize;
-
-        loop {
-            let address = base_address + fall_offset as u64;
-
-            self.set_unique_offset(address);
-
-            let length = {
-                let mut nself = self.next_builder(index)?;
-                let length = nself.len();
-
-                nself.input.base_state();
-
-                if let Some(builder) = nself.input.constructor().build_action {
-                    (builder)(&mut nself)?;
-                }
-
-                length
-            };
-
-            fall_offset += length;
-            bytes += length;
-
-            if bytes >= delay_slot_bytes {
-                break;
-            }
-
-            index += 1;
-        }
-
-        self.unique_offset = unique_offset;
-
-        Some(())
-    }
-
-    pub fn next_builder<'b>(&'b mut self, index: usize) -> Option<PCodeBuilder<'b>> {
-        let (input, delay_slots) = self.delay_slots.get_mut(index..)?.split_first_mut()?;
-
-        Some(PCodeBuilder {
-            input,
-            delay_slots,
-            context: self.context,
-            issued: self.issued,
-            unique_offset: self.unique_offset,
-        })
-    }
-
-    #[doc(hidden)]
-    #[inline]
-    pub fn operand_handle(&self, index: usize) -> &FixedHandle {
-        unsafe {
-            let opnds = self
-                .input
-                .context
-                .constructors
-                .get_unchecked(self.input.point as usize)
-                .operands as usize;
-
-            self.input
-                .context
-                .constructors
-                .get_unchecked(opnds + index)
-                .handle
-                .as_ref()
-                .unwrap_unchecked()
-        }
-    }
-
-    #[inline]
-    #[doc(hidden)]
-    pub fn unique_mask(&self) -> u64 {
-        self.context.unique_mask
-    }
-
-    #[inline]
-    #[doc(hidden)]
-    pub fn set_unique_offset(&mut self, address: u64) {
-        self.unique_offset = (address & self.context.unique_mask) << 4;
-    }
-
-    #[inline]
-    #[doc(hidden)]
-    pub fn push_input(&mut self, vnd: Varnode) {
-        unsafe {
-            if self.context.inputs_count < 2 {
-                self.context
-                    .inputs
-                    .set_input_unchecked(self.context.inputs_count as _, vnd);
-            } else if self.context.inputs_count & 1 == 0 {
-                self.context.inputs_spill.push_unchecked(Inputs::one(vnd));
-            } else {
-                let last_posn = self.context.inputs_spill.len() - 1;
-                self.context
-                    .inputs_spill
-                    .get_unchecked_mut(last_posn)
-                    .set_input(1, vnd);
-            }
-            self.context.inputs_count += 1;
-        }
-    }
-
-    #[inline]
-    #[doc(hidden)]
-    pub fn issue(&mut self, op: Op, output: Varnode) {
-        let pcode = PCodeOp {
-            op,
-            inputs: mem::take(&mut self.context.inputs),
-            output,
-        };
-
-        self.issued.reserve(1 + self.context.inputs_spill.len());
-        self.issued.push(pcode);
-        self.issued
-            .extend(self.context.inputs_spill.drain(..).map(|inputs| PCodeOp {
-                op: Op::Arg(1 + inputs.is_full() as u16),
-                output: Varnode::INVALID,
-                inputs,
-            }));
-
-        self.context.inputs_count = 0;
-    }
-
-    #[inline]
-    #[doc(hidden)]
-    pub fn issue_with(&mut self, op: Op, inputs: Inputs, output: Varnode) {
-        self.issued.push(PCodeOp { op, inputs, output });
-    }
-
-    #[inline]
-    fn resolve_relatives(&mut self) -> Option<()> {
-        for rel in self.context.label_refs.iter() {
-            // we need to recalculate the operation number since we emit args
-            // spilled as Op::Arg(_) when we have > 2 inputs.
-
-            let op_index = rel.operation + (rel.index >> 2);
-            let in_index = rel.index & 1;
-
-            let varnode = &mut self.issued[op_index as usize].inputs.0[in_index as usize];
-
-            let label_index = varnode.offset as usize;
-            let label = *self.context.labels.get(label_index)?;
-
-            if label == INVALID_LABEL {
-                return None;
-            } else {
-                let label = label as u64;
-                let fixed = label.wrapping_sub(rel.operation as u64)
-                    & calculate_mask(varnode.size as usize);
-                varnode.offset = fixed;
-            }
-        }
-
-        Some(())
-    }
-}
-*/
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct RelativeRecord {

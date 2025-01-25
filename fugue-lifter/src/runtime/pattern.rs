@@ -55,16 +55,16 @@ pub enum PatternExpression {
 }
 
 impl PatternExpression {
-    pub fn format<R: ConstructorResolver>(
+    pub fn format<R: ConstructorResolver, W: fmt::Write>(
         &self,
         state: &mut LiftingContextState<'_>,
-        fmt: &mut fmt::Formatter,
-    ) -> Result<(), fmt::Error> {
+        writer: &mut W,
+    ) -> fmt::Result {
         let value = self.resolve::<R>(state).expect("value previously resolved");
         if value < 0 {
-            write!(fmt, "-{:#x}", -(value as i128))
+            write!(writer, "-{:#x}", -(value as i128))
         } else {
-            write!(fmt, "{:#x}", value)
+            write!(writer, "{:#x}", value)
         }
     }
 

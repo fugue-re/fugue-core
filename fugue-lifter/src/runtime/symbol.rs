@@ -57,14 +57,14 @@ pub enum Symbol {
 }
 
 impl Symbol {
-    pub fn format<R: ConstructorResolver>(
+    pub fn format<R: ConstructorResolver, W: fmt::Write>(
         &self,
         state: &mut LiftingContextState<'_>,
-        fmt: &mut fmt::Formatter,
-    ) -> Result<(), fmt::Error> {
+        writer: &mut W,
+    ) -> fmt::Result {
         match self {
             Self::Varnode { name, .. } => {
-                fmt.write_str(name)?;
+                writer.write_str(name)?;
             }
             Self::Name {
                 pattern_value,
@@ -77,7 +77,7 @@ impl Symbol {
             } => {
                 let index = pattern_value.resolve::<R>(state).expect("resolved");
                 if let Some(name) = symbol_table.get(index as usize).copied().flatten() {
-                    fmt.write_str(name)?;
+                    writer.write_str(name)?;
                 }
             }
             Self::VarnodeListFilled {
@@ -87,7 +87,7 @@ impl Symbol {
             } => {
                 let index = pattern_value.resolve::<R>(state).expect("resolved");
                 if let Some(name) = symbol_table.get(index as usize).copied() {
-                    fmt.write_str(name)?;
+                    writer.write_str(name)?;
                 }
             }
             Self::ValueMap {
@@ -97,20 +97,20 @@ impl Symbol {
                 let index = pattern_value.resolve::<R>(state).expect("resolved");
                 if let Some(value) = value_table.get(index as usize).copied().flatten() {
                     if value < 0 {
-                        write!(fmt, "-{:#x}", -(value as i128))?;
+                        write!(writer, "-{:#x}", -(value as i128))?;
                     } else {
-                        write!(fmt, "{:#x}", value)?;
+                        write!(writer, "{:#x}", value)?;
                     }
                 }
             }
             Self::Start { .. } => {
-                write!(fmt, "{:#x}", state.address())?;
+                write!(writer, "{:#x}", state.address())?;
             }
             Self::End { .. } => {
-                write!(fmt, "{:#x}", state.next_address())?;
+                write!(writer, "{:#x}", state.next_address())?;
             }
             Self::Next2 { .. } => {
-                write!(fmt, "{:#x}", state.next2_address().expect("resolved"))?;
+                write!(writer, "{:#x}", state.next2_address().expect("resolved"))?;
             }
             _ => unreachable!("this state should not be reachable"),
         }

@@ -134,6 +134,14 @@ impl Constructor {
         &self.print_pieces
     }
 
+    pub fn first_whitespace(&self) -> Option<usize> {
+        self.first_whitespace
+    }
+
+    pub fn flow_through_index(&self) -> Option<usize> {
+        self.flow_through_index
+    }
+
     pub(crate) fn operands<'b, 'c, 'z, 'az>(
         &'b self,
         arena: &'az IRBuilderArena,
