@@ -57,7 +57,7 @@ pub enum Symbol {
 }
 
 impl Symbol {
-    pub fn format<R: ConstructorResolver, W: fmt::Write>(
+    pub unsafe fn format<R: ConstructorResolver, W: fmt::Write>(
         &self,
         state: &mut LiftingContextState<'_>,
         writer: &mut W,
@@ -117,7 +117,7 @@ impl Symbol {
         Ok(())
     }
 
-    pub fn resolve_handle<R: ConstructorResolver>(
+    pub unsafe fn resolve_handle<R: ConstructorResolver>(
         &self,
         input: &mut LiftingContextState<'_>,
     ) -> Option<FixedHandle> {
@@ -145,9 +145,9 @@ impl Symbol {
                 offset_offset: *offset,
                 ..Default::default()
             },
-            Symbol::Operand { handle_index } => unsafe {
+            Symbol::Operand { handle_index } => {
                 input.input().unchecked_operand_handle(*handle_index)
-            },
+            }
             Symbol::Start { space, size } => FixedHandle {
                 space: *space,
                 size: *size,

@@ -257,19 +257,17 @@ impl ParserInput {
     }
 
     #[inline(always)]
-    pub fn operand(&self) -> usize {
-        unsafe { *self.breadcrumb.get_unchecked(self.depth as usize) as _ }
+    pub unsafe fn operand(&self) -> usize {
+        *self.breadcrumb.get_unchecked(self.depth as usize) as _
     }
 
     #[inline]
-    pub fn constructor(&self) -> &'static Constructor {
-        unsafe {
-            self.context
-                .constructors
-                .get_unchecked(self.point as usize)
-                .constructor
-                .unwrap_unchecked()
-        }
+    pub unsafe fn constructor(&self) -> &'static Constructor {
+        self.context
+            .constructors
+            .get_unchecked(self.point as usize)
+            .constructor
+            .unwrap_unchecked()
     }
 
     #[inline]
@@ -291,18 +289,22 @@ impl ParserInput {
     }
 
     #[inline(always)]
-    pub fn instruction_bytes(&self, start: usize, size: usize) -> Option<u32> {
-        let offset = unsafe {
-            self.context
-                .constructors
-                .get_unchecked(self.point as usize)
-                .offset
-        };
+    pub unsafe fn instruction_bytes(&self, start: usize, size: usize) -> Option<u32> {
+        let offset = self
+            .context
+            .constructors
+            .get_unchecked(self.point as usize)
+            .offset;
         self.instruction_bytes_with(start, size, offset as _)
     }
 
     #[inline(always)]
-    pub fn instruction_bytes_with(&self, start: usize, size: usize, offset: usize) -> Option<u32> {
+    pub unsafe fn instruction_bytes_with(
+        &self,
+        start: usize,
+        size: usize,
+        offset: usize,
+    ) -> Option<u32> {
         let offset = offset + start;
         let end = offset + size;
 
@@ -311,28 +313,30 @@ impl ParserInput {
         }
 
         let mut result = 0u32;
-        unsafe {
-            for i in offset..end.min(self.context.buffer.len()) {
-                result = (result << 8) | *self.context.buffer.get_unchecked(i) as u32;
-            }
+        for i in offset..end.min(self.context.buffer.len()) {
+            result = (result << 8) | *self.context.buffer.get_unchecked(i) as u32;
         }
 
         Some(result)
     }
 
     #[inline(always)]
-    pub fn instruction_bits(&self, start: usize, size: usize) -> Option<u32> {
-        let offset = unsafe {
-            self.context
-                .constructors
-                .get_unchecked(self.point as usize)
-                .offset
-        };
+    pub unsafe fn instruction_bits(&self, start: usize, size: usize) -> Option<u32> {
+        let offset = self
+            .context
+            .constructors
+            .get_unchecked(self.point as usize)
+            .offset;
         self.instruction_bits_with(start, size, offset as _)
     }
 
     #[inline(always)]
-    pub fn instruction_bits_with(&self, start: usize, size: usize, offset: usize) -> Option<u32> {
+    pub unsafe fn instruction_bits_with(
+        &self,
+        start: usize,
+        size: usize,
+        offset: usize,
+    ) -> Option<u32> {
         let bit_offset = start % 8;
         let byte_offset = offset + (start / 8);
         let total_bits = bit_offset + size;
@@ -346,11 +350,8 @@ impl ParserInput {
         let bytes_to_read = bytes_needed.min(available_bytes);
 
         let mut result = 0u32;
-        unsafe {
-            for i in 0..bytes_to_read {
-                result =
-                    (result << 8) | (*self.context.buffer.get_unchecked(byte_offset + i) as u32);
-            }
+        for i in 0..bytes_to_read {
+            result = (result << 8) | (*self.context.buffer.get_unchecked(byte_offset + i) as u32);
         }
 
         result = result
@@ -414,89 +415,75 @@ impl ParserInput {
     }
 
     #[inline]
-    pub fn calculate_length(&mut self, length: usize, operands: usize) {
-        unsafe {
-            let state = self.context.constructors.get_unchecked(self.point as usize);
-            let offset = state.offset as usize;
-            let mut max_length = length + offset;
+    pub unsafe fn calculate_length(&mut self, length: usize, operands: usize) {
+        let state = self.context.constructors.get_unchecked(self.point as usize);
+        let offset = state.offset as usize;
+        let mut max_length = length + offset;
 
-            for opid in 0..operands {
-                let op = self
-                    .context
-                    .constructors
-                    .get_unchecked(state.operands as usize + opid);
-
-                let op_len = op.length + op.offset;
-                max_length = max_length.max(op_len as usize);
-            }
-
-            self.context
-                .constructors
-                .get_unchecked_mut(self.point as usize)
-                .length = (max_length - offset) as u8;
-        }
-    }
-
-    #[inline(always)]
-    pub fn offset(&self) -> usize {
-        unsafe {
-            self.context
-                .constructors
-                .get_unchecked(self.point as usize)
-                .offset as _
-        }
-    }
-
-    #[inline(always)]
-    pub fn set_offset(&mut self, offset: usize) {
-        unsafe {
-            self.context
-                .constructors
-                .get_unchecked_mut(self.point as usize)
-                .offset = offset as _;
-        }
-    }
-
-    #[inline(always)]
-    pub fn offset_for_operand(&mut self, index: usize) -> usize {
-        unsafe {
-            let opid = self
+        for opid in 0..operands {
+            let op = self
                 .context
                 .constructors
-                .get_unchecked_mut(self.point as usize)
-                .operands as usize
-                + index;
-            let op = self.context.constructors.get_unchecked(opid as usize);
-            op.offset as usize + op.length as usize
+                .get_unchecked(state.operands as usize + opid);
+
+            let op_len = op.length + op.offset;
+            max_length = max_length.max(op_len as usize);
         }
+
+        self.context
+            .constructors
+            .get_unchecked_mut(self.point as usize)
+            .length = (max_length - offset) as u8;
     }
 
     #[inline(always)]
-    pub fn set_constructor(&mut self, ctor: &'static Constructor) {
-        unsafe {
-            self.context
-                .constructors
-                .get_unchecked_mut(self.point as usize)
-                .constructor = Some(ctor);
-        }
+    pub unsafe fn offset(&self) -> usize {
+        self.context
+            .constructors
+            .get_unchecked(self.point as usize)
+            .offset as _
     }
 
     #[inline(always)]
-    pub fn set_context_word(&mut self, num: usize, value: u32, mask: u32) {
-        unsafe {
-            *self.context.context.get_unchecked_mut(num) =
-                (*self.context.context.get_unchecked(num) & !mask) | (mask & value);
-        }
+    pub unsafe fn set_offset(&mut self, offset: usize) {
+        self.context
+            .constructors
+            .get_unchecked_mut(self.point as usize)
+            .offset = offset as _;
     }
 
     #[inline(always)]
-    pub fn set_current_length(&mut self, length: usize) {
-        unsafe {
-            self.context
-                .constructors
-                .get_unchecked_mut(self.point as usize)
-                .length = length as _;
-        }
+    pub unsafe fn offset_for_operand(&mut self, index: usize) -> usize {
+        let opid = self
+            .context
+            .constructors
+            .get_unchecked_mut(self.point as usize)
+            .operands as usize
+            + index;
+        let op = self.context.constructors.get_unchecked(opid as usize);
+        op.offset as usize + op.length as usize
+    }
+
+    #[inline(always)]
+    pub unsafe fn set_constructor(&mut self, ctor: &'static Constructor) {
+        self.context
+            .constructors
+            .get_unchecked_mut(self.point as usize)
+            .constructor = Some(ctor);
+    }
+
+    #[inline(always)]
+    pub unsafe fn set_context_word(&mut self, num: usize, value: u32, mask: u32) {
+        *self.context.context.get_unchecked_mut(num) =
+            (*self.context.context.get_unchecked(num) & !mask) | (mask & value);
+    }
+
+    #[inline(always)]
+    pub unsafe fn set_current_length(&mut self, length: usize) {
+        self.context
+            .constructors
+            .get_unchecked_mut(self.point as usize)
+            .length = length as _;
     }
 
     #[inline(always)]
@@ -510,75 +497,69 @@ impl ParserInput {
     }
 
     #[inline(always)]
-    pub fn allocate_operands(&mut self, operands: usize) -> Option<usize> {
+    pub unsafe fn allocate_operands(&mut self, operands: usize) -> Option<usize> {
         let nalloc = self.context.alloc as usize + operands;
 
         if nalloc >= MAX_CTOR_STATES || self.depth as usize >= MAX_PARSER_DEPTH {
             return None;
         }
 
-        unsafe {
-            let id = self.context.alloc;
+        let id = self.context.alloc;
 
-            for opid in 0..operands {
-                let op = self
-                    .context
-                    .constructors
-                    .get_unchecked_mut(id as usize + opid);
-
-                op.parent = self.point;
-                op.constructor = None;
-                op.operands = INVALID_HANDLE;
-                op.offset = 0;
-                op.length = 0;
-            }
-
-            self.context.alloc += operands as u8;
-
-            self.context
+        for opid in 0..operands {
+            let op = self
+                .context
                 .constructors
-                .get_unchecked_mut(self.point as usize)
-                .operands = id;
+                .get_unchecked_mut(id as usize + opid);
 
-            // NOTE: we don't need this bit -- breadcrumb 0 is the ctor and we
-            // can get the same effect by using push operand when we explore
-            /*
-            self.breadcrumb[self.depth as usize] += 1;
-            self.depth += 1;
-
-            self.point = id; // make it the first operand?
-            self.breadcrumb[self.depth as usize] = 0;
-            */
-
-            Some(id as _)
+            op.parent = self.point;
+            op.constructor = None;
+            op.operands = INVALID_HANDLE;
+            op.offset = 0;
+            op.length = 0;
         }
+
+        self.context.alloc += operands as u8;
+
+        self.context
+            .constructors
+            .get_unchecked_mut(self.point as usize)
+            .operands = id;
+
+        // NOTE: we don't need this bit -- breadcrumb 0 is the ctor and we
+        // can get the same effect by using push operand when we explore
+        /*
+        self.breadcrumb[self.depth as usize] += 1;
+        self.depth += 1;
+
+        self.point = id; // make it the first operand?
+        self.breadcrumb[self.depth as usize] = 0;
+        */
+
+        Some(id as _)
     }
 
     #[inline(always)]
-    pub fn push_operand(&mut self, operand: usize) {
-        unsafe {
-            *self.breadcrumb.get_unchecked_mut(self.depth as usize) = operand as u8 + 1;
-            self.depth += 1;
-            self.point = self
-                .context
-                .constructors
-                .get_unchecked(self.point as usize)
-                .operands
-                + operand as u8;
-            *self.breadcrumb.get_unchecked_mut(self.depth as usize) = 0;
-        }
+    pub unsafe fn push_operand(&mut self, operand: usize) {
+        *self.breadcrumb.get_unchecked_mut(self.depth as usize) = operand as u8 + 1;
+        self.depth += 1;
+        self.point = self
+            .context
+            .constructors
+            .get_unchecked(self.point as usize)
+            .operands
+            + operand as u8;
+        *self.breadcrumb.get_unchecked_mut(self.depth as usize) = 0;
     }
 
     #[inline(always)]
-    pub fn pop_operand(&mut self) {
-        unsafe {
-            self.point = self
-                .context
-                .constructors
-                .get_unchecked(self.point as usize)
-                .parent;
-            self.depth -= 1; // here's where it can go to -1 (when we pop the last ctor)
-        }
+    pub unsafe fn pop_operand(&mut self) {
+        self.point = self
+            .context
+            .constructors
+            .get_unchecked(self.point as usize)
+            .parent;
+        self.depth -= 1; // here's where it can go to -1 (when we pop the last ctor)
     }
 
     #[inline(always)]
@@ -594,49 +575,47 @@ impl ParserInput {
     }
 
     #[inline(always)]
-    pub fn parent_handle_mut(&mut self) -> Option<&mut FixedHandle> {
-        unsafe {
-            self.context
-                .constructors
-                .get_unchecked_mut(self.point as usize)
-                .handle
-                .as_mut()
-        }
+    pub unsafe fn parent_handle_mut(&mut self) -> Option<&mut FixedHandle> {
+        self.context
+            .constructors
+            .get_unchecked_mut(self.point as usize)
+            .handle
+            .as_mut()
     }
 
     #[inline(always)]
-    pub fn set_parent_handle(&mut self, handle: FixedHandle) {
-        unsafe {
-            self.context
-                .constructors
-                .get_unchecked_mut(self.point as usize)
-                .handle = Some(handle);
-        }
+    pub unsafe fn set_parent_handle(&mut self, handle: FixedHandle) {
+        self.context
+            .constructors
+            .get_unchecked_mut(self.point as usize)
+            .handle = Some(handle);
     }
 
     #[inline(always)]
-    pub fn operand_constructor(&self, index: usize) -> &Constructor {
-        let opnds = self.context.constructors[self.point as usize].operands as usize;
+    pub unsafe fn operand_constructor(&self, index: usize) -> &Constructor {
+        let opnds = self
+            .context
+            .constructors
+            .get_unchecked(self.point as usize)
+            .operands as usize;
         self.context.constructors[opnds + index]
             .constructor
-            .unwrap()
+            .unwrap_unchecked()
     }
 
     #[inline(always)]
-    pub fn operand_handle(&self, index: usize) -> &FixedHandle {
-        unsafe {
-            let opnds = self
-                .context
-                .constructors
-                .get_unchecked(self.point as usize)
-                .operands as usize;
-            self.context
-                .constructors
-                .get_unchecked(opnds + index)
-                .handle
-                .as_ref()
-                .unwrap_unchecked()
-        }
+    pub unsafe fn operand_handle(&self, index: usize) -> &FixedHandle {
+        let opnds = self
+            .context
+            .constructors
+            .get_unchecked(self.point as usize)
+            .operands as usize;
+        self.context
+            .constructors
+            .get_unchecked(opnds + index)
+            .handle
+            .as_ref()
+            .unwrap_unchecked()
     }
 
     #[inline(always)]

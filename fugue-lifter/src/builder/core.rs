@@ -1709,7 +1709,9 @@ impl<'a> LifterGenerator<'a> {
                     trees.push(quote! {
                         #[inline]
                         fn #tree_fn(input: &mut fugue_lifter::runtime::LiftingContextState) -> Option<&'static fugue_lifter::runtime::Constructor> {
-                            #body
+                            unsafe {
+                                #body
+                            }
                         }
                     });
 
@@ -1760,7 +1762,9 @@ impl<'a> LifterGenerator<'a> {
         quote! {
             #[inline]
             pub fn resolve(input: &mut fugue_lifter::runtime::LiftingContextState) -> Option<&'static fugue_lifter::runtime::Constructor> {
-                #body
+                unsafe {
+                    #body
+                }
             }
         }
     }
@@ -2063,20 +2067,24 @@ impl<'a> ToTokens for LifterGenerator<'a> {
             pub fn resolve_constructor(
                 state: &mut fugue_lifter::runtime::LiftingContextState,
             ) -> Option<&'static fugue_lifter::runtime::Constructor> {
-                let ctor = SubTable0In0::resolve(state)?;
-                ctor.resolve_operands::<Instruction>(state)?;
-                Some(ctor)
+                unsafe {
+                    let ctor = SubTable0In0::resolve(state)?;
+                    ctor.resolve_operands::<Instruction>(state)?;
+                    Some(ctor)
+                }
             }
 
             #[inline(always)]
             pub fn resolve_state(
                 state: &mut fugue_lifter::runtime::LiftingContextState,
             ) -> Option<&'static fugue_lifter::runtime::Constructor> {
-                let ctor = resolve_constructor(state)?;
-                ctor.resolve_handles::<Instruction>(state)?;
-                state.inputs.input.base_state();
-                state.apply_commits::<Instruction>();
-                Some(ctor)
+                unsafe {
+                    let ctor = resolve_constructor(state)?;
+                    ctor.resolve_handles::<Instruction>(state)?;
+                    state.inputs.input.base_state();
+                    state.apply_commits::<Instruction>();
+                    Some(ctor)
+                }
             }
 
             #[inline]
@@ -2086,29 +2094,31 @@ impl<'a> ToTokens for LifterGenerator<'a> {
                 context: &mut fugue_lifter::runtime::LiftingContext,
                 apply_commits: bool,
             ) -> Option<usize> {
-                let mut nop_issued = Vec::with_capacity(0);
-                let mut state = context.state_for(address, bytes, &mut nop_issued)?;
+                unsafe {
+                    let mut nop_issued = Vec::with_capacity(0);
+                    let mut state = context.state_for(address, bytes, &mut nop_issued)?;
 
-                let ctor = resolve_constructor(&mut state)?;
+                    let ctor = resolve_constructor(&mut state)?;
 
-                let buffer_limit = bytes.len();
-                let length = state.len();
+                    let buffer_limit = bytes.len();
+                    let length = state.len();
 
-                if length == 0 || length > buffer_limit {
-                    return None;
+                    if length == 0 || length > buffer_limit {
+                        return None;
+                    }
+
+                    if apply_commits {
+                        ctor.resolve_handles::<Instruction>(&mut state)?;
+                    }
+
+                    state.inputs.input.base_state();
+
+                    if apply_commits {
+                        state.apply_commits::<Instruction>();
+                    }
+
+                    Some(length)
                 }
-
-                if apply_commits {
-                    ctor.resolve_handles::<Instruction>(&mut state)?;
-                }
-
-                state.inputs.input.base_state();
-
-                if apply_commits {
-                    state.apply_commits::<Instruction>();
-                }
-
-                Some(length)
             }
 
             #[inline]
@@ -2118,34 +2128,36 @@ impl<'a> ToTokens for LifterGenerator<'a> {
                 context: &mut fugue_lifter::runtime::LiftingContext,
                 writer: &mut W,
             ) -> Result<Option<usize>, std::fmt::Error> {
-                let mut nop_issued = Vec::with_capacity(0);
+                unsafe {
+                    let mut nop_issued = Vec::with_capacity(0);
 
-                let Some(mut state) = context.state_for(address, bytes, &mut nop_issued) else {
-                    return Ok(None);
-                };
+                    let Some(mut state) = context.state_for(address, bytes, &mut nop_issued) else {
+                        return Ok(None);
+                    };
 
-                let Some(ctor) = resolve_constructor(&mut state) else {
-                    return Ok(None);
-                };
+                    let Some(ctor) = resolve_constructor(&mut state) else {
+                        return Ok(None);
+                    };
 
-                let buffer_limit = bytes.len();
-                let length = state.len();
+                    let buffer_limit = bytes.len();
+                    let length = state.len();
 
-                if length == 0 || length > buffer_limit {
-                    return Ok(None);
+                    if length == 0 || length > buffer_limit {
+                        return Ok(None);
+                    }
+
+                    if ctor.resolve_handles::<Instruction>(&mut state).is_none() {
+                        return Ok(None);
+                    }
+
+                    state.inputs.input.base_state();
+
+                    state.apply_commits::<Instruction>();
+
+                    state.format::<Instruction, _>(writer)?;
+
+                    Ok(Some(length))
                 }
-
-                if ctor.resolve_handles::<Instruction>(&mut state).is_none() {
-                    return Ok(None);
-                }
-
-                state.inputs.input.base_state();
-
-                state.apply_commits::<Instruction>();
-
-                state.format::<Instruction, _>(writer)?;
-
-                Ok(Some(length))
             }
 
             #[inline]
@@ -2155,60 +2167,62 @@ impl<'a> ToTokens for LifterGenerator<'a> {
                 context: &mut fugue_lifter::runtime::LiftingContext,
                 issued: &mut Vec<fugue_lifter::runtime::pcode::PCodeOp>,
             ) -> Option<usize> {
-                let mut state = context.state_for(address, bytes, issued)?;
-                let buffer_limit = bytes.len();
+                unsafe {
+                    let mut state = context.state_for(address, bytes, issued)?;
+                    let buffer_limit = bytes.len();
 
-                resolve_state(&mut state)?;
+                    resolve_state(&mut state)?;
 
-                let length = state.len();
+                    let length = state.len();
 
-                if length == 0 || length > buffer_limit {
-                    return None;
-                }
-
-                let delay_slot_bytes = state.delay_slot_length();
-
-                if delay_slot_bytes == 0 {
-                    state.emit::<Instruction>()?;
-                    return Some(state.len());
-                }
-
-                let mut fall_offset = state.len();
-                let mut delay_count = 0usize;
-                let mut index = 0usize;
-
-                loop {
-                    let address = address + fall_offset as u64;
-                    let bytes = bytes.get(fall_offset..)?;
-
-                    // NOTE: this does not ensure we have the context configured for lifting;
-                    // we therefore need to directly initialise the first input.
-                    //
-                    let mut dstate = state.nth_delay_slot(index)?;
-
-                    dstate.inputs.initialise(address, bytes);
-
-                    resolve_state(&mut dstate)?;
-
-                    let length = dstate.len();
-
-                    if length == 0 || length > (buffer_limit - fall_offset) {
+                    if length == 0 || length > buffer_limit {
                         return None;
                     }
 
-                    fall_offset += length;
-                    delay_count += length;
+                    let delay_slot_bytes = state.delay_slot_length();
 
-                    if delay_count >= delay_slot_bytes {
-                        break;
+                    if delay_slot_bytes == 0 {
+                        state.emit::<Instruction>()?;
+                        return Some(state.len());
                     }
 
-                    index += 1;
+                    let mut fall_offset = state.len();
+                    let mut delay_count = 0usize;
+                    let mut index = 0usize;
+
+                    loop {
+                        let address = address + fall_offset as u64;
+                        let bytes = bytes.get(fall_offset..)?;
+
+                        // NOTE: this does not ensure we have the context configured for lifting;
+                        // we therefore need to directly initialise the first input.
+                        //
+                        let mut dstate = state.nth_delay_slot(index)?;
+
+                        dstate.inputs.initialise(address, bytes);
+
+                        resolve_state(&mut dstate)?;
+
+                        let length = dstate.len();
+
+                        if length == 0 || length > (buffer_limit - fall_offset) {
+                            return None;
+                        }
+
+                        fall_offset += length;
+                        delay_count += length;
+
+                        if delay_count >= delay_slot_bytes {
+                            break;
+                        }
+
+                        index += 1;
+                    }
+
+                    state.emit::<Instruction>()?;
+
+                    Some(fall_offset)
                 }
-
-                state.emit::<Instruction>()?;
-
-                Some(fall_offset)
             }
 
             #[inline]

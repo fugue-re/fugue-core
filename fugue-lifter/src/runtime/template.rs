@@ -88,7 +88,7 @@ pub struct ConstructTpl {
 
 impl ConstructTpl {
     #[inline]
-    pub fn build<R: ConstructorResolver>(&self, input: &mut LiftingContextState<'_>) -> Option<()> {
+    pub unsafe fn build<R: ConstructorResolver>(&self, input: &mut LiftingContextState<'_>) -> Option<()> {
         let old_base = input.context.label_base;
 
         input.context.label_base = input.context.label_count;
@@ -103,7 +103,7 @@ impl ConstructTpl {
         Some(())
     }
 
-    pub fn build_result<R: ConstructorResolver>(
+    pub unsafe fn build_result<R: ConstructorResolver>(
         &self,
         input: &mut LiftingContextState<'_>,
     ) -> Option<FixedHandle> {
@@ -132,7 +132,7 @@ pub enum ConstTpl {
 
 impl ConstTpl {
     #[inline]
-    pub fn update_offset<R: ConstructorResolver>(
+    pub unsafe fn update_offset<R: ConstructorResolver>(
         &self,
         input: &mut LiftingContextState<'_>,
         handle: &mut FixedHandle,
@@ -158,7 +158,7 @@ impl ConstTpl {
     }
 
     #[inline]
-    pub fn space<R: ConstructorResolver>(&self, input: &mut LiftingContextState<'_>) -> u8 {
+    pub unsafe fn space<R: ConstructorResolver>(&self, input: &mut LiftingContextState<'_>) -> u8 {
         match self {
             Self::CurrentSpace => R::DEFAULT_SPACE,
             Self::Handle(index, HandleKind::Space) => {
@@ -175,7 +175,7 @@ impl ConstTpl {
     }
 
     #[inline]
-    pub fn value<R: ConstructorResolver>(
+    pub unsafe fn value<R: ConstructorResolver>(
         &self,
         input: &mut LiftingContextState<'_>,
     ) -> Option<u64> {
@@ -267,7 +267,7 @@ pub struct OpTpl {
 }
 
 impl OpTpl {
-    pub fn build<R: ConstructorResolver>(&self, input: &mut LiftingContextState) -> Option<()> {
+    pub unsafe fn build<R: ConstructorResolver>(&self, input: &mut LiftingContextState) -> Option<()> {
         match self.op {
             Op::Build => self.append_build_action::<R>(input),
             Op::DelaySlot => self.delay_slot_action::<R>(input),
@@ -294,7 +294,7 @@ impl OpTpl {
         }
     }
 
-    pub fn append_build_action<R: ConstructorResolver>(
+    pub unsafe fn append_build_action<R: ConstructorResolver>(
         &self,
         input: &mut LiftingContextState,
     ) -> Option<()> {
@@ -311,14 +311,14 @@ impl OpTpl {
         Some(())
     }
 
-    pub fn delay_slot_action<R: ConstructorResolver>(
+    pub unsafe fn delay_slot_action<R: ConstructorResolver>(
         &self,
         input: &mut LiftingContextState,
     ) -> Option<()> {
         input.emit_delay_slots::<R>()
     }
 
-    pub fn dump_action<R: ConstructorResolver>(
+    pub unsafe fn dump_action<R: ConstructorResolver>(
         &self,
         state: &mut LiftingContextState,
     ) -> Option<()> {
@@ -345,7 +345,7 @@ impl OpTpl {
     }
 
     #[inline]
-    fn build_op<R: ConstructorResolver>(
+    unsafe fn build_op<R: ConstructorResolver>(
         &self,
         input: &mut LiftingContextState<'_>,
     ) -> Option<(usize, pcode::Op)> {
@@ -439,7 +439,7 @@ pub struct HandleTpl {
 }
 
 impl HandleTpl {
-    pub fn build<R: ConstructorResolver>(
+    pub unsafe fn build<R: ConstructorResolver>(
         &self,
         input: &mut LiftingContextState,
     ) -> Option<FixedHandle> {
@@ -507,7 +507,7 @@ impl VarnodeTpl {
         handle.offset_space != INVALID_HANDLE
     }
 
-    pub fn location<R: ConstructorResolver>(
+    pub unsafe fn location<R: ConstructorResolver>(
         &self,
         input: &mut LiftingContextState<'_>,
     ) -> Option<pcode::Varnode> {
@@ -527,12 +527,12 @@ impl VarnodeTpl {
         })
     }
 
-    pub fn pointer<R: ConstructorResolver>(
+    pub unsafe fn pointer<R: ConstructorResolver>(
         &self,
         input: &mut LiftingContextState<'_>,
     ) -> Option<(u8, pcode::Varnode)> {
         let index = self.offset.handle_index().expect("handle");
-        let handle = unsafe { input.operand_handle(index) };
+        let handle = input.operand_handle(index);
 
         let space = handle.offset_space;
         let size = handle.offset_size;
@@ -549,7 +549,7 @@ impl VarnodeTpl {
         ))
     }
 
-    pub fn build_input<R: ConstructorResolver>(
+    pub unsafe fn build_input<R: ConstructorResolver>(
         &self,
         input: &mut LiftingContextState<'_>,
     ) -> Option<()> {
@@ -569,7 +569,7 @@ impl VarnodeTpl {
         Some(())
     }
 
-    pub fn build_output<R: ConstructorResolver>(
+    pub unsafe fn build_output<R: ConstructorResolver>(
         &self,
         input: &mut LiftingContextState<'_>,
         op: pcode::Op,

@@ -23,7 +23,7 @@ pub struct OperandFilter {
 
 impl OperandFilter {
     #[inline]
-    pub fn validate<R: ConstructorResolver>(&self, input: &mut LiftingContextState) -> Option<()> {
+    pub unsafe fn validate<R: ConstructorResolver>(&self, input: &mut LiftingContextState) -> Option<()> {
         let index = self.pattern.resolve::<R>(input)? as usize;
         if index >= self.limit || self.indices.contains(&index) {
             None
@@ -103,7 +103,7 @@ impl Eq for Constructor {}
 
 impl Constructor {
     #[inline]
-    pub fn apply_context_actions<R: ConstructorResolver>(
+    pub unsafe fn apply_context_actions<R: ConstructorResolver>(
         &'static self,
         state: &mut LiftingContextState,
     ) -> Option<()> {
@@ -125,7 +125,7 @@ impl Constructor {
     }
 
     #[inline]
-    pub fn resolve_operands<R: ConstructorResolver>(
+    pub unsafe fn resolve_operands<R: ConstructorResolver>(
         &'static self,
         state: &mut LiftingContextState,
     ) -> Option<()> {
@@ -200,7 +200,7 @@ impl Constructor {
     }
 
     #[inline]
-    pub fn resolve_handles<R: ConstructorResolver>(
+    pub unsafe fn resolve_handles<R: ConstructorResolver>(
         &'static self,
         state: &mut LiftingContextState,
     ) -> Option<()> {
@@ -253,7 +253,7 @@ impl Constructor {
         Some(())
     }
 
-    pub fn format_mnemonic<R: ConstructorResolver, W: fmt::Write>(
+    pub unsafe fn format_mnemonic<R: ConstructorResolver, W: fmt::Write>(
         &self,
         state: &mut LiftingContextState<'_>,
         writer: &mut W,
@@ -305,7 +305,7 @@ impl Constructor {
         Ok(())
     }
 
-    pub fn format_body<R: ConstructorResolver, W: fmt::Write>(
+    pub unsafe fn format_body<R: ConstructorResolver, W: fmt::Write>(
         &self,
         state: &mut LiftingContextState<'_>,
         writer: &mut W,
@@ -360,7 +360,7 @@ impl Constructor {
         Ok(())
     }
 
-    pub fn format<R: ConstructorResolver, W: fmt::Write>(
+    pub unsafe fn format<R: ConstructorResolver, W: fmt::Write>(
         &self,
         state: &mut LiftingContextState<'_>,
         writer: &mut W,

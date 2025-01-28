@@ -55,7 +55,7 @@ pub enum PatternExpression {
 }
 
 impl PatternExpression {
-    pub fn format<R: ConstructorResolver, W: fmt::Write>(
+    pub unsafe fn format<R: ConstructorResolver, W: fmt::Write>(
         &self,
         state: &mut LiftingContextState<'_>,
         writer: &mut W,
@@ -69,7 +69,7 @@ impl PatternExpression {
     }
 
     #[inline]
-    pub fn resolve<R: ConstructorResolver>(
+    pub unsafe fn resolve<R: ConstructorResolver>(
         &self,
         input: &mut LiftingContextState<'_>,
     ) -> Option<i64> {

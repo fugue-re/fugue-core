@@ -117,7 +117,7 @@ impl<'a> LiftingContextState<'a> {
     }
 
     #[inline]
-    pub fn constructor(&self) -> &'static Constructor {
+    pub unsafe fn constructor(&self) -> &'static Constructor {
         self.inputs.input.constructor()
     }
 
@@ -127,7 +127,7 @@ impl<'a> LiftingContextState<'a> {
     }
 
     #[inline]
-    pub fn apply_commits<R: ConstructorResolver>(&mut self) {
+    pub unsafe fn apply_commits<R: ConstructorResolver>(&mut self) {
         for commit in mem::take(&mut self.inputs.input.context.commits) {
             commit.action.apply::<R>(self, &commit);
         }
@@ -168,7 +168,10 @@ impl<'a> LiftingContextState<'a> {
 
     #[doc(hidden)]
     #[inline]
-    pub fn format<R: ConstructorResolver, W: fmt::Write>(&mut self, mut writer: W) -> fmt::Result {
+    pub unsafe fn format<R: ConstructorResolver, W: fmt::Write>(
+        &mut self,
+        mut writer: W,
+    ) -> fmt::Result {
         self.inputs.input.base_state();
 
         let ctor = &self.inputs.input.constructor();
@@ -181,7 +184,7 @@ impl<'a> LiftingContextState<'a> {
 
     #[doc(hidden)]
     #[inline]
-    pub fn emit<R: ConstructorResolver>(&mut self) -> Option<()> {
+    pub unsafe fn emit<R: ConstructorResolver>(&mut self) -> Option<()> {
         self.inputs.input.base_state();
         self.issued.clear();
 
@@ -202,7 +205,7 @@ impl<'a> LiftingContextState<'a> {
 
     #[doc(hidden)]
     #[inline]
-    pub fn emit_delay_slots<R: ConstructorResolver>(&mut self) -> Option<()> {
+    pub unsafe fn emit_delay_slots<R: ConstructorResolver>(&mut self) -> Option<()> {
         let unique_offset = self.unique_offset;
 
         let delay_slot_bytes = self.delay_slot_length();
@@ -313,23 +316,21 @@ impl<'a> LiftingContextState<'a> {
 
     #[inline]
     #[doc(hidden)]
-    pub fn push_input(&mut self, vnd: Varnode) {
-        unsafe {
-            if self.context.inputs_count < 2 {
-                self.context
-                    .inputs
-                    .set_input_unchecked(self.context.inputs_count as _, vnd);
-            } else if self.context.inputs_count & 1 == 0 {
-                self.context.inputs_spill.push_unchecked(Inputs::one(vnd));
-            } else {
-                let last_posn = self.context.inputs_spill.len() - 1;
-                self.context
-                    .inputs_spill
-                    .get_unchecked_mut(last_posn)
-                    .set_input(1, vnd);
-            }
-            self.context.inputs_count += 1;
+    pub unsafe fn push_input(&mut self, vnd: Varnode) {
+        if self.context.inputs_count < 2 {
+            self.context
+                .inputs
+                .set_input_unchecked(self.context.inputs_count as _, vnd);
+        } else if self.context.inputs_count & 1 == 0 {
+            self.context.inputs_spill.push_unchecked(Inputs::one(vnd));
+        } else {
+            let last_posn = self.context.inputs_spill.len() - 1;
+            self.context
+                .inputs_spill
+                .get_unchecked_mut(last_posn)
+                .set_input(1, vnd);
         }
+        self.context.inputs_count += 1;
     }
 
     #[inline]
