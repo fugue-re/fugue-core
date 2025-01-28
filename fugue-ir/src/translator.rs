@@ -22,12 +22,9 @@ use crate::deserialise::Error as DeserialiseError;
 use crate::disassembly::lift::{FloatFormats, UserOpStr};
 use crate::disassembly::symbol::{FixedHandle, Symbol, SymbolScope, SymbolTable};
 use crate::disassembly::walker::InstructionFormatter;
-use crate::disassembly::ContextDatabase;
-use crate::disassembly::Error as DisassemblyError;
-use crate::disassembly::PatternExpression;
-use crate::disassembly::VarnodeData;
 use crate::disassembly::{
     IRBuilder, IRBuilderArena, IRBuilderBase, PCodeRaw, ParserContext, ParserState, ParserWalker,
+    VarnodeData, PatternExpression, ContextDatabase, Error as DisassemblyError,
 };
 use crate::error::Error;
 use crate::float_format::FloatFormat;
@@ -614,7 +611,7 @@ impl Translator {
         let delay_slots = walker.delay_slot();
         let length = walker.length();
 
-        let ctor = walker.unchecked_constructor();
+        let ctor = unsafe { walker.unchecked_constructor() };
 
         f(
             InstructionFormatter::new(walker, &self.symbol_table, ctor),
@@ -765,7 +762,7 @@ impl Translator {
         }
 
         if let Some(ctor) = walker.constructor()? {
-            let tmpl = ctor.unchecked_template();
+            let tmpl = unsafe { ctor.unchecked_template() };
             let mut builder = IRBuilder::new(
                 builder,
                 builder_arena,
@@ -789,13 +786,13 @@ impl Translator {
         walker.base_state();
 
         while walker.is_state() {
-            let ct = walker.unchecked_constructor();
+            let ct = unsafe { walker.unchecked_constructor() };
 
             let nops = ct.operand_count();
             let mut op = walker.operand();
 
             'inner: while op < nops {
-                let operand = symbol_table.unchecked_symbol(ct.operand(op));
+                let operand = unsafe { symbol_table.unchecked_symbol(ct.operand(op)) };
                 //.ok_or_else(|| DisassemblyError::InvalidSymbol)?;
 
                 walker.unchecked_push_operand(op);
@@ -853,15 +850,15 @@ impl Translator {
         ctor.apply_context(walker, symbol_table)?;
 
         while walker.is_state() {
-            let ct = walker.unchecked_constructor();
+            let ct = unsafe { walker.unchecked_constructor() };
             let nops = ct.operand_count();
             let mut op = walker.operand();
 
             'inner: while op < nops {
-                let operand = symbol_table.unchecked_symbol(ct.operand(op));
+                let operand = unsafe { symbol_table.unchecked_symbol(ct.operand(op)) };
                 //.ok_or_else(|| DisassemblyError::InvalidSymbol)?;
 
-                let offset = walker.offset(operand.offset_base()) + operand.relative_offset();
+                let offset = unsafe { walker.offset(operand.offset_base()) } + operand.relative_offset();
 
                 walker.unchecked_allocate_operand(op);
                 walker.set_offset(offset)?;

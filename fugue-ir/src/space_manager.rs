@@ -6,8 +6,7 @@ use crate::deserialise::Error;
 use crate::disassembly::IRBuilderArena;
 use crate::space::{AddressSpace, AddressSpaceId, Space, SpaceKind, SpaceProperty};
 
-#[derive(Debug, Clone)]
-#[derive(serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct SpaceManager {
     spaces: Vec<Arc<AddressSpace>>,
     constant_space: usize,
@@ -26,7 +25,10 @@ pub trait IntoSpace<'z, T> {
     fn into_space_with(self, arena: &'z IRBuilderArena, manager: &SpaceManager) -> T;
 }
 
-impl<'z, T, U> IntoSpace<'z, T> for U where T: FromSpace<'z, U> {
+impl<'z, T, U> IntoSpace<'z, T> for U
+where
+    T: FromSpace<'z, U>,
+{
     fn into_space(self, manager: &SpaceManager) -> T {
         T::from_space(self, manager)
     }
@@ -52,15 +54,21 @@ impl SpaceManager {
 
     pub fn space_by_name<S: AsRef<str>>(&self, name: S) -> Option<Arc<AddressSpace>> {
         let name = name.as_ref();
-        self.spaces.iter().find_map(|space| if space.name() == name { Some(space.clone()) } else { None })
+        self.spaces.iter().find_map(|space| {
+            if space.name() == name {
+                Some(space.clone())
+            } else {
+                None
+            }
+        })
     }
 
     pub fn space_by_id(&self, id: AddressSpaceId) -> &AddressSpace {
         &self.spaces[id.index()]
     }
 
-    pub fn unchecked_space_by_id(&self, id: AddressSpaceId) -> &AddressSpace {
-        &* unsafe { self.spaces.get_unchecked(id.index()) }
+    pub unsafe fn unchecked_space_by_id(&self, id: AddressSpaceId) -> &AddressSpace {
+        &*self.spaces.get_unchecked(id.index())
     }
 
     pub fn constant_space(&self) -> Arc<AddressSpace> {

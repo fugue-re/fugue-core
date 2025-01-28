@@ -1,6 +1,6 @@
 use ustr::Ustr;
 
-use crate::compiler::{self, Specification};
+use crate::compiler::{self, CallFixup, Specification};
 use crate::deserialise::error::Error as DeserialiseError;
 use crate::disassembly::VarnodeData;
 use crate::register::RegisterNames;
@@ -263,6 +263,7 @@ pub struct Convention {
     return_address: ReturnAddress,
     default_prototype: Prototype,
     additional_prototypes: Vec<Prototype>,
+    call_fixups: Vec<CallFixup>,
 }
 
 impl Convention {
@@ -282,6 +283,7 @@ impl Convention {
                 .iter()
                 .map(|prototype| Prototype::from_spec(prototype, registers))
                 .collect::<Result<_, _>>()?,
+            call_fixups: spec.call_fixups.clone(),
         })
     }
 
@@ -307,5 +309,9 @@ impl Convention {
 
     pub fn prototypes(&self) -> impl Iterator<Item = &Prototype> {
         std::iter::once(&self.default_prototype).chain(self.additional_prototypes.iter())
+    }
+
+    pub fn call_fixups(&self) -> &[CallFixup] {
+        &self.call_fixups
     }
 }

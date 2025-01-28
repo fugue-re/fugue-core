@@ -1,0 +1,20 @@
+[package]
+name = "fugue-fspec"
+version = "0.3.0"
+authors = ["Sam Thomas <st@xv.ax>"]
+edition = "2021"
+license = "MIT"
+description = "A binary analysis framework written in Rust"
+homepage = "https://fugue.re"
+
+[dependencies]
+bitflags = { version = "2", features = ["serde"] }
+fugue-arch = { version = "0.3", path = "../fugue-arch" }
+fugue-bytes = { version = "0.3", path = "../fugue-bytes" }
+fugue-ir = { version = "0.3", path = "../fugue-ir" }
+fugue-sleigh = { version = "0.3", path = "../fugue-sleigh" }
+nom = "7"
+regex = "1"
+serde = "1"
+serde_yaml = "0.9"
+thiserror = "1"

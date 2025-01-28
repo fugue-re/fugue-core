@@ -69,7 +69,7 @@ impl<'a> LifterGenerator<'a> {
                 ref name,
                 ref pattern_value,
                 ..
-            } = symtab.unchecked_symbol(sym_id)
+            } = symtab.symbol(sym_id).unwrap()
             else {
                 continue;
             };
@@ -203,7 +203,7 @@ impl<'a> LifterGenerator<'a> {
                 let index = self.generate_pattern_resolver(pattern_value);
                 let cases = varnode_table.iter().enumerate().map(|(i, symid)| {
                     if let Some(symid) = symid {
-                        let sym = self.translator.symbol_table().unchecked_symbol(*symid);
+                        let sym = self.translator.symbol_table().symbol(*symid).unwrap();
                         let value = self.generate_handle_resolver(sym);
                         quote! { #i => { #value } }
                     } else {
@@ -593,7 +593,7 @@ impl<'a> LifterGenerator<'a> {
 
         for oid in 0..ctor.operand_count() {
             let index = ctor.operand(oid);
-            let operand = self.translator.symbol_table().unchecked_symbol(index);
+            let operand = self.translator.symbol_table().symbol(index).unwrap();
 
             let offset_base = operand
                 .offset_base()

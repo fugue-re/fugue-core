@@ -244,9 +244,7 @@ impl Symbol {
     pub fn defining_symbol<'b>(&self, symbols: &'b SymbolTable) -> Option<&'b Symbol> {
         if let Self::Operand { subsym_id, .. } = self {
             if let Some(id) = subsym_id {
-                Some(
-                    symbols.unchecked_symbol(*id), // .ok_or_else(|| Error::InvalidSymbol)?,
-                )
+                Some(unsafe { symbols.unchecked_symbol(*id) })
             } else {
                 None
             }
@@ -366,7 +364,7 @@ impl Symbol {
                 size,
                 ..
             } => FixedHandle {
-                space: manager.unchecked_space_by_id(*space),
+                space: unsafe { manager.unchecked_space_by_id(*space) },
                 size: *size as _,
                 offset_space: None,
                 offset_offset: *offset,
@@ -374,9 +372,9 @@ impl Symbol {
                 temporary_space: None,
                 temporary_offset: 0,
             },
-            Self::Operand { handle_index, .. } => walker.unchecked_handle(*handle_index),
+            Self::Operand { handle_index, .. } => unsafe { walker.unchecked_handle(*handle_index) },
             Self::Start { .. } => {
-                let space = manager.unchecked_space_by_id(walker.address().space());
+                let space = unsafe { manager.unchecked_space_by_id(walker.address().space()) };
                 let size = space.address_size();
                 FixedHandle {
                     space,
@@ -389,15 +387,13 @@ impl Symbol {
                 }
             }
             Self::End { .. } => {
-                let space = manager.unchecked_space_by_id(walker.address().space());
+                let space = unsafe { manager.unchecked_space_by_id(walker.address().space()) };
                 let size = space.address_size();
                 FixedHandle {
                     space,
                     size: size as _,
                     offset_space: None,
-                    offset_offset: walker
-                        .unchecked_next_address() /*.ok_or_else(|| Error::InvalidNextAddress)?*/
-                        .offset(),
+                    offset_offset: unsafe { walker.unchecked_next_address() }.offset(),
                     offset_size: 0,
                     temporary_space: None,
                     temporary_offset: 0,
@@ -410,7 +406,7 @@ impl Symbol {
                 let size = space.address_size();
                 FixedHandle {
                     space,
-                    size,
+                    size: size as _,
                     offset_space: None,
                     offset_offset: walker
                         .next2_address(bytes)
@@ -428,13 +424,13 @@ impl Symbol {
                 ..
             } => {
                 let index = pattern_value.value(walker, symbols)?;
-                let varnode = symbols.unchecked_symbol(
-                    unsafe {
+                let varnode = unsafe {
+                    symbols.unchecked_symbol(
                         varnode_table
                             .get_unchecked(index as usize)
-                            .unwrap_unchecked()
-                    }, //.ok_or_else(|| Error::InvalidSymbol)?
-                ); //.ok_or_else(|| Error::InvalidSymbol)?;
+                            .unwrap_unchecked(),
+                    )
+                };
                 varnode.fixed_handle(walker, manager, symbols)?
             }
             Self::ValueMap {
@@ -486,11 +482,10 @@ impl Symbol {
             } => {
                 walker.unchecked_push_operand(*handle_index);
                 if let Some(id) = subsym_id {
-                    let sym = symbols.unchecked_symbol(*id);
+                    let sym = unsafe { symbols.unchecked_symbol(*id) };
                     if sym.is_subtable() {
                         let mut inner = Operands::new(arena);
-                        walker
-                            .unchecked_constructor()
+                        unsafe { walker.unchecked_constructor() }
                             .collect_operands(arena, &mut inner, walker, symbols);
                         operands.append(inner);
                     } else {
@@ -521,11 +516,13 @@ impl Symbol {
             } => {
                 let (index, bits) = pattern_value.value_with(walker, symbols).unwrap();
                 if index >= 0 && (index as usize) < varnode_table.len() {
-                    let named = symbols.unchecked_symbol(unsafe {
-                        varnode_table
-                            .get_unchecked(index as usize)
-                            .unwrap_unchecked()
-                    });
+                    let named = unsafe {
+                        symbols.unchecked_symbol(
+                            varnode_table
+                                .get_unchecked(index as usize)
+                                .unwrap_unchecked(),
+                        )
+                    };
                     operands.push_with(named.name(), bits);
                 }
             }
@@ -557,10 +554,10 @@ impl Symbol {
                 operands.push(walker.address());
             }
             Self::End { .. } => {
-                operands.push(walker.unchecked_next_address());
+                operands.push(unsafe { walker.unchecked_next_address() });
             }
             Self::Next2 { .. } => {
-                operands.push(walker.unchecked_next2_address());
+                operands.push(unsafe { walker.unchecked_next2_address() });
             }
             _ => unreachable!(),
         }
@@ -581,11 +578,9 @@ impl Symbol {
             } => {
                 walker.unchecked_push_operand(*handle_index);
                 if let Some(id) = subsym_id {
-                    let sym = symbols.unchecked_symbol(*id);
+                    let sym = unsafe { symbols.unchecked_symbol(*id) };
                     if sym.is_subtable() {
-                        walker
-                            .unchecked_constructor()
-                            .format(fmt, walker, symbols)?;
+                        unsafe { walker.unchecked_constructor() }.format(fmt, walker, symbols)?;
                     } else {
                         sym.format(fmt, walker, symbols)?;
                     }
@@ -617,13 +612,14 @@ impl Symbol {
                     write!(
                         fmt,
                         "{}",
-                        symbols
-                            .unchecked_symbol(unsafe {
+                        unsafe {
+                            symbols.unchecked_symbol(
                                 varnode_table
                                     .get_unchecked(index as usize)
-                                    .unwrap_unchecked()
-                            })
-                            .name()
+                                    .unwrap_unchecked(),
+                            )
+                        }
+                        .name()
                     )?;
                 }
                 Ok(())
@@ -664,10 +660,18 @@ impl Symbol {
                 write!(fmt, "{:#x}", walker.address().offset())
             }
             Self::End { .. } => {
-                write!(fmt, "{:#x}", walker.unchecked_next_address().offset())
+                write!(
+                    fmt,
+                    "{:#x}",
+                    unsafe { walker.unchecked_next_address() }.offset()
+                )
             }
             Self::Next2 { .. } => {
-                write!(fmt, "{:#x}", walker.unchecked_next2_address().offset())
+                write!(
+                    fmt,
+                    "{:#x}",
+                    unsafe { walker.unchecked_next2_address() }.offset()
+                )
             }
             _ => unreachable!(),
         }
@@ -688,10 +692,9 @@ impl Symbol {
             } => {
                 walker.unchecked_push_operand(*handle_index);
                 if let Some(id) = subsym_id {
-                    let sym = symbols.unchecked_symbol(*id);
+                    let sym = unsafe { symbols.unchecked_symbol(*id) };
                     if sym.is_subtable() {
-                        walker
-                            .unchecked_constructor()
+                        unsafe { walker.unchecked_constructor() }
                             .tokens_aux(tokens, walker, symbols);
                     } else {
                         sym.tokens(tokens, walker, symbols);
@@ -721,13 +724,14 @@ impl Symbol {
             } => {
                 let index = pattern_value.value(walker, symbols).unwrap();
                 if index >= 0 && (index as usize) < varnode_table.len() {
-                    let register = symbols
-                        .unchecked_symbol(unsafe {
+                    let register = unsafe {
+                        symbols.unchecked_symbol(
                             varnode_table
                                 .get_unchecked(index as usize)
-                                .unwrap_unchecked()
-                        })
-                        .name();
+                                .unwrap_unchecked(),
+                        )
+                    }
+                    .name();
                     tokens.push(Token::register(register));
                 }
             }
@@ -759,10 +763,10 @@ impl Symbol {
                 tokens.push(walker.address());
             }
             Self::End { .. } => {
-                tokens.push(walker.unchecked_next_address());
+                tokens.push(unsafe { walker.unchecked_next_address() });
             }
             Self::Next2 { .. } => {
-                tokens.push(walker.unchecked_next2_address());
+                tokens.push(unsafe { walker.unchecked_next2_address() });
             }
             _ => unreachable!(),
         }

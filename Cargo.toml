@@ -11,6 +11,8 @@ members = [
   "fugue-lifter",
   "fugue-state",
   "fugue-state-derive",
+  "fugue-fspec",
+  "fugue-sleigh",
 ]
 resolver = "2"
 

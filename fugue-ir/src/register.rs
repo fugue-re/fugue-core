@@ -48,8 +48,8 @@ impl RegisterNames {
             })
     }
 
-    pub fn unchecked_get(&self, offset: u64, size: usize) -> &Ustr {
-        unsafe { self.get(offset, size).unwrap_unchecked() }
+    pub unsafe fn unchecked_get(&self, offset: u64, size: usize) -> &Ustr {
+        self.get(offset, size).unwrap_unchecked()
     }
 
     pub fn get_by_name<N>(&self, name: N) -> Option<(&Ustr, u64, usize)>

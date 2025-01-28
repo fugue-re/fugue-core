@@ -173,7 +173,7 @@ impl<'a> ToTokens for PatternExpressionAdaptor<'a> {
                 constructor_id,
             } => {
                 let symbols = self.translator.symbol_table();
-                let table = symbols.unchecked_symbol(*table_id);
+                let table = symbols.symbol(*table_id).unwrap();
                 let Symbol::Subtable {
                     constructors,
                     scope,
@@ -188,7 +188,7 @@ impl<'a> ToTokens for PatternExpressionAdaptor<'a> {
                     def_expr,
                     subsym_id,
                     ..
-                } = symbols.unchecked_symbol(ctor.operand(*index))
+                } = symbols.symbol(ctor.operand(*index)).unwrap()
                 else {
                     unreachable!("this state should not be reachable");
                 };
@@ -196,7 +196,7 @@ impl<'a> ToTokens for PatternExpressionAdaptor<'a> {
                 let pexpr = if let Some(def_expr) = def_expr.as_ref() {
                     def_expr
                 } else if let Some(subsym_id) = subsym_id.as_ref() {
-                    let sym = symbols.unchecked_symbol(*subsym_id);
+                    let sym = symbols.symbol(*subsym_id).unwrap();
                     sym.pattern_value()
                 } else {
                     quote! {
@@ -208,7 +208,7 @@ impl<'a> ToTokens for PatternExpressionAdaptor<'a> {
 
                 let index = *index;
                 let symbol = ctor.operand(index);
-                let operand = self.translator.symbol_table().unchecked_symbol(symbol);
+                let operand = self.translator.symbol_table().symbol(symbol).unwrap();
 
                 let ctor_vname = LifterGenerator::ctor_vname(*table_id, *scope, *constructor_id);
                 let value = self.wrap(pexpr);

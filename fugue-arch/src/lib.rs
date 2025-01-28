@@ -33,8 +33,8 @@ impl FromStr for ArchitectureDef {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let parts = s.splitn(4, ':').collect::<Vec<_>>();
-        if parts.len() != 4 {
-            return Err(ArchDefParseError::ParseFormat)
+        if !matches!(parts.len(), 3 | 4) {
+            return Err(ArchDefParseError::ParseFormat);
         }
 
         let processor = parts[0];
@@ -43,11 +43,16 @@ impl FromStr for ArchitectureDef {
             "be" | "BE" => Endian::Big,
             _ => return Err(ArchDefParseError::ParseEndian),
         };
-        let bits = parts[2].parse::<usize>()
+        let bits = parts[2]
+            .parse::<usize>()
             .map_err(|_| ArchDefParseError::ParseBits)?;
-        let variant = parts[3];
 
-        Ok(ArchitectureDef::new(processor, endian, bits, variant))
+        Ok(ArchitectureDef::new(
+            processor,
+            endian,
+            bits,
+            *parts.get(3).unwrap_or(&"default"),
+        ))
     }
 }
 
