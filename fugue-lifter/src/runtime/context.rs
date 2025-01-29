@@ -110,7 +110,7 @@ impl ContextPostAction {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ContextBitRange {
     word: usize,
     start_bit: usize,

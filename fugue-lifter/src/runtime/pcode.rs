@@ -407,6 +407,49 @@ impl PCodeBuilderContext {
             unique_mask,
         }
     }
+
+    #[inline]
+    pub fn push_input(&mut self, vnd: Varnode) {
+        if self.inputs_count < 2 {
+            self.inputs.set_input(self.inputs_count as _, vnd);
+        } else if self.inputs_count & 1 == 0 {
+            self.inputs_spill.push(Inputs::one(vnd));
+        } else {
+            let last_posn = self.inputs_spill.len() - 1;
+            self.inputs_spill[last_posn].set_input(1, vnd);
+        }
+        self.inputs_count += 1;
+    }
+
+    #[inline]
+    pub fn issue(&mut self, op: Op, output: Varnode, issued: &mut Vec<PCodeOp>) {
+        let pcode = PCodeOp {
+            op,
+            inputs: mem::take(&mut self.inputs),
+            output,
+        };
+
+        issued.reserve(1 + self.inputs_spill.len());
+        issued.push(pcode);
+        issued.extend(self.inputs_spill.drain(..).map(|inputs| PCodeOp {
+            op: Op::Arg(1 + inputs.is_full() as u16),
+            output: Varnode::INVALID,
+            inputs,
+        }));
+
+        self.inputs_count = 0;
+    }
+
+    #[inline]
+    pub fn issue_with(
+        &mut self,
+        op: Op,
+        inputs: Inputs,
+        output: Varnode,
+        issued: &mut Vec<PCodeOp>,
+    ) {
+        issued.push(PCodeOp { op, inputs, output });
+    }
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -521,7 +564,7 @@ pub enum Op {
     IntNeg,
 
     CountOnes,
-    CountZeros,
+    CountLeadingZeros,
 
     ZeroExt,
     SignExt,
@@ -544,7 +587,6 @@ pub enum Op {
     FloatCeiling,
     FloatFloor,
     FloatRound,
-    FloatTruncate,
     FloatIsNaN,
 
     FloatEq,

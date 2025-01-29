@@ -415,13 +415,13 @@ impl OpTpl {
             Op::FloatSqrt => (0, pcode::Op::FloatSqrt),
             Op::FloatOfInt => (0, pcode::Op::IntToFloat),
             Op::FloatOfFloat => (0, pcode::Op::FloatToFloat),
-            Op::FloatTruncate => (0, pcode::Op::FloatTruncate),
+            Op::FloatTruncate => (0, pcode::Op::FloatToInt),
             Op::FloatCeiling => (0, pcode::Op::FloatCeiling),
             Op::FloatFloor => (0, pcode::Op::FloatFloor),
             Op::FloatRound => (0, pcode::Op::FloatRound),
             Op::Subpiece => (0, pcode::Op::Subpiece),
             Op::PopCount => (0, pcode::Op::CountOnes),
-            Op::LZCount => (0, pcode::Op::CountZeros),
+            Op::LZCount => (0, pcode::Op::CountLeadingZeros),
             _ => unreachable!("state should be unreachable via generated code"),
         };
         Some((index, op))

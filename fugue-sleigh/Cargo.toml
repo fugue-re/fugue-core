@@ -9,7 +9,7 @@ homepage = "https://fugue.re"
 
 [dependencies]
 arrayvec = "0.7"
-fugue-ir = { path = "../fugue-ir", version = "0.3" }
+fugue-lifter = { path = "../fugue-lifter", version = "0.3" }
 itertools = "0.13"
 once_cell = "1"
 pest = "2.6"

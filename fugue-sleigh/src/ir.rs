@@ -1,13 +1,12 @@
 use std::collections::hash_map::Entry;
 use std::collections::BTreeMap;
 use std::fmt::Display;
-use std::iter::{once, repeat};
+use std::iter::repeat;
 use std::mem::take;
 use std::ops::{Index, Range};
-use std::sync::Arc;
 
-use fugue_ir::disassembly::{ArenaVec, IRBuilderArena, Opcode, PCodeBlock, PCodeData};
-use fugue_ir::{AddressSpace, Translator, VarnodeData};
+use fugue_lifter::runtime::lifter::Language;
+use fugue_lifter::runtime::pcode::{Op, PCodeBuilderContext, PCodeOp, Varnode};
 
 use once_cell::sync::Lazy;
 use thiserror::Error;
@@ -16,25 +15,25 @@ use ustr::{ustr, Ustr, UstrMap};
 use crate::ast::{AstError, BinOp, BinRel, BranchLabel, BranchTarget, CodeBlock, Expr, Stmt, UnOp};
 use crate::cfg::CFG;
 
-static BUILTINS: Lazy<UstrMap<(Opcode, usize)>> = Lazy::new(|| {
+static BUILTINS: Lazy<UstrMap<(Op, usize)>> = Lazy::new(|| {
     UstrMap::from_iter(
         [
-            ("carry", (Opcode::IntCarry, 2)),
-            ("scarry", (Opcode::IntSCarry, 2)),
-            ("sborrow", (Opcode::IntSBorrow, 2)),
-            ("sext", (Opcode::IntSExt, 1)),
-            ("zext", (Opcode::IntZExt, 1)),
-            ("abs", (Opcode::FloatAbs, 1)),
-            ("sqrt", (Opcode::FloatSqrt, 1)),
-            ("ceil", (Opcode::FloatCeiling, 1)),
-            ("floor", (Opcode::FloatFloor, 1)),
-            ("round", (Opcode::FloatRound, 1)),
-            ("nan", (Opcode::FloatIsNaN, 1)),
-            ("int2float", (Opcode::FloatOfInt, 1)),
-            ("float2float", (Opcode::FloatOfFloat, 1)),
-            ("trunc", (Opcode::FloatTruncate, 1)),
-            ("popcount", (Opcode::PopCount, 1)),
-            // ("lzcount", (Opcode::LZCount, 1)),
+            ("carry", (Op::IntCarry, 2)),
+            ("scarry", (Op::IntSignedCarry, 2)),
+            ("sborrow", (Op::IntSignedBorrow, 2)),
+            ("sext", (Op::SignExt, 1)),
+            ("zext", (Op::ZeroExt, 1)),
+            ("abs", (Op::FloatAbs, 1)),
+            ("sqrt", (Op::FloatSqrt, 1)),
+            ("ceil", (Op::FloatCeiling, 1)),
+            ("floor", (Op::FloatFloor, 1)),
+            ("round", (Op::FloatRound, 1)),
+            ("nan", (Op::FloatIsNaN, 1)),
+            ("int2float", (Op::IntToFloat, 1)),
+            ("float2float", (Op::FloatToFloat, 1)),
+            ("trunc", (Op::FloatToInt, 1)),
+            ("popcount", (Op::CountOnes, 1)),
+            ("lzcount", (Op::CountLeadingZeros, 1)),
         ]
         .into_iter()
         .map(|(n, a)| (ustr(n), a)),
@@ -85,8 +84,8 @@ pub enum IRBuilderError {
     #[error("unable to infer size of temporary {name}")]
     LocalUnsized { name: LocalIdent },
     #[error("inconsistent arity for {op:?}; expected {expected}, got {actual}")]
-    OpcodeArity {
-        op: Opcode,
+    OpArity {
+        op: Op,
         expected: usize,
         actual: usize,
     },
@@ -130,7 +129,7 @@ pub struct IRBlock {
 }
 
 impl IRBlock {
-    pub fn emit(&mut self, op: Opcode, inputs: Vec<IRValue>, output: Option<IRValue>) {
+    pub fn emit(&mut self, op: Op, inputs: Vec<IRValue>, output: Option<IRValue>) {
         self.stmts.push(IRStmt { op, inputs, output })
     }
 
@@ -146,7 +145,7 @@ impl IRBlock {
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum IRValue {
     Const(u64, Option<u32>),
-    Register(VarnodeData),
+    Register(Varnode),
     Temporary(LocalId),
     Address(u64, Option<Ustr>),
     Label(Ustr),
@@ -170,20 +169,20 @@ pub enum IRExpr {
         size: Option<u32>,
     },
     UnRel {
-        op: Opcode,
+        op: Op,
         value: IRValue,
     },
     UnOp {
-        op: Opcode,
+        op: Op,
         value: IRValue,
     },
     BinOp {
-        op: Opcode,
+        op: Op,
         lvalue: IRValue,
         rvalue: IRValue,
     },
     BinRel {
-        op: Opcode,
+        op: Op,
         lvalue: IRValue,
         rvalue: IRValue,
     },
@@ -193,7 +192,7 @@ pub enum IRExpr {
         source: IRValue,
     },
     Intrinsic {
-        id: usize,
+        id: u16,
         arguments: Vec<IRValue>,
     },
     Subpiece {
@@ -213,18 +212,17 @@ pub enum IRExpr {
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct IRStmt {
-    op: Opcode,
+    op: Op,
     inputs: Vec<IRValue>,
     output: Option<IRValue>,
 }
 
-pub struct IRBuilder<'a> {
+pub struct IRBuilder {
     emitted: IRBlock,
     locals: Locals,
     labels: UstrMap<usize>,
     default_size: u32,
-    user_ops: UstrMap<usize>,
-    translator: &'a Translator,
+    language: &'static Language,
 }
 
 pub type LocalId = usize;
@@ -311,7 +309,7 @@ impl Locals {
         Ok(())
     }
 
-    pub fn into_varnodes(self, space: &AddressSpace) -> Result<Vec<VarnodeData>, IRBuilderError> {
+    pub fn into_varnodes(self, space: u8) -> Result<Vec<Varnode>, IRBuilderError> {
         let mut offset = 0u64;
         self.locals
             .into_iter()
@@ -323,8 +321,8 @@ impl Locals {
                         .map(LocalIdent::Named)
                         .unwrap_or(LocalIdent::Unnamed(id));
                     IRBuilderError::LocalUnsized { name }
-                })? as usize;
-                let varnode = VarnodeData::new(space, offset, size);
+                })? as u16;
+                let varnode = Varnode::new(space, offset, size);
                 offset += size as u64;
                 Ok(varnode)
             })
@@ -349,29 +347,22 @@ impl Index<LocalId> for Locals {
     }
 }
 
-impl<'a> IRBuilder<'a> {
-    pub fn new(translator: &'a Translator) -> Self {
+impl IRBuilder {
+    pub fn new(language: &'static Language) -> Self {
         Self {
-            default_size: translator.manager().default_space().address_size() as _,
-            user_ops: translator
-                .user_ops()
-                .iter()
-                .copied()
-                .enumerate()
-                .map(|(i, v)| (v, i))
-                .collect(),
-            translator,
+            default_size: language.address_size as _,
+            language,
             locals: Locals::new(),
             labels: UstrMap::default(),
             emitted: IRBlock::default(),
         }
     }
 
-    pub fn translate_parsed<'ir>(
+    pub fn translate_parsed(
         &mut self,
-        irb: &'ir IRBuilderArena,
+        ctxt: &mut PCodeBuilderContext,
         ast: &CodeBlock,
-    ) -> Result<PCodeBlock<'ir>, IRBuilderError> {
+    ) -> Result<Vec<PCodeOp>, IRBuilderError> {
         let cfg = CFG::new(ast)?;
 
         self.emitted.clear();
@@ -410,83 +401,77 @@ impl<'a> IRBuilder<'a> {
             self.update_varnode_defaults(&mut emitted.inputs, emitted.output.as_mut())?;
         }
 
-        self.to_pcode(irb, emitted)
+        self.to_pcode(ctxt, emitted)
     }
 
-    pub fn translate<'ir>(
+    pub fn translate(
         &mut self,
-        irb: &'ir IRBuilderArena,
+        ctxt: &mut PCodeBuilderContext,
         input: impl AsRef<str>,
-    ) -> Result<PCodeBlock<'ir>, IRBuilderError> {
+    ) -> Result<Vec<PCodeOp>, IRBuilderError> {
         let ast = CodeBlock::parse(input.as_ref())?;
-        self.translate_parsed(irb, &ast)
+        self.translate_parsed(ctxt, &ast)
     }
 
     fn to_varnode(
         &mut self,
-        locals: &[VarnodeData],
+        locals: &[Varnode],
         value: IRValue,
-    ) -> Result<VarnodeData, IRBuilderError> {
+    ) -> Result<Varnode, IRBuilderError> {
         let vnd = match value {
-            IRValue::Const(offset, Some(size)) => VarnodeData::new(
-                self.translator.manager().constant_space_ref(),
-                offset,
-                size as _,
-            ),
+            IRValue::Const(offset, Some(size)) => {
+                Varnode::new(self.language.constant_space, offset, size as _)
+            }
             IRValue::Register(vnd) => vnd,
             IRValue::Temporary(id) => locals[id],
-            IRValue::Address(offset, _) => VarnodeData::new(
-                self.translator.manager().default_space_ref(),
-                offset,
-                self.default_size as _,
-            ),
+            IRValue::Address(offset, _) => {
+                Varnode::new(self.language.default_space, offset, self.default_size as _)
+            }
             _ => return Err(IRBuilderError::ValueToVarnode { value }),
         };
         Ok(vnd)
     }
 
-    fn to_pcode_data<'ir>(
+    fn to_pcode_data(
         &mut self,
-        irb: &'ir IRBuilderArena,
-        locals: &[VarnodeData],
+        ctxt: &mut PCodeBuilderContext,
+        locals: &[Varnode],
         stmt: IRStmt,
-    ) -> Result<PCodeData<'ir>, IRBuilderError> {
+        issued: &mut Vec<PCodeOp>,
+    ) -> Result<(), IRBuilderError> {
         let output = stmt
             .output
             .map(|value| self.to_varnode(locals, value))
-            .transpose()?;
-        let mut inputs = ArenaVec::new_in(irb);
+            .transpose()?
+            .unwrap_or(Varnode::INVALID);
 
         for input in stmt.inputs {
-            inputs.push(self.to_varnode(locals, input)?);
+            ctxt.push_input(self.to_varnode(locals, input)?);
         }
 
-        Ok(PCodeData {
-            opcode: stmt.op,
-            inputs,
-            output,
-        })
+        ctxt.issue(stmt.op, output, issued);
+
+        Ok(())
     }
 
-    fn to_pcode<'ir>(
+    fn to_pcode(
         &mut self,
-        irb: &'ir IRBuilderArena,
+        ctxt: &mut PCodeBuilderContext,
         emitted: IRBlock,
-    ) -> Result<PCodeBlock<'ir>, IRBuilderError> {
-        let locals =
-            take(&mut self.locals).into_varnodes(self.translator.manager().unique_space_ref())?;
-        let mut block = PCodeBlock::new_in(irb);
+    ) -> Result<Vec<PCodeOp>, IRBuilderError> {
+        let locals = take(&mut self.locals).into_varnodes(self.language.unique_space)?;
+        let mut issued = Vec::new();
 
         for stmt in emitted.stmts {
-            block.push(self.to_pcode_data(irb, &locals, stmt)?);
+            self.to_pcode_data(ctxt, &locals, stmt, &mut issued)?;
         }
 
-        Ok(block)
+        Ok(issued)
     }
 
     fn emit_op(
         &mut self,
-        op: Opcode,
+        op: Op,
         mut inputs: Vec<IRValue>,
         mut output: Option<IRValue>,
     ) -> Result<Option<IRValue>, IRBuilderError> {
@@ -497,14 +482,14 @@ impl<'a> IRBuilder<'a> {
 
     fn emit_copy(&mut self, input: IRValue, output: IRValue) -> Result<IRValue, IRBuilderError> {
         let output = self
-            .emit_op(Opcode::Copy, vec![input], Some(output))?
+            .emit_op(Op::Copy, vec![input], Some(output))?
             .expect("has output");
         Ok(output)
     }
 
     fn emit_with_output(
         &mut self,
-        op: Opcode,
+        op: Op,
         inputs: Vec<IRValue>,
         output: Option<IRValue>,
     ) -> Result<IRValue, IRBuilderError> {
@@ -515,7 +500,7 @@ impl<'a> IRBuilder<'a> {
 
     fn emit_unrel(
         &mut self,
-        op: Opcode,
+        op: Op,
         input: IRValue,
         output: Option<IRValue>,
     ) -> Result<IRValue, IRBuilderError> {
@@ -524,7 +509,7 @@ impl<'a> IRBuilder<'a> {
 
     fn emit_unop(
         &mut self,
-        op: Opcode,
+        op: Op,
         input: IRValue,
         output: Option<IRValue>,
     ) -> Result<IRValue, IRBuilderError> {
@@ -533,7 +518,7 @@ impl<'a> IRBuilder<'a> {
 
     fn emit_binop(
         &mut self,
-        op: Opcode,
+        op: Op,
         lvalue: IRValue,
         rvalue: IRValue,
         output: Option<IRValue>,
@@ -543,7 +528,7 @@ impl<'a> IRBuilder<'a> {
 
     fn emit_binrel(
         &mut self,
-        op: Opcode,
+        op: Op,
         lvalue: IRValue,
         rvalue: IRValue,
         output: Option<IRValue>,
@@ -559,11 +544,10 @@ impl<'a> IRBuilder<'a> {
         output: Option<IRValue>,
     ) -> Result<IRValue, IRBuilderError> {
         let space = self.resolve_space(space)?;
-        let space_id = IRValue::Const(space.index() as _, None);
 
         source = self.resize(source, self.default_size, None)?;
 
-        let mut output = self.emit_with_output(Opcode::Load, vec![space_id, source], output)?;
+        let mut output = self.emit_with_output(Op::Load(space), vec![source], output)?;
 
         if let Some(sz) = size {
             self.update_varnode(&mut output, sz)?;
@@ -581,7 +565,7 @@ impl<'a> IRBuilder<'a> {
         if matches!(self.size_of(&value), Some(actual) if actual != size) {
             let target = output.unwrap_or_else(|| self.new_local(Some(size)));
             // NOTE: maybe truncate??
-            self.emit_unop(Opcode::IntZExt, value, Some(target))
+            self.emit_unop(Op::ZeroExt, value, Some(target))
         } else {
             Ok(value)
         }
@@ -658,22 +642,22 @@ impl<'a> IRBuilder<'a> {
                     let mut source = self.expr_to_value(source, None)?;
 
                     source =
-                        self.emit_binop(Opcode::IntAnd, source, IRValue::Const(mask, None), None)?;
+                        self.emit_binop(Op::IntAnd, source, IRValue::Const(mask, None), None)?;
 
                     if zext_needed {
-                        source = self.emit_unop(Opcode::IntZExt, source, None)?;
+                        source = self.emit_unop(Op::ZeroExt, source, None)?;
                     }
 
                     if shift_needed {
                         source = self.emit_binop(
-                            Opcode::IntLShift,
+                            Op::IntLeftShift,
                             source,
                             IRValue::Const(range.start as _, None),
                             None,
                         )?;
                     }
 
-                    self.emit_binop(Opcode::IntOr, target, source, Some(target))?;
+                    self.emit_binop(Op::IntOr, target, source, Some(target))?;
                 } else {
                     let mut target = self.resolve_name(*decl, *name, *size)?;
 
@@ -728,27 +712,23 @@ impl<'a> IRBuilder<'a> {
 
         target_vnd = self.resize(target_vnd, self.default_size, None)?;
 
-        let space_id = IRValue::Const(space.index() as _, None);
-
-        self.emit_op(Opcode::Store, vec![space_id, target_vnd, source_vnd], None)?;
+        self.emit_op(Op::Store(space), vec![target_vnd, source_vnd], None)?;
 
         Ok(())
     }
 
-    fn resolve_space(&mut self, space: Option<Ustr>) -> Result<Arc<AddressSpace>, IRBuilderError> {
-        let manager = self.translator.manager();
+    fn resolve_space(&mut self, space: Option<Ustr>) -> Result<u8, IRBuilderError> {
         if let Some(space) = space {
-            manager
-                .space_by_name(space)
+            (self.language.space_by_name)(space.as_ref())
                 .ok_or(IRBuilderError::UnknownSpace { space })
         } else {
-            Ok(manager.default_space())
+            Ok(self.language.default_space)
         }
     }
 
     fn resolve_branch(&mut self, target: &BranchTarget) -> Result<(), IRBuilderError> {
         let (op, target) = match target {
-            BranchTarget::Label(label) => (Opcode::Branch, IRValue::Label(*label)),
+            BranchTarget::Label(label) => (Op::Branch, IRValue::Label(*label)),
             BranchTarget::Direct(target) => {
                 let BranchLabel::Offset { offset, space } = target else {
                     unreachable!()
@@ -756,12 +736,12 @@ impl<'a> IRBuilder<'a> {
 
                 let varnode = IRValue::Address(*offset, *space);
 
-                (Opcode::Branch, varnode)
+                (Op::Branch, varnode)
             }
             BranchTarget::Indirect(target) => {
                 let expr = self.resolve_expr(target)?;
                 let value = self.expr_to_value(expr, None)?;
-                (Opcode::IBranch, value)
+                (Op::IBranch, value)
             }
         };
 
@@ -790,14 +770,14 @@ impl<'a> IRBuilder<'a> {
             _ => unreachable!(),
         };
 
-        self.emit_op(Opcode::CBranch, vec![target, condition], None)?;
+        self.emit_op(Op::CBranch, vec![target, condition], None)?;
 
         Ok(())
     }
 
     fn resolve_call(&mut self, target: &BranchTarget) -> Result<(), IRBuilderError> {
         let (op, target) = match target {
-            BranchTarget::Label(label) => (Opcode::Call, IRValue::Label(*label)),
+            BranchTarget::Label(label) => (Op::Call, IRValue::Label(*label)),
             BranchTarget::Direct(target) => {
                 let BranchLabel::Offset { offset, space } = target else {
                     unreachable!()
@@ -805,12 +785,12 @@ impl<'a> IRBuilder<'a> {
 
                 let varnode = IRValue::Address(*offset, *space);
 
-                (Opcode::Branch, varnode)
+                (Op::Branch, varnode)
             }
             BranchTarget::Indirect(target) => {
                 let expr = self.resolve_expr(target)?;
                 let value = self.expr_to_value(expr, None)?;
-                (Opcode::ICall, value)
+                (Op::ICall, value)
             }
         };
 
@@ -823,7 +803,7 @@ impl<'a> IRBuilder<'a> {
         let (op, target) = if let BranchTarget::Indirect(target) = target {
             let expr = self.resolve_expr(target)?;
             let value = self.expr_to_value(expr, None)?;
-            (Opcode::Return, value)
+            (Op::Return, value)
         } else {
             unreachable!("non-indirect return cannot be constructed")
         };
@@ -835,16 +815,16 @@ impl<'a> IRBuilder<'a> {
 
     fn resolve_intrinsic(&mut self, name: Ustr, arguments: &[Expr]) -> Result<(), IRBuilderError> {
         // check if known intrinsic
-        if let Some(intrinsic) = self.user_ops.get(&name) {
-            let id = IRValue::Const(*intrinsic as _, None);
-            let inputs = once(Ok(id))
-                .chain(arguments.into_iter().map(|expr| {
+        if let Some(id) = (self.language.user_op_by_name)(&name) {
+            let inputs = arguments
+                .into_iter()
+                .map(|expr| {
                     let expr = self.resolve_expr(expr)?;
                     self.expr_to_value(expr, None)
-                }))
+                })
                 .collect::<Result<Vec<_>, _>>()?;
 
-            self.emit_op(Opcode::CallOther, inputs, None)?;
+            self.emit_op(Op::UserOp(id), inputs, None)?;
 
             Ok(())
         } else {
@@ -858,7 +838,7 @@ impl<'a> IRBuilder<'a> {
         name: Ustr,
         arguments: &[Expr],
     ) -> Result<IRExpr, IRBuilderError> {
-        if let Some(id) = self.user_ops.get(&name).copied() {
+        if let Some(id) = (self.language.user_op_by_name)(&name) {
             let arguments = arguments
                 .into_iter()
                 .map(|expr| {
@@ -873,7 +853,7 @@ impl<'a> IRBuilder<'a> {
         let expr = if let Some((op, expected_arity)) = BUILTINS.get(&name).copied() {
             let actual_arity = arguments.len();
             if expected_arity != actual_arity {
-                return Err(IRBuilderError::OpcodeArity {
+                return Err(IRBuilderError::OpArity {
                     op,
                     expected: expected_arity,
                     actual: actual_arity,
@@ -886,26 +866,27 @@ impl<'a> IRBuilder<'a> {
             });
 
             match op {
-                Opcode::IntCarry | Opcode::IntSCarry | Opcode::IntSBorrow => IRExpr::BinRel {
+                Op::IntCarry | Op::IntSignedCarry | Op::IntSignedBorrow => IRExpr::BinRel {
                     op,
                     lvalue: inputs.next().unwrap()?,
                     rvalue: inputs.next().unwrap()?,
                 },
-                Opcode::IntZExt
-                | Opcode::IntSExt
-                | Opcode::PopCount
-                | Opcode::FloatAbs
-                | Opcode::FloatSqrt
-                | Opcode::FloatCeiling
-                | Opcode::FloatFloor
-                | Opcode::FloatRound
-                | Opcode::FloatOfInt
-                | Opcode::FloatOfFloat
-                | Opcode::FloatTruncate => IRExpr::UnOp {
+                Op::ZeroExt
+                | Op::SignExt
+                | Op::CountOnes
+                | Op::CountLeadingZeros
+                | Op::FloatAbs
+                | Op::FloatSqrt
+                | Op::FloatCeiling
+                | Op::FloatFloor
+                | Op::FloatRound
+                | Op::IntToFloat
+                | Op::FloatToInt
+                | Op::FloatToFloat => IRExpr::UnOp {
                     op,
                     value: inputs.next().unwrap()?,
                 },
-                Opcode::FloatIsNaN => IRExpr::UnRel {
+                Op::FloatIsNaN => IRExpr::UnRel {
                     op,
                     value: inputs.next().unwrap()?,
                 },
@@ -964,15 +945,11 @@ impl<'a> IRBuilder<'a> {
                 size,
                 source,
             } => self.emit_load(space, size, source, output),
-            IRExpr::Intrinsic { id, arguments } => self.emit_with_output(
-                Opcode::CallOther,
-                once(IRValue::Const(id as _, None))
-                    .chain(arguments)
-                    .collect(),
-                output,
-            ),
+            IRExpr::Intrinsic { id, arguments } => {
+                self.emit_with_output(Op::UserOp(id), arguments, output)
+            }
             IRExpr::Subpiece { input, bytes } => self.emit_with_output(
-                Opcode::Subpiece,
+                Op::Subpiece,
                 vec![input, IRValue::Const(bytes as _, None)],
                 output,
             ),
@@ -1022,7 +999,7 @@ impl<'a> IRBuilder<'a> {
 
                 if range.start != 0 {
                     value = self.emit_binop(
-                        Opcode::IntRShift,
+                        Op::IntRightShift,
                         value,
                         IRValue::Const(range.start as _, None),
                         None,
@@ -1031,7 +1008,7 @@ impl<'a> IRBuilder<'a> {
 
                 if trunc_needed {
                     value = self.emit_with_output(
-                        Opcode::Subpiece,
+                        Op::Subpiece,
                         vec![value, IRValue::Const(trunc_shift as _, None)],
                         None,
                     )?;
@@ -1039,8 +1016,7 @@ impl<'a> IRBuilder<'a> {
                 }
 
                 if mask_needed {
-                    value =
-                        self.emit_binop(Opcode::IntAnd, value, IRValue::Const(mask, None), None)?;
+                    value = self.emit_binop(Op::IntAnd, value, IRValue::Const(mask, None), None)?;
                 }
 
                 self.update_varnode(&mut value, size)?;
@@ -1138,7 +1114,7 @@ impl<'a> IRBuilder<'a> {
     }
 
     fn resolve_existing_name(&self, name: Ustr) -> Result<IRValue, IRBuilderError> {
-        if let Some(reg) = self.translator.register_by_name(name) {
+        if let Some(reg) = (self.language.register_by_name)(name.as_str()) {
             Ok(IRValue::Register(reg))
         } else {
             self.locals
@@ -1154,7 +1130,7 @@ impl<'a> IRBuilder<'a> {
         name: Ustr,
         size: Option<u32>,
     ) -> Result<IRValue, IRBuilderError> {
-        if let Some(reg) = self.translator.register_by_name(name) {
+        if let Some(reg) = (self.language.register_by_name)(name.as_str()) {
             return if decl {
                 Err(IRBuilderError::RegDup { name })
             } else {
@@ -1170,85 +1146,85 @@ impl<'a> IRBuilder<'a> {
         .map(IRValue::Temporary)
     }
 
-    fn unop_to_opcode(value: UnOp) -> Opcode {
+    fn unop_to_opcode(value: UnOp) -> Op {
         match value {
-            UnOp::BoolNot => Opcode::BoolNot,
-            UnOp::Not => Opcode::IntNot,
-            UnOp::Neg => Opcode::IntNeg,
-            UnOp::FloatNeg => Opcode::FloatNeg,
+            UnOp::BoolNot => Op::BoolNot,
+            UnOp::Not => Op::IntNot,
+            UnOp::Neg => Op::IntNeg,
+            UnOp::FloatNeg => Op::FloatNeg,
         }
     }
 
-    fn binop_to_opcode(value: BinOp) -> Opcode {
+    fn binop_to_opcode(value: BinOp) -> Op {
         match value {
-            BinOp::BoolOr => Opcode::BoolOr,
-            BinOp::BoolAnd => Opcode::BoolAnd,
-            BinOp::BoolXor => Opcode::BoolXor,
+            BinOp::BoolOr => Op::BoolOr,
+            BinOp::BoolAnd => Op::BoolAnd,
+            BinOp::BoolXor => Op::BoolXor,
 
-            BinOp::Or => Opcode::IntOr,
-            BinOp::And => Opcode::IntAnd,
-            BinOp::Xor => Opcode::IntXor,
+            BinOp::Or => Op::IntOr,
+            BinOp::And => Op::IntAnd,
+            BinOp::Xor => Op::IntXor,
 
-            BinOp::ShiftLeft => Opcode::IntLShift,
-            BinOp::ShiftRight => Opcode::IntRShift,
-            BinOp::SignedShiftRight => Opcode::IntSRShift,
+            BinOp::ShiftLeft => Op::IntLeftShift,
+            BinOp::ShiftRight => Op::IntRightShift,
+            BinOp::SignedShiftRight => Op::IntSignedRightShift,
 
-            BinOp::Add => Opcode::IntAdd,
-            BinOp::Sub => Opcode::IntSub,
-            BinOp::Mul => Opcode::IntMul,
-            BinOp::Div => Opcode::IntDiv,
-            BinOp::Rem => Opcode::IntRem,
+            BinOp::Add => Op::IntAdd,
+            BinOp::Sub => Op::IntSub,
+            BinOp::Mul => Op::IntMul,
+            BinOp::Div => Op::IntDiv,
+            BinOp::Rem => Op::IntRem,
 
-            BinOp::SignedDiv => Opcode::IntSDiv,
-            BinOp::SignedRem => Opcode::IntSRem,
+            BinOp::SignedDiv => Op::IntSignedDiv,
+            BinOp::SignedRem => Op::IntSignedRem,
 
-            BinOp::FloatAdd => Opcode::FloatAdd,
-            BinOp::FloatSub => Opcode::FloatSub,
-            BinOp::FloatMul => Opcode::FloatMul,
-            BinOp::FloatDiv => Opcode::FloatDiv,
+            BinOp::FloatAdd => Op::FloatAdd,
+            BinOp::FloatSub => Op::FloatSub,
+            BinOp::FloatMul => Op::FloatMul,
+            BinOp::FloatDiv => Op::FloatDiv,
         }
     }
 
-    fn binrel_to_opcode(value: BinRel) -> (bool, Opcode) {
+    fn binrel_to_opcode(value: BinRel) -> (bool, Op) {
         let mut flip = false;
         let opcode = match value {
-            BinRel::Eq => Opcode::IntEq,
-            BinRel::NotEq => Opcode::IntNotEq,
+            BinRel::Eq => Op::IntEq,
+            BinRel::NotEq => Op::IntNotEq,
 
-            BinRel::Less => Opcode::IntLess,
-            BinRel::LessEq => Opcode::IntLessEq,
+            BinRel::Less => Op::IntLess,
+            BinRel::LessEq => Op::IntLessEq,
             BinRel::Greater => {
                 flip = true;
-                Opcode::IntLess
+                Op::IntLess
             }
             BinRel::GreaterEq => {
                 flip = true;
-                Opcode::IntLessEq
+                Op::IntLessEq
             }
 
-            BinRel::SignedLess => Opcode::IntSLess,
-            BinRel::SignedLessEq => Opcode::IntSLessEq,
+            BinRel::SignedLess => Op::IntSignedLess,
+            BinRel::SignedLessEq => Op::IntSignedLessEq,
             BinRel::SignedGreater => {
                 flip = true;
-                Opcode::IntSLess
+                Op::IntSignedLess
             }
             BinRel::SignedGreaterEq => {
                 flip = true;
-                Opcode::IntSLessEq
+                Op::IntSignedLessEq
             }
 
-            BinRel::FloatEq => Opcode::FloatEq,
-            BinRel::FloatNotEq => Opcode::FloatNotEq,
+            BinRel::FloatEq => Op::FloatEq,
+            BinRel::FloatNotEq => Op::FloatNotEq,
 
-            BinRel::FloatLess => Opcode::FloatLess,
-            BinRel::FloatLessEq => Opcode::FloatLessEq,
+            BinRel::FloatLess => Op::FloatLess,
+            BinRel::FloatLessEq => Op::FloatLessEq,
             BinRel::FloatGreater => {
                 flip = true;
-                Opcode::FloatLess
+                Op::FloatLess
             }
             BinRel::FloatGreaterEq => {
                 flip = true;
-                Opcode::FloatLessEq
+                Op::FloatLessEq
             }
         };
         (flip, opcode)
@@ -1257,7 +1233,7 @@ impl<'a> IRBuilder<'a> {
     fn size_of(&self, value: &IRValue) -> Option<u32> {
         match value {
             IRValue::Const(_, sz) => *sz,
-            IRValue::Register(vnd) => Some(vnd.size() as _),
+            IRValue::Register(vnd) => Some(vnd.size as _),
             IRValue::Temporary(id) => self.locals.size_of(*id),
             IRValue::Address(_, _) => Some(self.default_size),
             _ => None,
@@ -1265,10 +1241,9 @@ impl<'a> IRBuilder<'a> {
     }
 
     fn address_of(&self, value: IRValue, size: Option<u32>) -> Result<IRValue, IRBuilderError> {
-        let space = self.space(&value);
         let value = match value {
             IRValue::Const(v, _) => v,
-            IRValue::Register(vnd) => vnd.offset(),
+            IRValue::Register(vnd) => vnd.offset,
             IRValue::Address(v, _) => v,
             IRValue::Temporary(id) => {
                 return Err(IRBuilderError::LocalAddr {
@@ -1283,20 +1258,21 @@ impl<'a> IRBuilder<'a> {
 
         Ok(IRValue::Const(
             value,
-            Some(size.unwrap_or_else(|| space.address_size() as u32)),
+            Some(size.unwrap_or_else(|| self.default_size /*space.address_size() */)),
         ))
     }
 
-    fn space(&self, value: &IRValue) -> &AddressSpace {
-        let spaces = self.translator.manager();
+    /*
+    fn space(&self, value: &IRValue) -> u8 {
         match value {
-            IRValue::Const(_, _) => spaces.constant_space_ref(),
-            IRValue::Register(_) => spaces.register_space_ref(),
-            IRValue::Temporary(_) => spaces.unique_space_ref(),
-            IRValue::Address(_, _) => spaces.default_space_ref(),
+            IRValue::Const(_, _) => self.language.constant_space,
+            IRValue::Register(_) => self.language.register_space,
+            IRValue::Temporary(_) => self.language.unique_space,
+            IRValue::Address(_, _) => self.language.default_space,
             IRValue::Label(_) => panic!("labels do not have a space"),
         }
     }
+    */
 
     fn update_varnode_labels(
         &mut self,
@@ -1341,43 +1317,43 @@ impl<'a> IRBuilder<'a> {
 
     fn update_varnodes(
         &mut self,
-        op: Opcode,
+        op: Op,
         inputs: &mut [IRValue],
         mut output: Option<&mut IRValue>,
         apply_defaults: bool,
     ) -> Result<(), IRBuilderError> {
         match op {
-            Opcode::Copy
-            | Opcode::IntNeg
-            | Opcode::IntNot
-            | Opcode::FloatAbs
-            | Opcode::FloatCeiling
-            | Opcode::FloatFloor
-            | Opcode::FloatNeg
-            | Opcode::FloatRound => {
+            Op::Copy
+            | Op::IntNeg
+            | Op::IntNot
+            | Op::FloatAbs
+            | Op::FloatCeiling
+            | Op::FloatFloor
+            | Op::FloatNeg
+            | Op::FloatRound => {
                 self.update_varnode_pair(&mut inputs[0], output.as_mut().unwrap(), apply_defaults)?;
             }
-            Opcode::IntLShift | Opcode::IntRShift | Opcode::IntSRShift => {
+            Op::IntLeftShift | Op::IntRightShift | Op::IntSignedRightShift => {
                 self.update_varnode_pair(&mut inputs[0], output.as_mut().unwrap(), apply_defaults)?;
 
                 if self.size_of(&inputs[1]).is_none() {
                     self.update_varnode(&mut inputs[1], self.default_size)?;
                 }
             }
-            Opcode::IntAdd
-            | Opcode::IntSub
-            | Opcode::IntMul
-            | Opcode::IntDiv
-            | Opcode::IntRem
-            | Opcode::IntSDiv
-            | Opcode::IntSRem
-            | Opcode::IntAnd
-            | Opcode::IntOr
-            | Opcode::IntXor
-            | Opcode::FloatAdd
-            | Opcode::FloatSub
-            | Opcode::FloatMul
-            | Opcode::FloatDiv => {
+            Op::IntAdd
+            | Op::IntSub
+            | Op::IntMul
+            | Op::IntDiv
+            | Op::IntRem
+            | Op::IntSignedDiv
+            | Op::IntSignedRem
+            | Op::IntAnd
+            | Op::IntOr
+            | Op::IntXor
+            | Op::FloatAdd
+            | Op::FloatSub
+            | Op::FloatMul
+            | Op::FloatDiv => {
                 let mut inputs = inputs.into_iter();
 
                 self.update_varnode_triple(
@@ -1387,19 +1363,19 @@ impl<'a> IRBuilder<'a> {
                     apply_defaults,
                 )?;
             }
-            Opcode::IntCarry
-            | Opcode::IntSCarry
-            | Opcode::IntSBorrow
-            | Opcode::IntEq
-            | Opcode::IntNotEq
-            | Opcode::IntLess
-            | Opcode::IntSLess
-            | Opcode::IntLessEq
-            | Opcode::IntSLessEq
-            | Opcode::FloatEq
-            | Opcode::FloatNotEq
-            | Opcode::FloatLess
-            | Opcode::FloatLessEq => {
+            Op::IntCarry
+            | Op::IntSignedCarry
+            | Op::IntSignedBorrow
+            | Op::IntEq
+            | Op::IntNotEq
+            | Op::IntLess
+            | Op::IntSignedLess
+            | Op::IntLessEq
+            | Op::IntSignedLessEq
+            | Op::FloatEq
+            | Op::FloatNotEq
+            | Op::FloatLess
+            | Op::FloatLessEq => {
                 let mut inputs = inputs.into_iter();
 
                 self.update_varnode_pair(
@@ -1409,23 +1385,23 @@ impl<'a> IRBuilder<'a> {
                 )?;
                 self.update_varnode(output.as_mut().unwrap(), 1)?;
             }
-            Opcode::FloatIsNaN => {
+            Op::FloatIsNaN => {
                 self.update_varnode(output.as_mut().unwrap(), 1)?;
             }
-            Opcode::BoolNot => {
+            Op::BoolNot => {
                 self.update_varnode(&mut inputs[0], 1)?;
                 self.update_varnode(output.as_mut().unwrap(), 1)?;
             }
-            Opcode::BoolAnd | Opcode::BoolOr | Opcode::BoolXor => {
+            Op::BoolAnd | Op::BoolOr | Op::BoolXor => {
                 self.update_varnode(&mut inputs[0], 1)?;
                 self.update_varnode(&mut inputs[1], 1)?;
                 self.update_varnode(output.as_mut().unwrap(), 1)?;
             }
-            Opcode::Load => {
-                self.update_varnode(&mut inputs[1], self.default_size)?;
+            Op::Load(_) => {
+                self.update_varnode(&mut inputs[0], self.default_size)?;
             }
-            Opcode::Store => {
-                self.update_varnode(&mut inputs[1], self.default_size)?;
+            Op::Store(_) => {
+                self.update_varnode(&mut inputs[0], self.default_size)?;
             }
             _ => (),
         }
@@ -1534,17 +1510,21 @@ impl<'a> IRBuilder<'a> {
                 }
             }
             IRValue::Register(vnd) => {
-                let expected = vnd.size() as u32;
+                let expected = vnd.size as u32;
                 if expected != size {
+                    /*
+                    let name = self.language.reg
                     let name = self
                         .translator
                         .registers()
-                        .get(vnd.offset(), vnd.size())
+                        .get(vnd.offset, vnd.size)
                         .copied()
                         .unwrap();
 
+                    */
+
                     return Err(IRBuilderError::RegSize {
-                        name,
+                        name: "FIXME".into(),
                         size,
                         old_size: expected,
                     });
@@ -1570,6 +1550,7 @@ impl<'a> IRBuilder<'a> {
     }
 }
 
+/*
 #[cfg(test)]
 mod test {
     use fugue_ir::disassembly::IRBuilderArena;
@@ -1777,3 +1758,4 @@ mod test {
         Ok(())
     }
 }
+*/

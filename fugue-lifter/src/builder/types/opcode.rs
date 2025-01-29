@@ -66,13 +66,13 @@ impl TryFrom<Opcode> for Op {
             Opcode::FloatSqrt => Op::FloatSqrt,
             Opcode::FloatOfInt => Op::IntToFloat,
             Opcode::FloatOfFloat => Op::FloatToFloat,
-            Opcode::FloatTruncate => Op::FloatTruncate,
+            Opcode::FloatTruncate => Op::FloatToInt,
             Opcode::FloatCeiling => Op::FloatCeiling,
             Opcode::FloatFloor => Op::FloatFloor,
             Opcode::FloatRound => Op::FloatRound,
             Opcode::Subpiece => Op::Subpiece,
             Opcode::PopCount => Op::CountOnes,
-            Opcode::LZCount => Op::CountZeros,
+            Opcode::LZCount => Op::CountLeadingZeros,
             op => {
                 return Err(NotUnrepresentable(op));
             }
@@ -113,7 +113,9 @@ impl ToTokens for Op {
             Self::IntNot => quote! { fugue_lifter::runtime::pcode::Op::IntNot },
             Self::IntNeg => quote! { fugue_lifter::runtime::pcode::Op::IntNeg },
             Self::CountOnes => quote! { fugue_lifter::runtime::pcode::Op::CountOnes },
-            Self::CountZeros => quote! { fugue_lifter::runtime::pcode::Op::CountZeros },
+            Self::CountLeadingZeros => {
+                quote! { fugue_lifter::runtime::pcode::Op::CountLeadingZeros }
+            }
             Self::ZeroExt => quote! { fugue_lifter::runtime::pcode::Op::ZeroExt },
             Self::SignExt => quote! { fugue_lifter::runtime::pcode::Op::SignExt },
             Self::IntToFloat => quote! { fugue_lifter::runtime::pcode::Op::IntToFloat },
@@ -131,7 +133,6 @@ impl ToTokens for Op {
             Self::FloatCeiling => quote! { fugue_lifter::runtime::pcode::Op::FloatCeiling },
             Self::FloatFloor => quote! { fugue_lifter::runtime::pcode::Op::FloatFloor },
             Self::FloatRound => quote! { fugue_lifter::runtime::pcode::Op::FloatRound },
-            Self::FloatTruncate => quote! { fugue_lifter::runtime::pcode::Op::FloatTruncate },
             Self::FloatIsNaN => quote! { fugue_lifter::runtime::pcode::Op::FloatIsNaN },
             Self::FloatEq => quote! { fugue_lifter::runtime::pcode::Op::FloatEq },
             Self::FloatNotEq => quote! { fugue_lifter::runtime::pcode::Op::FloatNotEq },

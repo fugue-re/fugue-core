@@ -1,6 +1,9 @@
+pub extern crate phf;
+
 pub mod constructor;
 pub mod context;
 pub mod input;
+pub mod lifter;
 pub mod partmap;
 pub mod pattern;
 pub mod pcode;
