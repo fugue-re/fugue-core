@@ -1899,6 +1899,7 @@ impl<'a> ToTokens for LifterGenerator<'a> {
             .enumerate()
             .map(|(i, spc)| {
                 let name = spc.name();
+                let i = i as u8;
                 quote! { #name => #i }
             });
 
@@ -2033,7 +2034,7 @@ impl<'a> ToTokens for LifterGenerator<'a> {
                 pub fn space_name(
                     space: u8,
                 ) -> Option<&'static str> {
-                    SPACES.get(name).copied()
+                    SPACES.get(space as usize).copied()
                 }
             }
 
@@ -2092,8 +2093,8 @@ impl<'a> ToTokens for LifterGenerator<'a> {
                 }
 
                 #[inline(always)]
-                pub const fn user_op_by_id(id: u16) -> &'static str {
-                    USER_OPS[id as usize]
+                pub fn user_op_by_id(id: u16) -> Option<&'static str> {
+                    USER_OPS.get(id as usize).copied()
                 }
             }
 
@@ -2328,40 +2329,41 @@ impl<'a> ToTokens for LifterGenerator<'a> {
                 context
             }
 
-            pub static LANGUAGE: fugue_lifter::runtime::lifter::Language = fugue_lifter::runtime::lifter::Language {
-                address_alignment: ADDRESS_ALIGNMENT,
-                address_bits: ADDRESS_BITS,
-                address_size: ADDRESS_SIZE,
-                address_upper_bound: ADDRESS_UPPER_BOUND,
+            struct L;
+            impl fugue_lifter::runtime::lifter::LanguageImpl for L {
+                const ADDRESS_ALIGNMENT: usize = ADDRESS_ALIGNMENT;
+                const ADDRESS_BITS: u32 = ADDRESS_BITS;
+                const ADDRESS_SIZE: usize = ADDRESS_SIZE;
+                const ADDRESS_UPPER_BOUND: u64 = ADDRESS_UPPER_BOUND;
 
-                constant_space: CONSTANT_SPACE,
-                default_space: DEFAULT_SPACE,
+                const CONSTANT_SPACE: u8 = CONSTANT_SPACE;
+                const DEFAULT_SPACE: u8 = DEFAULT_SPACE;
 
-                register_space: REGISTER_SPACE,
-                register_space_size: REGISTER_SPACE_SIZE,
+                const REGISTER_SPACE: u8 = REGISTER_SPACE;
+                const REGISTER_SPACE_SIZE: usize = REGISTER_SPACE_SIZE;
 
-                unique_mask: UNIQUE_MASK,
-                unique_space: UNIQUE_SPACE,
-                unique_space_size: UNIQUE_SPACE_SIZE,
+                const UNIQUE_MASK: u64 = UNIQUE_MASK;
+                const UNIQUE_SPACE: u8 = UNIQUE_SPACE;
+                const UNIQUE_SPACE_SIZE: usize = UNIQUE_SPACE_SIZE;
 
-                space_word_sizes: &SPACE_WORD_SIZE,
-                space_upper_bounds: &SPACE_UPPER_BOUND,
+                const SPACE_WORD_SIZES: &'static [usize] = &SPACE_WORD_SIZE;
+                const SPACE_UPPER_BOUNDS: &'static [u64] = &SPACE_UPPER_BOUND;
+                const SPACE_BY_NAME: fn(&str) -> Option<u8> = space::space_by_name;
+                const SPACE_NAME: fn(u8) -> Option<&'static str> = space::space_name;
 
-                context_variable_by_name: context::context_variable_by_name,
+                const CONTEXT_VARIABLE_BY_NAME: fn(&str) -> Option<fugue_lifter::runtime::context::ContextBitRange> = context::context_variable_by_name;
 
-                register_by_name: register::register_by_name,
-                register_name: register::register_name,
+                const REGISTER_BY_NAME: fn(&str) -> Option<fugue_lifter::runtime::pcode::Varnode> = register::register_by_name;
+                const REGISTER_NAME: fn(&fugue_lifter::runtime::pcode::Varnode) -> Option<&'static str> = register::register_name;
 
-                space_by_name: space::space_by_name,
-                space_name: space::space_name,
+                const USER_OP_BY_NAME: fn(&str) -> Option<u16> = user_op::user_op_by_name;
+                const USER_OP_BY_ID: fn(u16) -> Option<&'static str> = user_op::user_op_by_id;
 
-                user_op_by_name: user_op::user_op_by_name,
-                user_op_by_id: user_op::user_op_by_id,
-
-                resolve,
-                disassemble: disassemble_to_string,
-                lift,
-            };
+                const RESOLVE: fn(u64, &[u8], &mut fugue_lifter::runtime::pcode::LiftingContext, bool) -> Option<usize> = resolve;
+                const DISASSEMBLE: fn(u64, &[u8], &mut fugue_lifter::runtime::pcode::LiftingContext, &mut String) -> Option<usize> = disassemble_to_string;
+                const LIFT: fn(u64, &[u8], &mut fugue_lifter::runtime::pcode::LiftingContext, &mut Vec<fugue_lifter::runtime::pcode::PCodeOp>) -> Option<usize> = lift;
+            }
+            pub static LANGUAGE: &'static fugue_lifter::runtime::lifter::Language = &fugue_lifter::runtime::lifter::Language::new::<L>();
         });
 
         tokens.append_all(&self.symbols);

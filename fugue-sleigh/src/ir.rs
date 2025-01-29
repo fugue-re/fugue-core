@@ -350,7 +350,7 @@ impl Index<LocalId> for Locals {
 impl IRBuilder {
     pub fn new(language: &'static Language) -> Self {
         Self {
-            default_size: language.address_size as _,
+            default_size: language.address_size() as _,
             language,
             locals: Locals::new(),
             labels: UstrMap::default(),
@@ -420,13 +420,15 @@ impl IRBuilder {
     ) -> Result<Varnode, IRBuilderError> {
         let vnd = match value {
             IRValue::Const(offset, Some(size)) => {
-                Varnode::new(self.language.constant_space, offset, size as _)
+                Varnode::new(self.language.constant_space(), offset, size as _)
             }
             IRValue::Register(vnd) => vnd,
             IRValue::Temporary(id) => locals[id],
-            IRValue::Address(offset, _) => {
-                Varnode::new(self.language.default_space, offset, self.default_size as _)
-            }
+            IRValue::Address(offset, _) => Varnode::new(
+                self.language.default_space(),
+                offset,
+                self.default_size as _,
+            ),
             _ => return Err(IRBuilderError::ValueToVarnode { value }),
         };
         Ok(vnd)
@@ -459,7 +461,7 @@ impl IRBuilder {
         ctxt: &mut PCodeBuilderContext,
         emitted: IRBlock,
     ) -> Result<Vec<PCodeOp>, IRBuilderError> {
-        let locals = take(&mut self.locals).into_varnodes(self.language.unique_space)?;
+        let locals = take(&mut self.locals).into_varnodes(self.language.unique_space())?;
         let mut issued = Vec::new();
 
         for stmt in emitted.stmts {
@@ -719,10 +721,11 @@ impl IRBuilder {
 
     fn resolve_space(&mut self, space: Option<Ustr>) -> Result<u8, IRBuilderError> {
         if let Some(space) = space {
-            (self.language.space_by_name)(space.as_ref())
+            self.language
+                .space_by_name(space)
                 .ok_or(IRBuilderError::UnknownSpace { space })
         } else {
-            Ok(self.language.default_space)
+            Ok(self.language.default_space())
         }
     }
 
@@ -815,7 +818,7 @@ impl IRBuilder {
 
     fn resolve_intrinsic(&mut self, name: Ustr, arguments: &[Expr]) -> Result<(), IRBuilderError> {
         // check if known intrinsic
-        if let Some(id) = (self.language.user_op_by_name)(&name) {
+        if let Some(id) = self.language.user_op_by_name(&name) {
             let inputs = arguments
                 .into_iter()
                 .map(|expr| {
@@ -838,7 +841,7 @@ impl IRBuilder {
         name: Ustr,
         arguments: &[Expr],
     ) -> Result<IRExpr, IRBuilderError> {
-        if let Some(id) = (self.language.user_op_by_name)(&name) {
+        if let Some(id) = self.language.user_op_by_name(&name) {
             let arguments = arguments
                 .into_iter()
                 .map(|expr| {
@@ -1114,7 +1117,7 @@ impl IRBuilder {
     }
 
     fn resolve_existing_name(&self, name: Ustr) -> Result<IRValue, IRBuilderError> {
-        if let Some(reg) = (self.language.register_by_name)(name.as_str()) {
+        if let Some(reg) = self.language.register_by_name(name) {
             Ok(IRValue::Register(reg))
         } else {
             self.locals
@@ -1130,7 +1133,7 @@ impl IRBuilder {
         name: Ustr,
         size: Option<u32>,
     ) -> Result<IRValue, IRBuilderError> {
-        if let Some(reg) = (self.language.register_by_name)(name.as_str()) {
+        if let Some(reg) = self.language.register_by_name(name) {
             return if decl {
                 Err(IRBuilderError::RegDup { name })
             } else {
@@ -1553,24 +1556,17 @@ impl IRBuilder {
 /*
 #[cfg(test)]
 mod test {
-    use fugue_ir::disassembly::IRBuilderArena;
-    use fugue_ir::LanguageDB;
-
     use super::IRBuilder;
 
     #[test]
     fn test_features() -> Result<(), Box<dyn std::error::Error>> {
-        let ldb = LanguageDB::from_directory_with(std::env::var("FUGUE_DATA")?, true)?;
-        let translator = ldb
-            .lookup_str("x86:LE:64:default")?
-            .expect("valid language")
-            .build()?;
+        use fugue_lifter_x86le64::LANGUAGE;
 
-        let mut builder = IRBuilder::new(&translator);
-        let irb = IRBuilderArena::with_capacity(4096);
+        let mut builder = IRBuilder::new(LANGUAGE);
+        let mut context = LANGUAGE.builder();
 
         let ir = builder.translate(
-            &irb,
+            &mut context,
             r#"
             local v0:8 = 10;
             local v1:8 = 20;
@@ -1594,7 +1590,7 @@ mod test {
         )?;
 
         for (i, stmt) in ir.into_iter().enumerate() {
-            println!("{i:03} {}", stmt.display(&translator));
+            println!("{i:03} {stmt:?}");
         }
 
         Ok(())
@@ -1602,17 +1598,13 @@ mod test {
 
     #[test]
     fn test_bit_range() -> Result<(), Box<dyn std::error::Error>> {
-        let ldb = LanguageDB::from_directory_with(std::env::var("FUGUE_DATA")?, true)?;
-        let translator = ldb
-            .lookup_str("x86:LE:64:default")?
-            .expect("valid language")
-            .build()?;
+        use fugue_lifter_x86le64::LANGUAGE;
 
-        let mut builder = IRBuilder::new(&translator);
-        let irb = IRBuilderArena::with_capacity(4096);
+        let mut builder = IRBuilder::new(LANGUAGE);
+        let mut context = LANGUAGE.builder();
 
         let ir = builder.translate(
-            &irb,
+            &mut context,
             r#"
             EAX = RCX[3,32];
             EAX = RCX[32,32];
@@ -1626,7 +1618,7 @@ mod test {
         )?;
 
         for (i, stmt) in ir.into_iter().enumerate() {
-            println!("{i:03} {}", stmt.display(&translator));
+            println!("{i:03} {stmt:?}");
         }
 
         Ok(())
@@ -1634,17 +1626,13 @@ mod test {
 
     #[test]
     fn test_eh_prolog() -> Result<(), Box<dyn std::error::Error>> {
-        let ldb = LanguageDB::from_directory_with(std::env::var("FUGUE_DATA")?, true)?;
-        let translator = ldb
-            .lookup_str("x86:LE:64:default")?
-            .expect("valid language")
-            .build()?;
+        use fugue_lifter_x86le64::LANGUAGE;
 
-        let mut builder = IRBuilder::new(&translator);
-        let irb = IRBuilderArena::with_capacity(4096);
+        let mut builder = IRBuilder::new(LANGUAGE);
+        let mut context = LANGUAGE.builder();
 
         let ir = builder.translate(
-            &irb,
+            &mut context,
             r#"
              ESP = ESP - 4;
              *:4 ESP = -1;
@@ -1661,7 +1649,7 @@ mod test {
         )?;
 
         for (i, stmt) in ir.into_iter().enumerate() {
-            println!("{i:03} {}", stmt.display(&translator));
+            println!("{i:03} {stmt:?}");
         }
 
         Ok(())
@@ -1669,24 +1657,20 @@ mod test {
 
     #[test]
     fn test_alloca_probe() -> Result<(), Box<dyn std::error::Error>> {
-        let ldb = LanguageDB::from_directory_with(std::env::var("FUGUE_DATA")?, true)?;
-        let translator = ldb
-            .lookup_str("x86:LE:64:default")?
-            .expect("valid language")
-            .build()?;
+        use fugue_lifter_x86le64::LANGUAGE;
 
-        let mut builder = IRBuilder::new(&translator);
-        let irb = IRBuilderArena::with_capacity(4096);
+        let mut builder = IRBuilder::new(LANGUAGE);
+        let mut context = LANGUAGE.builder();
 
         let ir = builder.translate(
-            &irb,
+            &mut context,
             r#"
             ESP = ESP + 4 - EAX;
             "#,
         )?;
 
         for (i, stmt) in ir.into_iter().enumerate() {
-            println!("{i:03} {}", stmt.display(&translator));
+            println!("{i:03} {stmt:?}");
         }
 
         Ok(())
@@ -1694,17 +1678,13 @@ mod test {
 
     #[test]
     fn test_seh_prolog() -> Result<(), Box<dyn std::error::Error>> {
-        let ldb = LanguageDB::from_directory_with(std::env::var("FUGUE_DATA")?, true)?;
-        let translator = ldb
-            .lookup_str("x86:LE:64:default")?
-            .expect("valid language")
-            .build()?;
+        use fugue_lifter_x86le64::LANGUAGE;
 
-        let mut builder = IRBuilder::new(&translator);
-        let irb = IRBuilderArena::with_capacity(4096);
+        let mut builder = IRBuilder::new(LANGUAGE);
+        let mut context = LANGUAGE.builder();
 
         let ir = builder.translate(
-            &irb,
+            &mut context,
             r#"
             newframetmp = ESP + 8;
             localsizetmp = * newframetmp;
@@ -1719,7 +1699,7 @@ mod test {
         )?;
 
         for (i, stmt) in ir.into_iter().enumerate() {
-            println!("{i:03} {}", stmt.display(&translator));
+            println!("{i:03} {stmt:?}");
         }
 
         Ok(())
@@ -1727,17 +1707,13 @@ mod test {
 
     #[test]
     fn test_seh_prolog4() -> Result<(), Box<dyn std::error::Error>> {
-        let ldb = LanguageDB::from_directory_with(std::env::var("FUGUE_DATA")?, true)?;
-        let translator = ldb
-            .lookup_str("x86:LE:64:default")?
-            .expect("valid language")
-            .build()?;
+        use fugue_lifter_x86le64::LANGUAGE;
 
-        let mut builder = IRBuilder::new(&translator);
-        let irb = IRBuilderArena::with_capacity(4096);
+        let mut builder = IRBuilder::new(LANGUAGE);
+        let mut context = LANGUAGE.builder();
 
         let ir = builder.translate(
-            &irb,
+            &mut context,
             r#"
             newframetmp = ESP - 8;
             local localsizetmp = * newframetmp;
@@ -1752,7 +1728,7 @@ mod test {
         )?;
 
         for (i, stmt) in ir.into_iter().enumerate() {
-            println!("{i:03} {}", stmt.display(&translator));
+            println!("{i:03} {stmt:?}");
         }
 
         Ok(())
