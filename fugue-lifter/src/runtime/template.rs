@@ -362,7 +362,8 @@ impl OpTpl {
                 // NOTE: we could resolve the UserOp here at the cost of a larger
                 // representation for Op...
                 let index = self.inputs[0].offset.value::<R>(input)? as u16;
-                (1, pcode::Op::UserOp(index))
+                let count = self.inputs.len() as u8 - 1;
+                (1, pcode::Op::UserOp(index, count))
             }
             Op::Copy => (0, pcode::Op::Copy),
             Op::Branch => (0, pcode::Op::Branch),

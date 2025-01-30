@@ -827,7 +827,7 @@ impl IRBuilder {
                 })
                 .collect::<Result<Vec<_>, _>>()?;
 
-            self.emit_op(Op::UserOp(id), inputs, None)?;
+            self.emit_op(Op::UserOp(id, inputs.len() as _), inputs, None)?;
 
             Ok(())
         } else {
@@ -949,7 +949,7 @@ impl IRBuilder {
                 source,
             } => self.emit_load(space, size, source, output),
             IRExpr::Intrinsic { id, arguments } => {
-                self.emit_with_output(Op::UserOp(id), arguments, output)
+                self.emit_with_output(Op::UserOp(id, arguments.len() as _), arguments, output)
             }
             IRExpr::Subpiece { input, bytes } => self.emit_with_output(
                 Op::Subpiece,

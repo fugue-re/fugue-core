@@ -12,8 +12,8 @@ fugue-bv = { path = "../fugue-bv", version = "0.3" }
 fugue-bytes = { path = "../fugue-bytes", version = "0.3" }
 fugue-ir = { path = "../fugue-ir", version = "0.3" }
 fugue-state-derive = { path = "../fugue-state-derive", version = "0.3" }
-iset = "0.2"
+iset = "0.3"
 log = "0.4"
 paste = "1"
-thiserror = "1"
+thiserror = "2"
 ustr = "1"

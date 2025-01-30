@@ -16,7 +16,10 @@ pub use constructor::{
 };
 pub use context::ContextDatabase;
 pub use input::{ContextCommit, FixedHandle, ParserInput, ParserInputs};
-pub use pcode::{LiftingContext, LiftingContextState};
+pub use lifter::{Language, Lifter};
+pub use pcode::{
+    LiftingContext, LiftingContextState, Op, PCodeBuilder, PCodeBuilderContext, PCodeOp, Varnode,
+};
 
 const UMASKS: [u64; 9] = [
     0,

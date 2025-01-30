@@ -25,8 +25,6 @@ pub struct PCodeBuilderContext {
     pub unique_mask: u64, // this is constant from the translator
 }
 
-// TODO: take ParserInputs as input
-
 pub struct PCodeBuilder<'a> {
     pub context: &'a mut PCodeBuilderContext,
     pub input: &'a mut ParserInput,
@@ -485,6 +483,30 @@ impl Varnode {
     pub const fn is_invalid(&self) -> bool {
         self.space == INVALID_HANDLE
     }
+
+    #[inline]
+    pub const fn space(&self) -> u8 {
+        self.space
+    }
+
+    #[inline]
+    pub const fn offset(&self) -> u64 {
+        self.offset
+    }
+
+    #[inline]
+    pub const fn size(&self) -> usize {
+        self.size as _
+    }
+
+    #[inline]
+    pub const fn valid(&self) -> Option<&Varnode> {
+        if self.is_invalid() {
+            None
+        } else {
+            Some(self)
+        }
+    }
 }
 
 impl Default for Varnode {
@@ -524,8 +546,22 @@ impl Inputs {
         *self.0.get_unchecked_mut(index) = vnd;
     }
 
+    #[inline]
     pub fn is_full(&self) -> bool {
         self.0[1].is_invalid()
+    }
+
+    #[inline]
+    pub fn valid(&self) -> &[Varnode] {
+        &self.0[..self.len()]
+    }
+
+    #[inline]
+    pub fn len(&self) -> usize {
+        self.0
+            .iter()
+            .position(|vnd| vnd.is_invalid())
+            .unwrap_or(self.0.len())
     }
 }
 
@@ -612,7 +648,7 @@ pub enum Op {
 
     // This is an index into the lifter structure; we have an entry for each
     // at compile time.
-    UserOp(u16),
+    UserOp(u16, u8),
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -620,4 +656,56 @@ pub struct PCodeOp {
     pub op: Op,
     pub inputs: Inputs,
     pub output: Varnode,
+}
+
+impl PCodeOp {
+    pub fn op(&self) -> Op {
+        self.op
+    }
+
+    pub fn is_arg(&self) -> bool {
+        matches!(self.op, Op::Arg(_))
+    }
+
+    pub fn is_user_op(&self) -> bool {
+        self.user_op().is_some()
+    }
+
+    pub fn can_spill(&self) -> bool {
+        matches!(self.op, Op::UserOp(_, n) if n > 2)
+    }
+
+    pub fn user_op(&self) -> Option<u16> {
+        match self.op {
+            Op::UserOp(op, _) => Some(op),
+            _ => None,
+        }
+    }
+
+    pub fn space(&self) -> Option<u8> {
+        match self.op {
+            Op::Load(spc) | Op::Store(spc) => Some(spc),
+            _ => None,
+        }
+    }
+
+    pub fn inputs(&self) -> &[Varnode] {
+        self.inputs.valid()
+    }
+
+    pub fn output(&self) -> Option<&Varnode> {
+        self.output.valid()
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_sizes() {
+        assert_eq!(std::mem::size_of::<Op>(), 4);
+        assert_eq!(std::mem::size_of::<Varnode>(), 16);
+        assert_eq!(std::mem::size_of::<PCodeOp>(), 56);
+    }
 }

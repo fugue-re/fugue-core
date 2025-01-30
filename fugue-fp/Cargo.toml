@@ -11,4 +11,4 @@ homepage = "https://fugue.re"
 fugue-bv = { path = "../fugue-bv", version = "0.3" }
 fugue-ir = { path = "../fugue-ir", version = "0.3" }
 rug = { version = "1", features = ["float"] }
-thiserror = "1"
+thiserror = "2"

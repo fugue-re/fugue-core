@@ -13,5 +13,5 @@ heed = { version = "0.20", features = ["read-txn-no-tls"] }
 rkyv = "0.7"
 rkyv-with = "0.1"
 tempfile = "3"
-thiserror = "1"
+thiserror = "2"
 uuid = "1"

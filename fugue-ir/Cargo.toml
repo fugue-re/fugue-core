@@ -9,18 +9,18 @@ homepage = "https://fugue.re"
 
 [dependencies]
 ahash = { version = "0.8", features = ["serde"] }
-bumpalo = { version = "3.14", features = ["boxed", "collections"] }
+bumpalo = { version = "3.17", features = ["boxed", "collections"] }
 fugue-arch = { path = "../fugue-arch", version = "0.3" }
 fugue-bv = { path = "../fugue-bv", version = "0.3" }
 fugue-bytes = { path = "../fugue-bytes", version = "0.3" }
-iset = { version = "0.2", features = ["serde"] }
-itertools = "0.12"
+iset = { version = "0.3", features = ["serde"] }
+itertools = "0.14"
 log = "0.4"
 ouroboros = "0.18"
-roxmltree = "0.19"
+roxmltree = "0.20"
 serde = { version = "1", features = ["derive", "rc"] }
-smallvec = { version = "1", features = ["serde"] }
+smallvec = { version = "1.13", features = ["serde"] }
 stack-map = "1.0"
-thiserror = "1"
+thiserror = "2"
 ustr = { version = "1.1", features = ["serde"] }
 walkdir = "2"
