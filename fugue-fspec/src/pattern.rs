@@ -23,7 +23,7 @@ use serde::ser::SerializeSeq;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use thiserror::Error;
 
-use crate::common::Language;
+use crate::common::ArchSpec;
 
 #[derive(Debug, Error)]
 pub enum PatternError {
@@ -336,7 +336,7 @@ pub enum PatternSetError {
 
 #[derive(Clone)]
 pub struct PatternSet {
-    architecture: Language,
+    architecture: ArchSpec,
     groups: Vec<PatternGroup>,
     patterns: Vec<PatternsWithContext>,
 }
@@ -370,7 +370,7 @@ impl PatternSet {
         serde_yaml::from_reader(file).map_err(|e| PatternSetError::ParseFile(path.to_owned(), e))
     }
 
-    pub fn architecture(&self) -> &Language {
+    pub fn architecture(&self) -> &ArchSpec {
         &self.architecture
     }
 
@@ -488,7 +488,7 @@ enum PatternOrGroup<'a> {
 
 #[derive(Deserialize, Serialize)]
 struct PatternSetT<'a> {
-    architecture: Cow<'a, Language>,
+    architecture: Cow<'a, ArchSpec>,
     #[serde(bound(deserialize = "PatternOrGroupSeq<'a>: Deserialize<'de>"))]
     patterns: PatternOrGroupSeq<'a>,
 }

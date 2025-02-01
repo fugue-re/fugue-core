@@ -11,7 +11,7 @@ homepage = "https://fugue.re"
 bitflags = { version = "2", features = ["serde"] }
 fugue-arch = { version = "0.3", path = "../fugue-arch" }
 fugue-bytes = { version = "0.3", path = "../fugue-bytes" }
-fugue-ir = { version = "0.3", path = "../fugue-ir" }
+fugue-lifter = { version = "0.3", path = "../fugue-lifter" }
 fugue-sleigh = { version = "0.3", path = "../fugue-sleigh" }
 nom = "7"
 regex = "1"

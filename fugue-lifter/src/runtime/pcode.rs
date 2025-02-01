@@ -344,7 +344,7 @@ impl<'a> LiftingContextState<'a> {
         self.issued.push(pcode);
         self.issued
             .extend(self.context.inputs_spill.drain(..).map(|inputs| PCodeOp {
-                op: Op::Arg(1 + inputs.is_full() as u16),
+                op: Op::Arg,
                 output: Varnode::INVALID,
                 inputs,
             }));
@@ -362,7 +362,7 @@ impl<'a> LiftingContextState<'a> {
     fn resolve_relatives(&mut self) -> Option<()> {
         for rel in self.context.label_refs.iter() {
             // we need to recalculate the operation number since we emit args
-            // spilled as Op::Arg(_) when we have > 2 inputs.
+            // spilled as Op::Arg when we have > 2 inputs.
 
             let op_index = rel.operation + (rel.index >> 2);
             let in_index = rel.index & 1;
@@ -430,7 +430,7 @@ impl PCodeBuilderContext {
         issued.reserve(1 + self.inputs_spill.len());
         issued.push(pcode);
         issued.extend(self.inputs_spill.drain(..).map(|inputs| PCodeOp {
-            op: Op::Arg(1 + inputs.is_full() as u16),
+            op: Op::Arg,
             output: Varnode::INVALID,
             inputs,
         }));
@@ -644,7 +644,8 @@ pub enum Op {
 
     Subpiece,
 
-    Arg(u16),
+    // This is a spilled input for a user-op
+    Arg,
 
     // This is an index into the lifter structure; we have an entry for each
     // at compile time.
@@ -664,21 +665,29 @@ impl PCodeOp {
     }
 
     pub fn is_arg(&self) -> bool {
-        matches!(self.op, Op::Arg(_))
+        matches!(self.op, Op::Arg)
     }
 
     pub fn is_user_op(&self) -> bool {
         self.user_op().is_some()
     }
 
-    pub fn can_spill(&self) -> bool {
-        matches!(self.op, Op::UserOp(_, n) if n > 2)
-    }
-
     pub fn user_op(&self) -> Option<u16> {
         match self.op {
             Op::UserOp(op, _) => Some(op),
             _ => None,
+        }
+    }
+
+    pub fn can_spill(&self) -> bool {
+        matches!(self.op, Op::UserOp(_, n) if n > 2)
+    }
+
+    pub fn spill(&self) -> usize {
+        if let Op::UserOp(_, n) = self.op {
+            n.div_ceil(2).saturating_sub(1) as _
+        } else {
+            0
         }
     }
 

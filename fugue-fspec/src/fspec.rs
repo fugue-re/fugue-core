@@ -7,8 +7,7 @@ use std::path::{Path, PathBuf};
 
 use bitflags::bitflags;
 
-use fugue_ir::disassembly::{IRBuilderArena, PCodeBlock};
-use fugue_ir::Translator;
+use fugue_lifter::{Language, PCodeOp};
 use fugue_sleigh::{CodeBlock, IRBuilder, IRBuilderError};
 
 use serde::de::value::StringDeserializer;
@@ -18,7 +17,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use thiserror::Error;
 
 use crate::common::{
-    AttrOptWithVal, AttrWithVal, GroupOrValue, GroupOrValueVisitor, Language, OneOrMany,
+    ArchSpec, AttrOptWithVal, AttrWithVal, GroupOrValue, GroupOrValueVisitor, OneOrMany,
 };
 use crate::pattern::PatternsWithContext;
 
@@ -81,7 +80,7 @@ impl From<FunctionProperties> for OneOrMany<FunctionProperty> {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum PlatformConstraint {
-    Arch(Language),
+    Arch(ArchSpec),
     Platform(String),
 }
 
@@ -93,7 +92,7 @@ impl<'de> Deserialize<'de> for PlatformConstraint {
         let av = AttrWithVal::<String, String>::deserialize(deserializer)?;
         match av.attr.as_ref() {
             "arch" => {
-                Ok(Self::Arch(Language::deserialize(StringDeserializer::new(av.val))?))
+                Ok(Self::Arch(ArchSpec::deserialize(StringDeserializer::new(av.val))?))
             }
             "platform" => {
                 Ok(Self::Platform(av.val))
@@ -128,14 +127,14 @@ impl Serialize for PlatformConstraint {
 }
 
 #[derive(Clone, Default)]
-pub struct FunctionPatterns(BTreeMap<Option<Language>, Vec<PatternsWithContext>>);
+pub struct FunctionPatterns(BTreeMap<Option<ArchSpec>, Vec<PatternsWithContext>>);
 
 impl<'de> Deserialize<'de> for FunctionPatterns {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
     {
-        let d = Vec::<AttrOptWithVal<Language, PatternsWithContext>>::deserialize(deserializer)?;
+        let d = Vec::<AttrOptWithVal<ArchSpec, PatternsWithContext>>::deserialize(deserializer)?;
         let mut m = BTreeMap::new();
 
         for d in d.into_iter() {
@@ -225,11 +224,11 @@ impl FunctionStub {
 
     pub fn to_pcode<'ir>(
         &self,
-        translator: &Translator,
-        irb: &'ir IRBuilderArena,
-    ) -> Result<PCodeBlock<'ir>, IRBuilderError> {
-        let mut builder = IRBuilder::new(translator);
-        builder.translate_parsed(irb, self.ast())
+        language: &'static Language,
+    ) -> Result<Vec<PCodeOp>, IRBuilderError> {
+        let mut builder = IRBuilder::new(language);
+        let mut context = language.builder();
+        builder.translate_parsed(&mut context, self.ast())
     }
 }
 
@@ -398,7 +397,7 @@ mod test {
         let input2 = "platform: posix";
 
         assert_eq!(
-            PlatformConstraint::Arch(Language::new_with("x86", Endian::Little, 32, None, None)),
+            PlatformConstraint::Arch(ArchSpec::new_with("x86", Endian::Little, 32, None, None)),
             serde_yaml::from_str(input1)?
         );
 
@@ -445,7 +444,7 @@ patterns:
 
         // test group matching via where
         struct ArchWithPlatform {
-            arch: Language,
+            arch: ArchSpec,
             platform: &'static str,
         }
 
@@ -459,12 +458,12 @@ patterns:
         }
 
         assert!(constraints.matches(&ArchWithPlatform {
-            arch: Language::new("x86", Endian::Little),
+            arch: ArchSpec::new("x86", Endian::Little),
             platform: "posix",
         }));
 
         assert!(!constraints.matches(&ArchWithPlatform {
-            arch: Language::new("x86", Endian::Little),
+            arch: ArchSpec::new("x86", Endian::Little),
             platform: "uefi",
         }));
 

@@ -368,7 +368,7 @@ impl<T> GroupOrValue<T> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Language {
+pub struct ArchSpec {
     processor: String,
     endian: Endian,
     bits: Option<u32>,
@@ -376,7 +376,7 @@ pub struct Language {
     convention: Option<String>,
 }
 
-impl Language {
+impl ArchSpec {
     pub fn new(processor: impl Into<String>, endian: Endian) -> Self {
         Self::new_with(processor, endian, None, None, None)
     }
@@ -453,7 +453,7 @@ pub enum LanguageParseError {
     Convention,
 }
 
-impl FromStr for Language {
+impl FromStr for ArchSpec {
     type Err = LanguageParseError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -503,7 +503,7 @@ impl FromStr for Language {
             Some(parts[4].to_owned())
         };
 
-        Ok(Language {
+        Ok(ArchSpec {
             processor,
             endian,
             bits,
@@ -513,7 +513,7 @@ impl FromStr for Language {
     }
 }
 
-impl Display for Language {
+impl Display for ArchSpec {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let endian = match self.endian {
             Endian::Big => "BE",
@@ -537,17 +537,17 @@ impl Display for Language {
     }
 }
 
-impl<'de> Deserialize<'de> for Language {
+impl<'de> Deserialize<'de> for ArchSpec {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
     {
         let s = String::deserialize(deserializer)?;
-        Language::from_str(&s).map_err(D::Error::custom)
+        ArchSpec::from_str(&s).map_err(D::Error::custom)
     }
 }
 
-impl Serialize for Language {
+impl Serialize for ArchSpec {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,

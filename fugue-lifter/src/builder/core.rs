@@ -1,13 +1,11 @@
 use std::mem::size_of;
 
-use fugue_ir::disassembly::construct::{
-    ConstTpl, ConstructTpl, HandleKind, HandleTpl, OpTpl, VarnodeTpl,
-};
+use fugue_ir::disassembly::construct::{ConstructTpl, HandleTpl};
 use fugue_ir::disassembly::symbol::sub_table::{
     Context, ContextPattern, DecisionPair, DisjointPattern, InstructionPattern,
 };
 use fugue_ir::disassembly::symbol::{Constructor, DecisionNode, Symbol};
-use fugue_ir::disassembly::{Opcode, PatternExpression};
+use fugue_ir::disassembly::PatternExpression;
 use fugue_ir::Translator;
 
 use proc_macro2::{Span, TokenStream};
@@ -18,7 +16,6 @@ use crate::builder::types::context::ContextAdaptor;
 use crate::builder::types::pattern::PatternExpressionAdaptor;
 use crate::builder::types::symbol::SymbolAdaptor;
 use crate::builder::types::template::TplAdaptor;
-use crate::runtime::pcode::Op;
 use crate::LifterGeneratorError;
 
 pub struct LifterGenerator<'a> {
@@ -85,510 +82,7 @@ impl<'a> LifterGenerator<'a> {
         Ok(())
     }
 
-    pub fn generate_handle_resolver(&self, symbol: &Symbol) -> TokenStream {
-        match symbol {
-            Symbol::Epsilon { .. } => {
-                quote! {
-                    fugue_lifter::runtime::FixedHandle {
-                        space: 0,
-                        ..Default::default()
-                    }
-                }
-            }
-            Symbol::Name { pattern_value, .. } | Symbol::Value { pattern_value, .. } => {
-                let expr = self.generate_pattern_resolver(pattern_value);
-                quote! {
-                    fugue_lifter::runtime::FixedHandle {
-                        space: 0,
-                        offset_offset: #expr as u64,
-                        ..Default::default()
-                    }
-                }
-            }
-            Symbol::Varnode {
-                space,
-                offset,
-                size,
-                ..
-            } => {
-                let space = space.index() as u8;
-                let offset = *offset;
-                let size = *size as u16;
-
-                quote! {
-                    fugue_lifter::runtime::FixedHandle {
-                        space: #space,
-                        size: #size,
-                        offset_offset: #offset,
-                        ..Default::default()
-                    }
-                }
-            }
-            Symbol::Operand { handle_index, .. } => {
-                let opid = *handle_index as u8;
-                quote! {
-                    {
-                        let opid = input.inputs.input.context.constructors[point as usize].operands + #opid;
-                        input.inputs.input.context.constructors[opid as usize]?
-                    }
-                }
-            }
-            Symbol::Start { .. } => {
-                let space = self.translator.manager().default_space_ref();
-                let space_id = space.id().index() as u8;
-                let size = space.address_size() as u16;
-                quote! {
-                    fugue_lifter::runtime::FixedHandle {
-                        space: #space_id,
-                        size: #size,
-                        offset_offset: input.address(),
-                        ..Default::default()
-                    }
-                }
-            }
-            Symbol::End { .. } => {
-                let space = self.translator.manager().default_space_ref();
-                let space_id = space.id().index() as u8;
-                let size = space.address_size() as u16;
-                quote! {
-                    fugue_lifter::runtime::FixedHandle {
-                        space: #space_id,
-                        size: #size,
-                        offset_offset: input.next_address(),
-                        ..Default::default()
-                    }
-                }
-            }
-            Symbol::Next2 { .. } => {
-                let space = self.translator.manager().default_space_ref();
-                let space_id = space.id().index() as u8;
-                let size = space.address_size() as u16;
-                quote! {
-                    fugue_lifter::runtime::FixedHandle {
-                        space: #space_id,
-                        size: #size,
-                        offset_offset: if let Some(next2_address) = input.next2_address() {
-                            next2_address
-                        } else {
-                            let mut ninput = input.next_input()?;
-                            resolve_constructor(&mut ninput)?;
-                            ninput.next_address()
-                        },
-                        ..Default::default()
-                    }
-                }
-            }
-            Symbol::VarnodeList {
-                pattern_value,
-                varnode_table,
-                ..
-            } => {
-                // NOTE: it's possible to sometimes compress such lists; for example,
-                // we often see something like:
-                //
-                // match index {
-                //     0usize => FixedHandle { ... },
-                //     1usize => FixedHandle { ... },
-                //     2usize => FixedHandle { ... },
-                //     3usize => FixedHandle { ... },
-                //     ...
-                // }
-                //
-                // Where the FixedHandle differs in only a single field, and the fields
-                // set are all constant and known at build time. We could compress these
-                // cases, by matching for the field assignment, or, if possible, compute
-                // the target value from the index.
-                //
-
-                let index = self.generate_pattern_resolver(pattern_value);
-                let cases = varnode_table.iter().enumerate().map(|(i, symid)| {
-                    if let Some(symid) = symid {
-                        let sym = self.translator.symbol_table().symbol(*symid).unwrap();
-                        let value = self.generate_handle_resolver(sym);
-                        quote! { #i => { #value } }
-                    } else {
-                        quote! { #i => { return None; } }
-                    }
-                });
-
-                quote! {
-                    match #index as usize {
-                        #(#cases,)*
-                        _ => { return None },
-                    }
-                }
-            }
-            Symbol::ValueMap {
-                pattern_value,
-                value_table,
-                ..
-            } => {
-                let index = self.generate_pattern_resolver(pattern_value);
-                let cases = value_table.iter().enumerate().map(|(i, value)| {
-                    let value = *value as u64;
-                    quote! { #i => { #value } }
-                });
-
-                quote! {
-                    fugue_lifter::runtime::FixedHandle {
-                        space: 0,
-                        offset_offset: match #index as usize {
-                            #(#cases,)*
-                            _ => { return None },
-                        },
-                        ..Default::default()
-                    }
-                }
-            }
-            _ => TokenStream::new(),
-        }
-    }
-
-    pub fn generate_pattern_resolver(&self, pattern: &PatternExpression) -> TokenStream {
-        let expr = PatternExpressionAdaptor::new(self.translator, pattern);
-
-        quote! { (#expr).resolve::<Instruction>(input)? }
-
-        /*
-        match pattern {
-            PatternExpression::Constant { value } => quote! { #value },
-            PatternExpression::StartInstruction => quote! { (input.address() as i64) },
-            PatternExpression::EndInstruction => {
-                quote! { (input.next_address() as i64) }
-            }
-            PatternExpression::Next2Instruction => {
-                quote! {
-                    if let Some(next2_address) = input.next2_address() {
-                        next2_address as i64
-                    } else {
-                        let mut ninput = input.next_input()?;
-                        resolve_constructor(&mut ninput)?;
-                        ninput.next_address()
-                    }
-                }
-            }
-            PatternExpression::TokenField {
-                big_endian,
-                sign_bit,
-                bit_start,
-                bit_end,
-                byte_start,
-                byte_end,
-                shift,
-            } => {
-                let size = byte_end - byte_start + 1;
-                let mut start = *byte_start as isize;
-                let mut tsize = size as isize;
-
-                let mut parts = Vec::new();
-                let access_size = size_of::<u32>();
-                let access_bits = 8 * size_of::<u32>() as u32;
-
-                while tsize >= size_of::<u32>() as isize {
-                    let start_val = start as usize;
-                    parts.push(quote! {
-                        res = (((res as u64) << #access_bits) | (input.inputs.input.instruction_bytes(#start_val, #access_size)? as u64)) as i64;
-                    });
-                    start += size_of::<u32>() as isize;
-                    tsize = (*byte_end as isize) - start + 1;
-                }
-
-                if tsize > 0 {
-                    let start_val = start as usize;
-                    let tsize = tsize as usize;
-                    let shift = 8 * tsize as u32;
-                    parts.push(quote! {
-                        res = (((res as u64) << #shift) | (input.inputs.input.instruction_bytes(#start_val, #tsize)? as u64)) as i64;
-                    });
-                }
-
-                if !*big_endian {
-                    parts.push(quote! {
-                        res = fugue_lifter::runtime::byte_swap(res, #size);
-                    });
-                }
-
-                parts.push(quote! {
-                    res = res.checked_shr(#shift).unwrap_or(if res < 0 { -1 } else { 0 });
-                });
-
-                let range = bit_end - bit_start;
-
-                parts.push(if *sign_bit {
-                    quote! { fugue_lifter::runtime::sign_extend(res, #range) }
-                } else {
-                    quote! { fugue_lifter::runtime::zero_extend(res, #range) }
-                });
-
-                quote! {
-                    {
-                        let mut res = 0i64;
-                        #(#parts)*
-                    }
-                }
-            }
-            PatternExpression::ContextField {
-                sign_bit,
-                bit_start,
-                bit_end,
-                byte_start,
-                byte_end,
-                shift,
-            } => {
-                let mut size = (*byte_end as isize) - (*byte_start as isize) + 1;
-                let mut start = *byte_start as isize;
-
-                let mut parts = Vec::new();
-                let access_size = size_of::<u32>();
-                let access_bits = 8 * size_of::<u32>() as u32;
-
-                while size >= size_of::<u32>() as isize {
-                    let start_val = start as usize;
-                    parts.push(quote! {
-                        res = (((res as u64) << #access_bits) | (input.inputs.input.context_bytes(#start_val, #access_size) as u64)) as i64;
-                    });
-                    start += size_of::<u32>() as isize;
-                    size = (*byte_end as isize) - start + 1;
-                }
-
-                if size > 0 {
-                    let start_val = start as usize;
-                    let size = size as usize;
-                    let shift = 8 * size as u32;
-                    parts.push(quote! {
-                        res = (((res as u64) << #shift) | (input.inputs.input.context_bytes(#start_val, #size) as u64)) as i64;
-                    });
-                }
-
-                parts.push(quote! {
-                    res = res.checked_shr(#shift).unwrap_or(if res < 0 { -1 } else { 0 });
-                });
-
-                let range = bit_end - bit_start;
-
-                parts.push(if *sign_bit {
-                    quote! { fugue_lifter::runtime::sign_extend(res, #range) }
-                } else {
-                    quote! { fugue_lifter::runtime::zero_extend(res, #range) }
-                });
-
-                quote! {
-                    {
-                        let mut res = 0i64;
-                        #(#parts)*
-                    }
-                }
-            }
-            PatternExpression::Operand {
-                index,
-                table_id,
-                constructor_id,
-            } => {
-                let symbols = self.translator.symbol_table();
-                let table = symbols.unchecked_symbol(*table_id);
-                let Symbol::Subtable {
-                    constructors,
-                    scope,
-                    ..
-                } = table
-                else {
-                    unreachable!("this state should not be reachable");
-                };
-                let ctor = &constructors[*constructor_id];
-
-                let Symbol::Operand {
-                    def_expr,
-                    subsym_id,
-                    ..
-                } = symbols.unchecked_symbol(ctor.operand(*index))
-                else {
-                    unreachable!("this state should not be reachable");
-                };
-
-                let pexpr = if let Some(def_expr) = def_expr.as_ref() {
-                    def_expr
-                } else if let Some(subsym_id) = subsym_id.as_ref() {
-                    let sym = symbols.unchecked_symbol(*subsym_id);
-                    sym.pattern_value()
-                } else {
-                    return quote! { 0i64 };
-                };
-
-                let index = *index;
-                let symbol = ctor.operand(index);
-                let operand = self.translator.symbol_table().unchecked_symbol(symbol);
-
-                let (ctor_id1, ctor_id2) = ctor.id();
-                let ctor_id = (ctor_id1 as u32 & 0xffff) << 16 | (ctor_id2 as u32 & 0xffff);
-                let ctor_vname = Self::ctor_vname(*table_id, *scope, *constructor_id);
-                let pattern_value = self.generate_pattern_resolver(&pexpr);
-
-                let rel_offset = operand.relative_offset() as u8;
-                let offset = if operand.offset_base().is_none() {
-                    quote! {
-                        point.offset + #rel_offset
-                    }
-                } else {
-                    quote! {
-                        input.inputs.input.context.constructors[point.operands as usize + #index].offset
-                    }
-                };
-
-                quote! {
-                    {
-                        let operand_value = |input: &mut fugue_lifter::runtime::LiftingContextState| -> Option<i64> {
-                            let mut cur_depth = input.inputs.input.depth;
-                            let mut point = &input.inputs.input.context.constructors[input.inputs.input.point as usize];
-
-                            while point.constructor.map(|ctor| ctor.id) != Some(#ctor_id) {
-                                if cur_depth <= 0 {
-                                    // preserve old and init new state
-                                    let old_point = input.inputs.input.point;
-                                    let old_depth = std::mem::take(&mut input.inputs.input.depth);
-                                    let old_breadcrumb = std::mem::replace(&mut input.inputs.input.breadcrumb, [0u8; fugue_lifter::runtime::input::BREADCRUMBS]);
-
-                                    input.inputs.input.point = input.inputs.input.context.alloc;
-                                    {
-                                        let cstate = &mut input.inputs.input.context.constructors[input.inputs.input.point as usize];
-
-                                        cstate.constructor = Some(#ctor_vname);
-                                        cstate.handle = None;
-                                        cstate.parent = fugue_lifter::runtime::input::INVALID_HANDLE;
-                                        cstate.operands = fugue_lifter::runtime::input::INVALID_HANDLE;
-                                        cstate.offset = 0;
-                                        cstate.length = 0;
-                                    }
-
-                                    // compute the value in the modified context
-                                    let value = { #pattern_value };
-
-                                    // restore old state
-                                    {
-                                        let cstate = &mut input.inputs.input.context.constructors[input.inputs.input.point as usize];
-
-                                        cstate.constructor = None;
-                                        cstate.handle = None;
-                                        cstate.parent = fugue_lifter::runtime::input::INVALID_HANDLE;
-                                        cstate.operands = fugue_lifter::runtime::input::INVALID_HANDLE;
-                                        cstate.offset = 0;
-                                        cstate.length = 0;
-                                    }
-
-                                    input.inputs.input.point = old_point;
-                                    input.inputs.input.depth = old_depth;
-                                    input.inputs.input.breadcrumb = old_breadcrumb;
-
-                                    return Some(value);
-                                }
-
-                                cur_depth -= 1;
-                                point = &input.inputs.input.context.constructors[point.parent as usize];
-                            }
-
-                            // if we reach here, we've resolved the ctor in the current tree
-                            let offset = #offset;
-                            let length = point.length;
-
-                            // preserve old and init new state
-                            let old_point = input.inputs.input.point;
-                            let old_depth = std::mem::take(&mut input.inputs.input.depth);
-                            let old_breadcrumb = std::mem::replace(&mut input.inputs.input.breadcrumb, [0u8; fugue_lifter::runtime::input::BREADCRUMBS]);
-
-                            input.inputs.input.point = input.inputs.input.context.alloc;
-                            {
-                                let cstate = &mut input.inputs.input.context.constructors[input.inputs.input.point as usize];
-
-                                cstate.constructor = Some(#ctor_vname);
-                                cstate.handle = None;
-                                cstate.parent = fugue_lifter::runtime::input::INVALID_HANDLE;
-                                cstate.operands = fugue_lifter::runtime::input::INVALID_HANDLE;
-                                cstate.offset = offset;
-                                cstate.length = length;
-                            }
-
-                            // compute the value in the modified context
-                            let value = { #pattern_value };
-
-                            // restore old state
-                            {
-                                let cstate = &mut input.inputs.input.context.constructors[input.inputs.input.point as usize];
-
-                                cstate.constructor = None;
-                                cstate.handle = None;
-                                cstate.parent = fugue_lifter::runtime::input::INVALID_HANDLE;
-                                cstate.operands = fugue_lifter::runtime::input::INVALID_HANDLE;
-                                cstate.offset = 0;
-                                cstate.length = 0;
-                            }
-
-                            input.inputs.input.point = old_point;
-                            input.inputs.input.depth = old_depth;
-                            input.inputs.input.breadcrumb = old_breadcrumb;
-
-                            Some(value)
-                        };
-                        operand_value(input)?
-                    }
-                }
-            }
-            PatternExpression::And(lhs, rhs) => {
-                let lhs = self.generate_pattern_resolver(lhs);
-                let rhs = self.generate_pattern_resolver(rhs);
-                quote! { (#lhs & #rhs) }
-            }
-            PatternExpression::Or(lhs, rhs) => {
-                let lhs = self.generate_pattern_resolver(lhs);
-                let rhs = self.generate_pattern_resolver(rhs);
-                quote! { (#lhs | #rhs) }
-            }
-            PatternExpression::Xor(lhs, rhs) => {
-                let lhs = self.generate_pattern_resolver(lhs);
-                let rhs = self.generate_pattern_resolver(rhs);
-                quote! { (#lhs ^ #rhs) }
-            }
-            PatternExpression::Plus(lhs, rhs) => {
-                let lhs = self.generate_pattern_resolver(lhs);
-                let rhs = self.generate_pattern_resolver(rhs);
-                quote! { #lhs.wrapping_add(#rhs) }
-            }
-            PatternExpression::Sub(lhs, rhs) => {
-                let lhs = self.generate_pattern_resolver(lhs);
-                let rhs = self.generate_pattern_resolver(rhs);
-                quote! { #lhs.wrapping_sub(#rhs) }
-            }
-            PatternExpression::Div(lhs, rhs) => {
-                let lhs = self.generate_pattern_resolver(lhs);
-                let rhs = self.generate_pattern_resolver(rhs);
-                quote! { { let rhs = #rhs; if rhs == 0 { return None; } else { #lhs.wrapping_div(rhs) } } }
-            }
-            PatternExpression::Mult(lhs, rhs) => {
-                let lhs = self.generate_pattern_resolver(lhs);
-                let rhs = self.generate_pattern_resolver(rhs);
-                quote! { #lhs.wrapping_mul(#rhs) }
-            }
-            PatternExpression::LeftShift(lhs, rhs) => {
-                let lhs = self.generate_pattern_resolver(lhs);
-                let rhs = self.generate_pattern_resolver(rhs);
-                quote! { #lhs.checked_shl(#rhs as u8 as u32).unwrap_or(0) }
-            }
-            PatternExpression::RightShift(lhs, rhs) => {
-                let lhs = self.generate_pattern_resolver(lhs);
-                let rhs = self.generate_pattern_resolver(rhs);
-                quote! { #lhs.checked_shr(#rhs as u8 as u32).unwrap_or(if #lhs < 0 { -1 } else { 0 }) }
-            }
-            PatternExpression::Not(val) => {
-                let val = self.generate_pattern_resolver(val);
-                quote! { !(#val) }
-            }
-            PatternExpression::Minus(val) => {
-                let val = self.generate_pattern_resolver(val);
-                quote! { -(#val) }
-            }
-        }
-        */
-    }
-
-    pub fn generate_constructor_operand_resolvers(&self, ctor: &Constructor) -> Vec<TokenStream> {
+    fn generate_constructor_operand_resolvers(&self, ctor: &Constructor) -> Vec<TokenStream> {
         let mut operands = Vec::new();
 
         for oid in 0..ctor.operand_count() {
@@ -611,8 +105,6 @@ impl<'a> LifterGenerator<'a> {
             {
                 match tsym {
                     Symbol::Subtable { id, scope, .. } => {
-                        // NOTE: this is where we should perform construction of inner resolvers
-                        //
                         let stname = format_ident!("SubTable{id}In{scope}");
                         let resolver = quote! { fugue_lifter::runtime::OperandResolver::Constructor(<#stname>::resolve) };
                         let handle_resolver =
@@ -623,59 +115,8 @@ impl<'a> LifterGenerator<'a> {
                     Symbol::ValueMap {
                         id,
                         table_is_filled,
-                        //pattern_value,
-                        //value_table,
                         ..
                     } => {
-                        /*
-                        let resolver = if !*table_is_filled {
-                            let bad_indices = value_table
-                                .iter()
-                                .enumerate()
-                                .filter_map(|(i, v)| if *v == 0xbadbeef { Some(i) } else { None });
-
-                            let pattern_resolver = self.generate_pattern_resolver(pattern_value);
-                            let limit = value_table.len();
-
-                            let ctor_opnd_resolver =
-                                format_ident!("operand_resolver_{id}_{scope}_{cid}_{oid}");
-
-                            helpers.push(quote! {
-                                #[inline]
-                                fn #ctor_opnd_resolver(input: &mut fugue_lifter::runtime::LiftingContextState) -> Option<()> {
-                                    let index = #pattern_resolver as usize;
-                                    if index >= #limit || [#(#bad_indices),*].contains(&index) {
-                                        None
-                                    } else {
-                                        Some(())
-                                    }
-                                }
-                            });
-
-                            quote! { fugue_lifter::runtime::OperandResolver::Filter(#ctor_opnd_resolver) }
-                        } else {
-                            quote! { fugue_lifter::runtime::OperandResolver::None }
-                        };
-
-                        let ctor_opnd_handle_resolver =
-                            format_ident!("operand_handle_resolver_{id}_{scope}_{cid}_{oid}");
-
-                        let handle_resolver = self.generate_handle_resolver(tsym);
-
-                        helpers.push(quote! {
-                            #[inline]
-                            fn #ctor_opnd_handle_resolver(input: &mut fugue_lifter::runtime::LiftingContextState) -> Option<()> {
-                                let handle = #handle_resolver;
-                                input.inputs.input.set_parent_handle(handle);
-                                Some(())
-                            }
-                        });
-
-                        let handle_resolver = quote! {
-                            Some(#ctor_opnd_handle_resolver)
-                        };
-                        */
-
                         let resolver = if *table_is_filled {
                             quote! { fugue_lifter::runtime::OperandResolver::None }
                         } else {
@@ -691,59 +132,8 @@ impl<'a> LifterGenerator<'a> {
                     Symbol::VarnodeList {
                         id,
                         table_is_filled,
-                        //pattern_value,
-                        //varnode_table,
                         ..
                     } => {
-                        /*
-                        let resolver = if !*table_is_filled {
-                            let bad_indices = varnode_table
-                                .iter()
-                                .enumerate()
-                                .filter_map(|(i, v)| if v.is_none() { Some(i) } else { None });
-
-                            let pattern_resolver = self.generate_pattern_resolver(pattern_value);
-                            let limit = varnode_table.len();
-
-                            let ctor_opnd_resolver =
-                                format_ident!("operand_resolver_{id}_{scope}_{cid}_{oid}");
-
-                            helpers.push(quote! {
-                                #[inline]
-                                fn #ctor_opnd_resolver(input: &mut fugue_lifter::runtime::LiftingContextState) -> Option<()> {
-                                    let index = #pattern_resolver as usize;
-                                    if index >= #limit || [#(#bad_indices),*].contains(&index) {
-                                        None
-                                    } else {
-                                        Some(())
-                                    }
-                                }
-                            });
-
-                            quote! { fugue_lifter::runtime::OperandResolver::Filter(#ctor_opnd_resolver) }
-                        } else {
-                            quote! { fugue_lifter::runtime::OperandResolver::None }
-                        };
-
-                        let ctor_opnd_handle_resolver =
-                            format_ident!("operand_handle_resolver_{id}_{scope}_{cid}_{oid}");
-
-                        let handle_resolver = self.generate_handle_resolver(tsym);
-
-                        helpers.push(quote! {
-                            #[inline]
-                            fn #ctor_opnd_handle_resolver(input: &mut fugue_lifter::runtime::LiftingContextState) -> Option<()> {
-                                let handle = #handle_resolver;
-                                input.inputs.input.set_parent_handle(handle);
-                                Some(())
-                            }
-                        });
-
-                        let handle_resolver = quote! {
-                            Some(#ctor_opnd_handle_resolver)
-                        };
-                        */
-
                         let resolver = if *table_is_filled {
                             quote! { fugue_lifter::runtime::OperandResolver::None }
                         } else {
@@ -759,62 +149,8 @@ impl<'a> LifterGenerator<'a> {
                     Symbol::Name {
                         id,
                         table_is_filled,
-                        // pattern_value,
-                        // name_table,
                         ..
                     } => {
-                        /*
-                        let resolver = if !*table_is_filled {
-                            let bad_indices = name_table.iter().enumerate().filter_map(|(i, v)| {
-                                if v == "\t" {
-                                    Some(i)
-                                } else {
-                                    None
-                                }
-                            });
-
-                            let pattern_resolver = self.generate_pattern_resolver(pattern_value);
-                            let limit = name_table.len();
-
-                            let ctor_opnd_resolver =
-                                format_ident!("operand_resolver_{id}_{scope}_{cid}_{oid}");
-
-                            helpers.push(quote! {
-                                #[inline]
-                                fn #ctor_opnd_resolver(input: &mut fugue_lifter::runtime::LiftingContextState) -> Option<()> {
-                                    let index = #pattern_resolver as usize;
-                                    if index >= #limit || [#(#bad_indices),*].contains(&index) {
-                                        None
-                                    } else {
-                                        Some(())
-                                    }
-                                }
-                            });
-
-                            quote! { fugue_lifter::runtime::OperandResolver::Filter(#ctor_opnd_resolver) }
-                        } else {
-                            quote! { fugue_lifter::runtime::OperandResolver::None }
-                        };
-
-                        let ctor_opnd_handle_resolver =
-                            format_ident!("operand_handle_resolver_{id}_{scope}_{cid}_{oid}");
-
-                        let handle_resolver = self.generate_handle_resolver(tsym);
-
-                        helpers.push(quote! {
-                            #[inline]
-                            fn #ctor_opnd_handle_resolver(input: &mut fugue_lifter::runtime::LiftingContextState) -> Option<()> {
-                                let handle = #handle_resolver;
-                                input.inputs.input.set_parent_handle(handle);
-                                Some(())
-                            }
-                        });
-
-                        let handle_resolver = quote! {
-                            Some(#ctor_opnd_handle_resolver)
-                        };
-                        */
-
                         let resolver = if *table_is_filled {
                             quote! { fugue_lifter::runtime::OperandResolver::None }
                         } else {
@@ -828,26 +164,6 @@ impl<'a> LifterGenerator<'a> {
                         (resolver, handle_resolver)
                     }
                     symbol => {
-                        /*
-                        let ctor_opnd_handle_resolver =
-                            format_ident!("operand_handle_resolver_{id}_{scope}_{cid}_{oid}");
-
-                        let handle_resolver = self.generate_handle_resolver(tsym);
-
-                        helpers.push(quote! {
-                            #[inline]
-                            fn #ctor_opnd_handle_resolver(input: &mut fugue_lifter::runtime::LiftingContextState) -> Option<()> {
-                                let handle = #handle_resolver;
-                                input.inputs.input.set_parent_handle(handle);
-                                Some(())
-                            }
-                        });
-
-                        let handle_resolver = quote! {
-                            Some(#ctor_opnd_handle_resolver)
-                        };
-                        */
-
                         let resolver = quote! { fugue_lifter::runtime::OperandResolver::None };
 
                         let id = symbol.id();
@@ -858,40 +174,9 @@ impl<'a> LifterGenerator<'a> {
                     }
                 }
             } else {
-                let pexp = operand.defining_expression().unwrap();
-                /*
-                let value = self.generate_pattern_resolver(pexp);
-
-                let ctor_opnd_handle_resolver =
-                    format_ident!("operand_handle_resolver_{id}_{scope}_{cid}_{oid}");
-
-                helpers.push(quote! {
-                    #[inline]
-                    fn #ctor_opnd_handle_resolver(input: &mut fugue_lifter::runtime::LiftingContextState) -> Option<()> {
-                        let offset = #value as u64;
-                        if let Some(handle) = input.inputs.input.parent_handle_mut() {
-                            handle.space = 0;
-                            handle.offset_space = fugue_lifter::runtime::input::INVALID_HANDLE;
-                            handle.offset_offset = offset;
-                            handle.size = 0;
-                        } else {
-                            input.inputs.input.set_parent_handle(fugue_lifter::runtime::FixedHandle {
-                                space: 0,
-                                offset_offset: offset,
-                                ..Default::default()
-                            });
-                        }
-                        Some(())
-                    }
-                });
-
-                let handle_resolver = quote! {
-                    Some(#ctor_opnd_handle_resolver)
-                };
-                */
-
                 let resolver = quote! { fugue_lifter::runtime::OperandResolver::None };
 
+                let pexp = operand.defining_expression().unwrap();
                 let value = PatternExpressionAdaptor::new(&self.translator, pexp);
                 let handle_resolver =
                     quote! { fugue_lifter::runtime::OperandHandleResolver::Expression(#value) };
@@ -913,7 +198,7 @@ impl<'a> LifterGenerator<'a> {
         operands
     }
 
-    pub fn generate_constructor_context_actions(
+    fn generate_constructor_context_actions(
         &self,
         ctor: &Constructor,
     ) -> (Vec<TokenStream>, Vec<TokenStream>) {
@@ -936,256 +221,11 @@ impl<'a> LifterGenerator<'a> {
         (pre_actions, post_actions)
     }
 
-    pub fn generate_const_template(&self, tmpl: &ConstTpl) -> TokenStream {
-        match tmpl {
-            ConstTpl::Start => quote! { input.address() },
-            ConstTpl::Next => quote! { input.next_address() },
-            ConstTpl::Next2 => quote! {
-                if let Some(next2_address) = input.next2_address() {
-                    next2_address
-                } else {
-                    let mut ninput = input.next_input()?;
-                    resolve_constructor(&mut ninput)?;
-                    ninput.next_address()
-                }
-            },
-            ConstTpl::CurrentSpaceSize => {
-                let size = self.translator.manager().default_space_ref().address_size() as u64;
-                quote! { #size }
-            }
-            ConstTpl::CurrentSpace => {
-                let index = self.translator.manager().default_space_ref().index() as u64;
-                quote! { #index }
-            }
-            ConstTpl::Relative(value) | ConstTpl::Real(value) => {
-                let value = *value;
-                quote! { #value }
-            }
-            ConstTpl::SpaceId(space) => {
-                let index = space.index() as u64;
-                quote! { #index }
-            }
-            ConstTpl::Handle(index, kind) => {
-                let index = *index;
-                let handle = quote! {
-                    let handle = input.inputs.input.operand_handle(#index);
-                };
-
-                let action = match kind {
-                    HandleKind::Space => quote! {
-                        if handle.offset_space == fugue_lifter::runtime::input::INVALID_HANDLE {
-                            handle.space as u64
-                        } else {
-                            handle.temporary_space as u64
-                        }
-                    },
-                    HandleKind::Offset => quote! {
-                        if handle.offset_space == fugue_lifter::runtime::input::INVALID_HANDLE {
-                            handle.offset_offset
-                        } else {
-                            handle.temporary_offset
-                        }
-                    },
-                    HandleKind::Size => quote! {
-                        handle.size as u64
-                    },
-                    HandleKind::OffsetPlus(value) => {
-                        let value = *value;
-                        let value_short = value & 0xffff;
-                        let value_shift = 8 * (value >> 16) as u32;
-
-                        quote! {
-                            if handle.space == 0 { // constant space
-                                let val = if handle.offset_space == fugue_lifter::runtime::input::INVALID_HANDLE {
-                                    handle.offset_offset
-                                } else {
-                                    handle.temporary_offset
-                                };
-                                val.checked_shr(#value_shift).unwrap_or(0)
-                            } else {
-                                if handle.offset_space == fugue_lifter::runtime::input::INVALID_HANDLE {
-                                    handle.offset_offset + #value_short
-                                } else {
-                                    handle.temporary_offset + #value_short
-                                }
-                            }
-                        }
-                    }
-                };
-
-                quote! {
-                    {
-                        #handle
-                        #action
-                    }
-                }
-            }
-            _ => unimplemented!("flow operations not supported"),
-        }
-    }
-
-    pub fn generate_const_template_offset(&self, tmpl: &ConstTpl) -> TokenStream {
-        match tmpl {
-            ConstTpl::Handle(index, _) => {
-                let index = *index;
-                quote! {
-                    {
-                        let h = input.inputs.input.operand_handle(#index);
-
-                        handle.offset_space = h.offset_space;
-                        handle.offset_offset = h.offset_offset;
-                        handle.offset_size = h.offset_size;
-                        handle.temporary_space = h.temporary_space;
-                        handle.temporary_offset = h.temporary_offset;
-                    }
-                }
-            }
-            _ => {
-                let value = self.generate_const_template(tmpl);
-
-                quote! {
-                    handle.offset_space = fugue_lifter::runtime::input::INVALID_HANDLE;
-                    handle.offset_offset = fugue_lifter::runtime::wrap_offset(
-                        SPACE_UPPER_BOUND[handle.space as usize],
-                        #value
-                    );
-                }
-            }
-        }
-    }
-
-    pub fn generate_const_template_space(&self, tmpl: &ConstTpl) -> TokenStream {
-        match tmpl {
-            ConstTpl::CurrentSpace => {
-                let space = self.translator.manager().default_space_ref().index() as u8;
-                quote! { #space }
-            }
-            ConstTpl::Handle(index, HandleKind::Space) => {
-                let index = *index;
-                quote! {
-                    {
-                        let h = input.inputs.input.operand_handle(#index);
-                        if h.offset_space == fugue_lifter::runtime::input::INVALID_HANDLE {
-                            h.space
-                        } else {
-                            h.temporary_space
-                        }
-                    }
-                }
-            }
-            ConstTpl::SpaceId(id) => {
-                let space = self.translator.manager().space_by_id(*id).index() as u8;
-                quote! { #space }
-            }
-            _ => unreachable!(),
-        }
-    }
-
-    pub fn generate_handle_template(&self, tmpl: &HandleTpl) -> TokenStream {
+    fn generate_handle_template(&self, tmpl: &HandleTpl) -> TokenStream {
         TplAdaptor::new(&self.translator, tmpl).to_token_stream()
     }
 
-    /*
-    pub fn generate_handle_template(&self, tmpl: &HandleTpl) -> TokenStream {
-        if tmpl.ptr_space().is_real() {
-            let space = self.generate_const_template_space(tmpl.space());
-            let size = self.generate_const_template(tmpl.size());
-            let offset_upd = self.generate_const_template_offset(tmpl.ptr_offset());
-
-            return quote! {
-                {
-                    let mut handle = fugue_lifter::runtime::FixedHandle {
-                        space: #space,
-                        size: #size as u16,
-                        ..Default::default()
-                    };
-
-                    #offset_upd
-
-                    handle
-                }
-            };
-        }
-
-        let space = self.generate_const_template_space(tmpl.space());
-        let size = self.generate_const_template(tmpl.size());
-
-        let offset_offset = self.generate_const_template(tmpl.ptr_offset());
-        let offset_space = self.generate_const_template_space(tmpl.ptr_space());
-        let offset_size = self.generate_const_template(tmpl.ptr_size());
-
-        let temporary_offset = self.generate_const_template(tmpl.tmp_offset());
-        let temporary_space = self.generate_const_template_space(tmpl.tmp_space());
-
-        quote! {
-            {
-                let mut handle = fugue_lifter::runtime::FixedHandle {
-                    space: #space,
-                    size: #size as u16,
-                    offset_offset: #offset_offset,
-                    ..Default::default()
-                };
-
-                let offset_space = #offset_space;
-
-                if offset_space == 0 { // constant
-                    let hoffset = SPACE_UPPER_BOUND[handle.space as usize];
-                    let word_size = SPACE_WORD_SIZE[handle.space as usize] as u64;
-
-                    handle.offset_offset =
-                        fugue_lifter::runtime::wrap_offset(hoffset, handle.offset_offset * word_size);
-                } else {
-                    handle.offset_space = offset_space;
-                    handle.offset_size = #offset_size as u16;
-
-                    handle.temporary_offset = #temporary_offset;
-                    handle.temporary_space = #temporary_space as u8;
-                }
-
-                handle
-            }
-        }
-    }
-    */
-
-    /*
-    pub fn generate_constructor_template_resolvers(
-        &self,
-        id: usize,
-        scope: usize,
-        cid: usize,
-        ctor: &Constructor,
-    ) -> (TokenStream, TokenStream) {
-        let mut helpers = TokenStream::new();
-
-        let Some(templ) = ctor.template() else {
-            return (helpers, quote! { None });
-        };
-
-        let result_resolver = if let Some(result) = templ.result() {
-            let resolver = format_ident!("tmpl_result_resolver_{id}_{scope}_{cid}");
-            let resolver_body = self.generate_handle_template(result);
-
-            helpers.append_all(quote! {
-                fn #resolver(input: &mut fugue_lifter::runtime::LiftingContextState) -> fugue_lifter::runtime::FixedHandle {
-                    #resolver_body
-                }
-            });
-
-            quote! { Some(#resolver) }
-        } else {
-            quote! { None }
-        };
-
-        if templ.operations().is_empty() {
-            return (helpers, result_resolver);
-        }
-
-        (helpers, result_resolver)
-    }
-    */
-
-    pub fn generate_constructor_template_resolvers(&self, ctor: &Constructor) -> TokenStream {
+    fn generate_constructor_template_resolvers(&self, ctor: &Constructor) -> TokenStream {
         if let Some(templ) = ctor.template().and_then(ConstructTpl::result) {
             let action = self.generate_handle_template(templ);
             quote! {
@@ -1196,307 +236,11 @@ impl<'a> LifterGenerator<'a> {
         }
     }
 
-    pub fn generate_build_action_location(&self, tmpl: &VarnodeTpl) -> TokenStream {
-        let space = self.generate_const_template_space(tmpl.space());
-        let offset = self.generate_const_template(tmpl.offset());
-        let size = self.generate_const_template(tmpl.size());
-
-        quote! {
-            {
-                let space = #space;
-                let size = #size as u16;
-
-                let mut offset = #offset;
-
-                offset = fixup_location_offset(input.unique_offset, space, offset, size);
-
-                fugue_lifter::runtime::pcode::Varnode {
-                    space,
-                    offset,
-                    size,
-                }
-            }
-        }
-    }
-
-    pub fn generate_build_action_pointer(&self, tmpl: &VarnodeTpl) -> TokenStream {
-        let index = tmpl.offset().handle_index().unwrap();
-        quote! {
-            {
-                let handle = input.inputs.input.operand_handle(#index);
-
-                let space = handle.offset_space;
-                let size = handle.offset_size;
-                let mut offset = handle.offset_offset;
-
-                offset = fixup_location_offset(input.unique_offset, space, offset, size);
-
-                (
-                    handle.space,
-                    fugue_lifter::runtime::pcode::Varnode {
-                        space,
-                        offset,
-                        size,
-                    }
-                )
-            }
-        }
-    }
-
-    pub fn generate_constructor_op_append_build_action(&self, tmpl: &OpTpl) -> TokenStream {
-        let index = tmpl.input(0).offset().real() as usize;
-        quote! {
-            append_build(input, #index);
-        }
-    }
-
-    pub fn generate_constructor_op_inlined_input(&self, input: &VarnodeTpl) -> TokenStream {
-        let offset = self.generate_const_template(input.offset());
-        quote! {
-            { #offset }
-        }
-    }
-
-    pub fn generate_constructor_op_input(&self, input: &VarnodeTpl) -> TokenStream {
-        // is_dynamic check
-        if let ConstTpl::Handle(index, _) = input.offset() {
-            let index = *index;
-            let location = self.generate_build_action_location(input);
-            let pointer = self.generate_build_action_pointer(input);
-
-            quote! {
-                {
-                    let varnode = #location;
-                    if is_dynamic(input, #index) {
-                        let (space, pointer) = #pointer;
-                        // NOTE: is this really worth it? We build it into the Load...
-                        /*
-                        let index = fugue_lifter::runtime::pcode::Varnode {
-                            space: 0,
-                            offset: space as u64,
-                            size: 0,
-                        };
-                        */
-                        input.issue_with(
-                            fugue_lifter::runtime::pcode::Op::Load(space),
-                            fugue_lifter::runtime::pcode::Inputs::one(pointer),
-                            varnode,
-                        );
-                        input.push_input(varnode);
-                    } else {
-                        input.push_input(varnode);
-                    }
-                }
-            }
-        } else {
-            let location = self.generate_build_action_location(input);
-            quote! {
-                {
-                    let input_location = #location;
-                    input.push_input(input_location);
-                }
-            }
-        }
-    }
-
-    pub fn generate_constructor_op_dump_action(&self, tmpl: &OpTpl) -> TokenStream {
-        let (index, opcode) = match tmpl.opcode() {
-            Opcode::Load => {
-                let spc = self.generate_constructor_op_inlined_input(tmpl.input(0));
-                (
-                    1,
-                    quote! {
-                        fugue_lifter::runtime::pcode::Op::Load(#spc as u8)
-                    },
-                )
-            }
-            Opcode::Store => {
-                let spc = self.generate_constructor_op_inlined_input(tmpl.input(0));
-                (
-                    1,
-                    quote! {
-                        fugue_lifter::runtime::pcode::Op::Store(#spc as u8)
-                    },
-                )
-            }
-            Opcode::CallOther => {
-                let uop = self.generate_constructor_op_inlined_input(tmpl.input(0));
-                (
-                    1,
-                    quote! {
-                        fugue_lifter::runtime::pcode::Op::UserOp(#uop as u16)
-                    },
-                )
-            }
-            opcode => {
-                let op = Op::try_from(opcode).unwrap();
-                let tokens = quote! {
-                    #op
-                };
-                (0, tokens)
-            }
-        };
-
-        let inputs = tmpl.input_count();
-        let input_operations = (index..inputs).map(|i| {
-            let input = tmpl.input(i);
-            self.generate_constructor_op_input(input)
-        });
-
-        let relative_label = (inputs > 0).then(|| {
-            quote! {
-                input.context.inputs.0[0].offset += input.context.label_base as u64;
-                input.context.label_refs.push(fugue_lifter::runtime::pcode::RelativeRecord {
-                    operation: input.issued.len() as u8,
-                    index: 0,
-                });
-            }
-        });
-
-        let output = if let Some(output) = tmpl.output() {
-            let outp = self.generate_build_action_location(output);
-            let store = if let ConstTpl::Handle(index, _) = output.offset() {
-                let index = *index;
-                let pointer = self.generate_build_action_pointer(output);
-
-                quote! {
-                    if is_dynamic(input, #index) {
-                        let (space, pointer) = #pointer;
-                        input.issue_with(
-                            fugue_lifter::runtime::pcode::Op::Store(space),
-                            fugue_lifter::runtime::pcode::Inputs::two(pointer, output),
-                            fugue_lifter::runtime::pcode::Varnode::INVALID,
-                        );
-                    }
-                }
-            } else {
-                TokenStream::new()
-            };
-
-            quote! {
-                {
-                    let output = #outp;
-                    input.issue(
-                        op,
-                        output,
-                    );
-                    #store
-                }
-            }
-        } else {
-            quote! {
-                input.issue(
-                    op,
-                    fugue_lifter::runtime::pcode::Varnode::INVALID
-                );
-            }
-        };
-
-        quote! {
-            {
-                let op = #opcode;
-
-                #(#input_operations)*
-
-                #relative_label
-
-                #output
-            }
-        }
-    }
-
-    pub fn generate_constructor_op_delay_slot_action(&self) -> TokenStream {
-        quote! {
-            input.emit_delay_slots();
-        }
-    }
-
-    pub fn generate_constructor_op_build_action(&self, tmpl: &OpTpl) -> TokenStream {
-        match tmpl.opcode() {
-            Opcode::Build => self.generate_constructor_op_append_build_action(tmpl),
-            Opcode::DelaySlot => self.generate_constructor_op_delay_slot_action(),
-            Opcode::Label => {
-                // NOTE: the original logic here checks if the index exceeds the current
-                // size of the allocated labels, and if so, then creates a range of invalid
-                // labels. Since we have a fixed allocation, we get this by default, so we
-                // can just set the label value.
-                //
-                let offset = tmpl.input(0).offset().real() as usize;
-                quote! {
-                    unsafe {
-                        *input
-                            .context
-                            .labels
-                            .get_unchecked_mut(#offset + input.context.label_base as usize) = input.issued.len() as i16;
-                    }
-                }
-            }
-            Opcode::CrossBuild => {
-                unimplemented!("cross-build is not supported")
-            }
-            _ => self.generate_constructor_op_dump_action(tmpl),
-        }
-    }
-
-    /*
-    pub fn generate_constructor_build_action(
-        &self,
-        id: usize,
-        scope: usize,
-        cid: usize,
-        tmpl: &ConstructTpl,
-    ) -> (Ident, TokenStream) {
-        let action_name = format_ident!("tmpl_build_action_{id}_{scope}_{cid}");
-        let label_count = tmpl.labels() as u8;
-
-        let operations = tmpl
-            .operations()
-            .iter()
-            .map(|op| self.generate_constructor_op_build_action(op));
-
-        let action_fcn = quote! {
-            fn #action_name<'a>(input: &mut fugue_lifter::runtime::LiftingContextState<'a>) -> Option<()> {
-                let old_base = input.context.label_base;
-
-                input.context.label_base = input.context.label_count;
-                input.context.label_count += #label_count;
-
-                #(#operations)*
-
-                input.context.label_base = old_base;
-
-                Some(())
-            }
-        };
-
-        (action_name, action_fcn)
-    }
-    */
-
-    pub fn generate_constructor_build_action(&self, tmpl: &ConstructTpl) -> TokenStream {
+    fn generate_constructor_build_action(&self, tmpl: &ConstructTpl) -> TokenStream {
         TplAdaptor::new(&self.translator, tmpl).to_token_stream()
     }
 
-    /*
-    pub fn generate_constructor_lifting_actions(
-        &self,
-        id: usize,
-        scope: usize,
-        cid: usize,
-        ctor: &Constructor,
-    ) -> (Option<TokenStream>, TokenStream) {
-        let (action_name, action_fcn) = if let Some(tmpl) = ctor.template() {
-            let (nm, fcn) = self.generate_constructor_build_action(id, scope, cid, tmpl);
-            (quote! { Some(#nm) }, Some(fcn))
-        } else {
-            (quote! { None }, None)
-        };
-
-        (action_fcn, action_name)
-    }
-    */
-
-    pub fn generate_constructor_lifting_actions(&self, ctor: &Constructor) -> TokenStream {
+    fn generate_constructor_lifting_actions(&self, ctor: &Constructor) -> TokenStream {
         if let Some(tmpl) = ctor.template() {
             let template = self.generate_constructor_build_action(tmpl);
             quote! { Some(#template) }
@@ -1505,7 +249,7 @@ impl<'a> LifterGenerator<'a> {
         }
     }
 
-    pub fn generate_constructors<'b>(
+    fn generate_constructors<'b>(
         &'b self,
         id: usize,
         scope: usize,
@@ -1561,7 +305,7 @@ impl<'a> LifterGenerator<'a> {
         format_ident!("__SYM{id}_IN{scope}_CTOR{cid}")
     }
 
-    pub fn generate_dtree_pmatch_ctxt(&self, cpat: &ContextPattern) -> TokenStream {
+    fn generate_dtree_pmatch_ctxt(&self, cpat: &ContextPattern) -> TokenStream {
         let pat = cpat.mask_value();
 
         if pat.always_true() {
@@ -1591,7 +335,7 @@ impl<'a> LifterGenerator<'a> {
         }
     }
 
-    pub fn generate_dtree_pmatch_insn(&self, ipat: &InstructionPattern) -> TokenStream {
+    fn generate_dtree_pmatch_insn(&self, ipat: &InstructionPattern) -> TokenStream {
         let pat = ipat.mask_value();
 
         if pat.always_true() {
@@ -1621,19 +365,7 @@ impl<'a> LifterGenerator<'a> {
         }
     }
 
-    pub fn generate_inner_dtree_aux(&self, id: usize, scope: usize, cid: usize) -> TokenStream {
-        let ctor_name = Self::ctor_vname(id, scope, cid);
-        quote! {
-            #ctor_name.resolve_operands::<Instruction>(input)?;
-        }
-    }
-
-    pub fn generate_dtree_pmatch(
-        &self,
-        id: usize,
-        scope: usize,
-        pat: &DecisionPair,
-    ) -> TokenStream {
+    fn generate_dtree_pmatch(&self, id: usize, scope: usize, pat: &DecisionPair) -> TokenStream {
         match pat.pattern() {
             DisjointPattern::Instruction(ipat) => {
                 let cid = pat.id();
@@ -1676,7 +408,7 @@ impl<'a> LifterGenerator<'a> {
         }
     }
 
-    pub fn generate_dtree_aux(
+    fn generate_dtree_aux(
         &self,
         id: usize,
         scope: usize,
@@ -1749,7 +481,7 @@ impl<'a> LifterGenerator<'a> {
         }
     }
 
-    pub fn generate_dtree(
+    fn generate_dtree(
         &self,
         id: usize,
         scope: usize,
@@ -1769,7 +501,7 @@ impl<'a> LifterGenerator<'a> {
         }
     }
 
-    pub fn generate_subtable(
+    fn generate_subtable(
         &self,
         id: usize,
         scope: usize,
@@ -1802,9 +534,6 @@ impl<'a> LifterGenerator<'a> {
 
 impl<'a> ToTokens for LifterGenerator<'a> {
     fn to_tokens(&self, tokens: &mut TokenStream) {
-        // TODO: we should make a mapping for registers to compute
-        // overlaps, etc.
-
         let alignment = self.translator.alignment();
         let unique_mask = self.translator.unique_mask();
 
@@ -1954,8 +683,6 @@ impl<'a> ToTokens for LifterGenerator<'a> {
 
             let nm = nm.as_str();
 
-            // TODO: look at the code generated by this (switch to phf or similar?)
-            //
             // for name to varnode mapping
             let name_to_varnode = quote! {
                 #nm => #upper_snake_name
@@ -2276,7 +1003,6 @@ impl<'a> ToTokens for LifterGenerator<'a> {
 
                         // NOTE: this does not ensure we have the context configured for lifting;
                         // we therefore need to directly initialise the first input.
-                        //
                         let mut dstate = state.nth_delay_slot(index)?;
 
                         dstate.inputs.initialise(address, bytes);

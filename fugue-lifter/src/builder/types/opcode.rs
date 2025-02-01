@@ -147,7 +147,7 @@ impl ToTokens for Op {
             Self::ICall => quote! { fugue_lifter::runtime::pcode::Op::ICall },
             Self::Return => quote! { fugue_lifter::runtime::pcode::Op::Return },
             Self::Subpiece => quote! { fugue_lifter::runtime::pcode::Op::Subpiece },
-            Self::Arg(v) => quote! { fugue_lifter::runtime::pcode::Op::Arg(#v) },
+            Self::Arg => quote! { fugue_lifter::runtime::pcode::Op::Arg },
             Self::UserOp(v, n) => quote! { fugue_lifter::runtime::pcode::Op::UserOp(#v, #n) },
         };
         value.to_tokens(tokens);
