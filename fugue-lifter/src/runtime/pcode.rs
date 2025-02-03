@@ -1,12 +1,14 @@
-use std::fmt;
+use std::fmt::{self, Debug, Display};
 use std::mem;
 
 use arrayvec::ArrayVec;
+use itertools::{Itertools, Position};
 
 use crate::runtime::calculate_mask;
 use crate::runtime::constructor::{Constructor, ConstructorResolver};
 use crate::runtime::context::ContextDatabase;
 use crate::runtime::input::{FixedHandle, ParserInput, ParserInputs, INVALID_HANDLE};
+use crate::runtime::lifter::{Language, LanguageFormatter};
 
 pub const MAX_LABELS: usize = 192;
 pub const MAX_INPUTS_SPILL: usize = 8;
@@ -515,6 +517,24 @@ impl Default for Varnode {
     }
 }
 
+impl<'a> Display for LanguageFormatter<'a, Varnode> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.value.space() == self.language.register_space() {
+            let reg = self
+                .language
+                .register_name(self.value)
+                .expect("valid register");
+            return f.write_str(reg);
+        }
+
+        if self.value.space() == self.language.unique_space() {
+            return write!(f, "$U{:04x}:{}", self.value.offset(), self.value.size());
+        }
+
+        write!(f, "{:#x}:{}", self.value.offset(), self.value.size())
+    }
+}
+
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(transparent)]
 pub struct Inputs(pub [Varnode; 2]);
@@ -704,6 +724,65 @@ impl PCodeOp {
 
     pub fn output(&self) -> Option<&Varnode> {
         self.output.valid()
+    }
+
+    pub fn display(&self, language: &'static Language) -> LanguageFormatter<Self> {
+        LanguageFormatter::new(language, self)
+    }
+}
+
+impl<'a> Display for LanguageFormatter<'a, PCodeOp> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if let Some(output) = self.value.output() {
+            write!(f, "{} = ", self.wrap(output))?;
+        }
+
+        if let Some(user_op) = self.value.user_op() {
+            let op = self.language.user_op_by_id(user_op).expect("valid user-op");
+            f.write_str(op)?;
+        } else {
+            self.value.op().fmt(f)?;
+        }
+
+        let Some((first, rest)) = self.value.inputs().split_first() else {
+            return Ok(());
+        };
+
+        write!(f, " {}", self.wrap(first))?;
+
+        for input in rest {
+            write!(f, ", {}", self.wrap(input))?;
+        }
+
+        Ok(())
+    }
+}
+
+impl<'a> Display for LanguageFormatter<'a, Vec<PCodeOp>> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut it = self.value.iter().with_position();
+
+        while let Some((mut pos, op)) = it.next() {
+            self.wrap(op).fmt(f)?;
+
+            for _ in 0..op.spill() {
+                let (npos, args) = it.next().expect("spilled arguments");
+
+                assert!(args.is_arg());
+
+                for arg in args.inputs() {
+                    write!(f, ", {}", self.wrap(arg))?;
+                }
+
+                pos = npos;
+            }
+
+            if matches!(pos, Position::First | Position::Middle) {
+                writeln!(f)?;
+            }
+        }
+
+        Ok(())
     }
 }
 

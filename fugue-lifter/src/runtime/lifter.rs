@@ -71,6 +71,21 @@ pub struct Language {
     lift: fn(u64, &[u8], &mut LiftingContext, &mut Vec<PCodeOp>) -> Option<usize>,
 }
 
+pub struct LanguageFormatter<'a, T> {
+    pub(crate) language: &'static Language,
+    pub(crate) value: &'a T,
+}
+
+impl<'a, T> LanguageFormatter<'a, T> {
+    pub fn new(language: &'static Language, value: &'a T) -> Self {
+        Self { language, value }
+    }
+
+    pub fn wrap<'b, U>(&self, value: &'b U) -> LanguageFormatter<'b, U> {
+        LanguageFormatter { language: self.language, value }
+    }
+}
+
 impl Language {
     pub const fn new<L: LanguageImpl>() -> Self {
         Self {
@@ -195,6 +210,10 @@ impl Language {
 
     pub fn builder(&self) -> PCodeBuilderContext {
         PCodeBuilderContext::new(self.unique_mask)
+    }
+
+    pub fn display<'a, T>(&'static self, value: &'a T) -> LanguageFormatter<'a, T> {
+        LanguageFormatter::new(self, value)
     }
 
     pub fn resolve(

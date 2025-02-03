@@ -79,6 +79,7 @@ pub enum Op {
     LZCount,
 }
 
+#[derive(Debug)]
 pub struct ConstructTpl {
     pub delay_slot: usize,
     pub labels: u8,
@@ -111,6 +112,7 @@ impl ConstructTpl {
     }
 }
 
+#[derive(Debug)]
 pub enum HandleKind {
     Space,
     Offset,
@@ -118,6 +120,7 @@ pub enum HandleKind {
     OffsetPlus(u64),
 }
 
+#[derive(Debug)]
 pub enum ConstTpl {
     Real(u64),
     Handle(usize, HandleKind),
@@ -157,8 +160,9 @@ impl ConstTpl {
         Some(())
     }
 
+    // fix space
     #[inline]
-    pub unsafe fn space<R: ConstructorResolver>(&self, input: &mut LiftingContextState<'_>) -> u8 {
+    pub unsafe fn space_via<R: ConstructorResolver>(&self, input: &mut LiftingContextState<'_>) -> u8 {
         match self {
             Self::CurrentSpace => R::DEFAULT_SPACE,
             Self::Handle(index, HandleKind::Space) => {
@@ -168,6 +172,20 @@ impl ConstTpl {
                 } else {
                     handle.temporary_space
                 }
+            }
+            Self::SpaceId(id) => *id,
+            _ => unreachable!("state should be unreachable via generated code"),
+        }
+    }
+
+    // fix space
+    #[inline]
+    pub unsafe fn space<R: ConstructorResolver>(&self, input: &mut LiftingContextState<'_>) -> u8 {
+        match self {
+            Self::CurrentSpace => R::DEFAULT_SPACE,
+            Self::Handle(index, HandleKind::Space) => {
+                let handle = input.input().operand_handle(*index);
+                handle.space
             }
             Self::SpaceId(id) => *id,
             _ => unreachable!("state should be unreachable via generated code"),
@@ -260,6 +278,7 @@ impl ConstTpl {
     }
 }
 
+#[derive(Debug)]
 pub struct OpTpl {
     pub op: Op,
     pub inputs: &'static [VarnodeTpl],
@@ -429,6 +448,7 @@ impl OpTpl {
     }
 }
 
+#[derive(Debug)]
 pub struct HandleTpl {
     pub space: ConstTpl,
     pub size: ConstTpl,
@@ -458,31 +478,31 @@ impl HandleTpl {
 
             handle
         } else {
-            let space = self.space.space::<R>(input);
+            let space = self.space.space_via::<R>(input);
             let size = self.size.value::<R>(input)? as u16;
 
             let offset_offset = self.ptr_offset.value::<R>(input)?;
+            let offset_space = self.ptr_space.space_via::<R>(input);
 
             let mut handle = FixedHandle {
                 space,
                 size,
                 offset_offset,
+                offset_space,
                 ..Default::default()
             };
-
-            let offset_space = self.ptr_space.space::<R>(input);
 
             if offset_space == 0 {
                 let hoffset = R::resolve_upper_bound(space);
                 let word_size = R::resolve_word_size(space) as u64;
 
+                handle.offset_space = INVALID_HANDLE;
                 handle.offset_offset = wrap_offset(hoffset, handle.offset_offset * word_size);
             } else {
-                handle.offset_space = offset_space;
                 handle.offset_size = self.ptr_size.value::<R>(input)? as u16;
 
                 handle.temporary_offset = self.tmp_offset.value::<R>(input)?;
-                handle.temporary_space = self.tmp_space.space::<R>(input);
+                handle.temporary_space = self.tmp_space.space_via::<R>(input);
             }
 
             handle
@@ -491,6 +511,7 @@ impl HandleTpl {
     }
 }
 
+#[derive(Debug)]
 pub struct VarnodeTpl {
     pub space: ConstTpl,
     pub offset: ConstTpl,
@@ -512,8 +533,8 @@ impl VarnodeTpl {
         &self,
         input: &mut LiftingContextState<'_>,
     ) -> Option<pcode::Varnode> {
-        let space = self.space.space::<R>(input);
-        let size = self.space.value::<R>(input)? as u16;
+        let space = self.space.space_via::<R>(input);
+        let size = self.size.value::<R>(input)? as u16;
         let offset = R::resolve_location_offset(
             input.unique_offset,
             space,

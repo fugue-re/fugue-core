@@ -13,7 +13,7 @@ const MAX_PARSER_DEPTH: usize = 128; // 64;
 pub const INVALID_HANDLE: u8 = 0xff;
 pub const BREADCRUMBS: usize = MAX_PARSER_DEPTH + 1;
 
-#[derive(Copy, Clone)]
+#[derive(Debug, Copy, Clone)]
 pub struct FixedHandle {
     pub space: u8,
     pub size: u16,
