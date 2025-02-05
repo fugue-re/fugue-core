@@ -531,7 +531,23 @@ impl<'a> Display for LanguageFormatter<'a, Varnode> {
             return write!(f, "$U{:04x}:{}", self.value.offset(), self.value.size());
         }
 
-        write!(f, "{:#x}:{}", self.value.offset(), self.value.size())
+        if self.value.space() == self.language.constant_space() {
+            let value = self.value.offset() as i64;
+            let size = self.value.size();
+
+            return if value >= -64 && value <= 64 {
+                write!(f, "{value}:{size}")
+            } else {
+                write!(f, "{value:#x}:{size}")
+            };
+        }
+
+        let space = self
+            .language
+            .space_name(self.value.space())
+            .expect("valid space");
+
+        write!(f, "*[{space}]{:#x}:{}", self.value.offset(), self.value.size())
     }
 }
 
@@ -672,6 +688,76 @@ pub enum Op {
     UserOp(u16, u8),
 }
 
+impl Display for Op {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let op = match self {
+            Op::Copy => "COPY",
+            Op::Load(_) => "LOAD",
+            Op::Store(_) => "STORE",
+            Op::IntAdd => "INT_ADD",
+            Op::IntSub => "INT_SUB",
+            Op::IntXor => "INT_XOR",
+            Op::IntOr => "INT_OR",
+            Op::IntAnd => "INT_AND",
+            Op::IntMul => "INT_MULT",
+            Op::IntDiv => "INT_DIV",
+            Op::IntSignedDiv => "INT_SDIV",
+            Op::IntRem => "INT_REM",
+            Op::IntSignedRem => "INT_SREM",
+            Op::IntLeftShift => "INT_LEFT",
+            Op::IntRightShift => "INT_RIGHT",
+            Op::IntSignedRightShift => "INT_SRIGHT",
+            Op::IntEq => "INT_EQUAL",
+            Op::IntNotEq => "INT_NOTEQUAL",
+            Op::IntLess => "INT_LESS",
+            Op::IntSignedLess => "INT_SLESS",
+            Op::IntLessEq => "INT_LESSEQUAL",
+            Op::IntSignedLessEq => "INT_SLESSEQUAL",
+            Op::IntCarry => "INT_CARRY",
+            Op::IntSignedCarry => "INT_SCARRY",
+            Op::IntSignedBorrow => "INT_SBORROW",
+            Op::IntNot => "INT_2COMP",
+            Op::IntNeg => "INT_NEGATE",
+            Op::CountOnes => "POPCOUNT",
+            Op::CountLeadingZeros => "LZCOUNT",
+            Op::ZeroExt => "INT_ZEXT",
+            Op::SignExt => "INT_SEXT",
+            Op::IntToFloat => "INT2FLOAT",
+            Op::BoolAnd => "BOOL_AND",
+            Op::BoolOr => "BOOL_OR",
+            Op::BoolXor => "BOOL_XOR",
+            Op::BoolNot => "BOOL_NEGATE",
+            Op::FloatAdd => "FLOAT_ADD",
+            Op::FloatSub => "FLOAT_SUB",
+            Op::FloatMul => "FLOAT_MULT",
+            Op::FloatDiv => "FLOAT_DIV",
+            Op::FloatNeg => "FLOAT_NEG",
+            Op::FloatAbs => "FLOAT_ABS",
+            Op::FloatSqrt => "FLOAT_SQRT",
+            Op::FloatCeiling => "FLOAT_CEIL",
+            Op::FloatFloor => "FLOAT_FLOOR",
+            Op::FloatRound => "FLOAT_ROUND",
+            Op::FloatIsNaN => "FLOAT_NAN",
+            Op::FloatEq => "FLOAT_EQUAL",
+            Op::FloatNotEq => "FLOAT_NOTEQUAL",
+            Op::FloatLess => "FLOAT_LESS",
+            Op::FloatLessEq => "FLOAT_LESSEQUAL",
+            Op::FloatToInt => "TRUNC",
+            Op::FloatToFloat => "FLOAT2FLOAT",
+            Op::Branch => "BRANCH",
+            Op::CBranch => "CBRANCH",
+            Op::IBranch => "BRANCHIND",
+            Op::Call => "CALL",
+            Op::ICall => "CALLIND",
+            Op::Return => "RETURN",
+            Op::Subpiece => "SUBPIECE",
+            Op::Arg => "ARG",
+            Op::UserOp(_, _) => "CALLOTHER",
+        };
+        f.write_str(op)
+    }
+}
+
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct PCodeOp {
     pub op: Op,
@@ -737,18 +823,36 @@ impl<'a> Display for LanguageFormatter<'a, PCodeOp> {
             write!(f, "{} = ", self.wrap(output))?;
         }
 
-        if let Some(user_op) = self.value.user_op() {
-            let op = self.language.user_op_by_id(user_op).expect("valid user-op");
-            f.write_str(op)?;
-        } else {
-            self.value.op().fmt(f)?;
+        let mut space_rel = false;
+
+        match self.value.op() {
+            Op::UserOp(user_op, _) => {
+                let op = self.language.user_op_by_id(user_op).expect("valid user-op");
+                f.write_str(op)?;
+            }
+            Op::Load(spc) | Op::Store(spc) => {
+                space_rel = true;
+                write!(
+                    f,
+                    "{} {}",
+                    self.value.op(),
+                    self.language.space_name(spc).expect("valid pace")
+                )?;
+            }
+            _ => {
+                Display::fmt(&self.value.op(), f)?;
+            }
         }
 
         let Some((first, rest)) = self.value.inputs().split_first() else {
             return Ok(());
         };
 
-        write!(f, " {}", self.wrap(first))?;
+        if space_rel {
+            write!(f, "({})", self.wrap(first))?;
+        } else {
+            write!(f, " {}", self.wrap(first))?;
+        }
 
         for input in rest {
             write!(f, ", {}", self.wrap(input))?;
