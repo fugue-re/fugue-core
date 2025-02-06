@@ -476,7 +476,6 @@ impl<'b, 'z> ParserContext<'b, 'z> {
 
             if commit.flow {
                 db.set_context_change_point(
-                    curr_address,
                     address,
                     commit.number,
                     commit.mask,
@@ -486,7 +485,6 @@ impl<'b, 'z> ParserContext<'b, 'z> {
                 let naddress = address.clone() + 1usize;
                 if naddress.offset() < address.offset() {
                     db.set_context_change_point(
-                        curr_address,
                         address,
                         commit.number,
                         commit.mask,
