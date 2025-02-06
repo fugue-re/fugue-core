@@ -16,9 +16,8 @@ pub use pattern::PatternExpression;
 
 pub mod lift;
 pub use lift::{
-    Arena, ArenaRef, ArenaVec, ArenaString, arena_vec, arena_format,
-    PCodeData, PCodeRaw, PCodeRawFormatter,
-    IRBuilder, IRBuilderBase, IRBuilderArena
+    arena_format, arena_vec, Arena, ArenaRef, ArenaString, ArenaVec, IRBuilder, IRBuilderArena,
+    IRBuilderBase, PCodeBlock, PCodeData, PCodeRaw, PCodeRawFormatter,
 };
 
 pub mod symbol;

@@ -31,6 +31,7 @@ use crate::il::ecode::{self, ECode};
 use crate::il::pcode::{self, PCode};
 
 pub type FloatFormats = Map<usize, Arc<FloatFormat>>;
+pub type PCodeBlock<'z> = ArenaVec<'z, PCodeData<'z>>;
 pub type UserOpStr = Ustr;
 
 const INVALID_LABEL: u64 = 0xdeaded;
@@ -38,7 +39,7 @@ const INVALID_LABEL: u64 = 0xdeaded;
 #[derive(Debug)]
 pub struct PCodeRaw<'z> {
     pub address: AddressValue,
-    pub operations: ArenaVec<'z, PCodeData<'z>>,
+    pub operations: PCodeBlock<'z>,
     pub delay_slots: u8,
     pub length: u8,
 }
