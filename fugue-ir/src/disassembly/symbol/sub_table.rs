@@ -453,7 +453,11 @@ impl Constructor {
                 None
             };
 
-        let (source_file_index, line_number) = input.attribute_line_number("line")?;
+        // for v4 and v3
+        let (source_file_index, line_number) = input
+            .attribute_int("source")
+            .and_then(|index| input.attribute_int("line").map(|line| (index, line)))
+            .or_else(|_| input.attribute_line_number("line"))?;
 
         Ok(Self {
             id,
@@ -541,7 +545,7 @@ impl DecisionNode {
         Ok(Self {
             number: input.attribute_int("number")?,
             context_decision: input.attribute_bool("context")?,
-            start_bit: input.attribute_int("start")?,
+            start_bit: input.attribute_int_or("start", "startbit")?,
             size: input.attribute_int("size")?,
             patterns,
             children,
@@ -925,7 +929,7 @@ impl PatternBlock {
         }
 
         let mut slf = Self {
-            offset: input.attribute_int("offset")?,
+            offset: input.attribute_int_or("offset", "off")?,
             non_zero_size: Some(input.attribute_int("nonzero")?),
             masks,
             values,

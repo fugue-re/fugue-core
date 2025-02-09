@@ -24,3 +24,4 @@ stack-map = "1.0"
 thiserror = "2"
 ustr = { version = "1.1", features = ["serde"] }
 walkdir = "2"
+zstd = "0.13"

@@ -940,7 +940,7 @@ impl SymbolBuilder {
                     .space_by_name(space_name)
                     .ok_or_else(|| DeserialiseError::Invariant("varnode space not defined"))?;
 
-                let offset = input.attribute_int("offset")?;
+                let offset = input.attribute_int_or("offset", "off")?;
                 let size = input.attribute_int("size")?;
 
                 Symbol::Varnode {

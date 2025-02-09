@@ -535,10 +535,10 @@ impl PatternExpression {
             "tokenfield" => Self::TokenField {
                 big_endian: input.attribute_bool("bigendian")?,
                 sign_bit: input.attribute_bool("signbit")?,
-                bit_start: input.attribute_int("bitstart")?,
-                bit_end: input.attribute_int("bitend")?,
-                byte_start: input.attribute_int("bytestart")?,
-                byte_end: input.attribute_int("byteend")?,
+                bit_start: input.attribute_int_or("bitstart", "startbit")?,
+                bit_end: input.attribute_int_or("bitend", "endbit")?,
+                byte_start: input.attribute_int_or("bytestart", "startbyte")?,
+                byte_end: input.attribute_int_or("byteend", "endbyte")?,
                 shift: input.attribute_int("shift")?,
             },
             "contextfield" => Self::ContextField {

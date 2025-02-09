@@ -216,6 +216,7 @@ impl ConstTpl {
         Ok(
             match input
                 .attribute("type")
+                .or_else(|| input.tag_name().name().strip_prefix("const_"))
                 .ok_or_else(|| DeserialiseError::AttributeExpected("type"))?
             {
                 "real" => Self::Real(input.attribute_int("val")?),
@@ -225,10 +226,10 @@ impl ConstTpl {
                         .attribute("s")
                         .ok_or_else(|| DeserialiseError::AttributeExpected("s"))?
                     {
-                        "space" => HandleKind::Space,
-                        "offset" => HandleKind::Offset,
-                        "size" => HandleKind::Size,
-                        "offset_plus" => HandleKind::OffsetPlus(input.attribute_int("plus")?),
+                        "space" | "0" => HandleKind::Space,
+                        "offset" | "1" => HandleKind::Offset,
+                        "size" | "2" => HandleKind::Size,
+                        "offset_plus" | "3" => HandleKind::OffsetPlus(input.attribute_int("plus")?),
                         _ => return Err(DeserialiseError::Invariant("invalid handle kind")),
                     },
                 ),
@@ -239,7 +240,7 @@ impl ConstTpl {
                 "curspace_size" => Self::CurrentSpaceSize,
                 "spaceid" => Self::SpaceId(
                     manager
-                        .space_by_name(input.attribute_string("name")?)
+                        .space_by_name(input.attribute_string_or("name", "space")?)
                         .unwrap()
                         .id(),
                 ),

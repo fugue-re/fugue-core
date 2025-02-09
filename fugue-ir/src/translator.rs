@@ -1,7 +1,7 @@
 use std::array;
 use std::borrow::Borrow;
-use std::fs::File;
-use std::io::Read;
+use std::fs::{self, File};
+use std::io::{self, Read};
 use std::mem;
 use std::path::Path;
 use std::sync::Arc;
@@ -23,8 +23,8 @@ use crate::disassembly::lift::{FloatFormats, UserOpStr};
 use crate::disassembly::symbol::{FixedHandle, Symbol, SymbolScope, SymbolTable};
 use crate::disassembly::walker::InstructionFormatter;
 use crate::disassembly::{
-    IRBuilder, IRBuilderArena, IRBuilderBase, PCodeRaw, ParserContext, ParserState, ParserWalker,
-    VarnodeData, PatternExpression, ContextDatabase, Error as DisassemblyError,
+    ContextDatabase, Error as DisassemblyError, IRBuilder, IRBuilderArena, IRBuilderBase, PCodeRaw,
+    ParserContext, ParserState, ParserWalker, PatternExpression, VarnodeData,
 };
 use crate::error::Error;
 use crate::float_format::FloatFormat;
@@ -313,6 +313,25 @@ impl Translator {
         &self.source_files
     }
 
+    fn read_compressed<P: AsRef<Path>>(path: P) -> Result<String, io::Error> {
+        let zfile = File::open(path)?;
+        let mut zstr = String::new();
+        zstd::Decoder::new(zfile)?.read_to_string(&mut zstr)?;
+        Ok(zstr)
+    }
+
+    fn maybe_read_compressed<P: AsRef<Path>>(path: P) -> Result<String, io::Error> {
+        let path = path.as_ref();
+        if !path.exists() {
+            let zpath = path.with_extension("sla.zst");
+            Self::read_compressed(zpath)
+        } else if matches!(path.extension(), Some(ext) if ext == "zst") {
+            Self::read_compressed(path)
+        } else {
+            fs::read_to_string(path)
+        }
+    }
+
     pub fn from_file<PC: AsRef<str>, P: AsRef<Path>>(
         program_counter: PC,
         architecture: &ArchitectureDef,
@@ -320,17 +339,10 @@ impl Translator {
         path: P,
     ) -> Result<Self, Error> {
         let path = path.as_ref();
-        let mut file = File::open(path).map_err(|error| Error::ParseFile {
+        let input = Self::maybe_read_compressed(path).map_err(|error| Error::ParseFile {
             path: path.to_owned(),
             error,
         })?;
-
-        let mut input = String::new();
-        file.read_to_string(&mut input)
-            .map_err(|error| Error::ParseFile {
-                path: path.to_owned(),
-                error,
-            })?;
 
         Self::from_str(program_counter, architecture, compiler_specs, &input).map_err(|error| {
             Error::DeserialiseFile {
@@ -858,7 +870,8 @@ impl Translator {
                 let operand = unsafe { symbol_table.unchecked_symbol(ct.operand(op)) };
                 //.ok_or_else(|| DisassemblyError::InvalidSymbol)?;
 
-                let offset = unsafe { walker.offset(operand.offset_base()) } + operand.relative_offset();
+                let offset =
+                    unsafe { walker.offset(operand.offset_base()) } + operand.relative_offset();
 
                 walker.unchecked_allocate_operand(op);
                 walker.set_offset(offset)?;

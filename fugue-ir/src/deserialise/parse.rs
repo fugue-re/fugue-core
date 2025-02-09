@@ -3,39 +3,32 @@ use crate::endian::Endian;
 use super::Error;
 
 pub trait XmlExt {
-    fn attribute_endian(
-        &self,
-        name: &'static str,
-    ) -> Result<Endian, Error>;
+    fn attribute_endian(&self, name: &'static str) -> Result<Endian, Error>;
 
-    fn attribute_processor(
-        &self,
-        name: &'static str,
-    ) -> Result<String, Error> {
+    fn attribute_processor(&self, name: &'static str) -> Result<String, Error> {
         self.attribute_string(name)
     }
 
-    fn attribute_variant(
-        &self,
-        name: &'static str,
-    ) -> Result<String, Error> {
+    fn attribute_variant(&self, name: &'static str) -> Result<String, Error> {
         self.attribute_string(name)
     }
 
-    fn attribute_string(
+    fn attribute_string(&self, name: &'static str) -> Result<String, Error>;
+
+    fn attribute_string_or(
         &self,
-        name: &'static str,
+        name1: &'static str,
+        name2: &'static str,
     ) -> Result<String, Error>;
 
-    fn attribute_string_opt(
-        &self,
-        name: &'static str,
-        default: &str,
-    ) -> String;
+    fn attribute_string_opt(&self, name: &'static str, default: &str) -> String;
 
-    fn attribute_int<T: FromStrRadix>(
+    fn attribute_int<T: FromStrRadix>(&self, name: &'static str) -> Result<T, Error>;
+
+    fn attribute_int_or<T: FromStrRadix>(
         &self,
-        name: &'static str,
+        name1: &'static str,
+        name2: &'static str,
     ) -> Result<T, Error>;
 
     fn attribute_line_number<T: Default + FromStrRadix>(
@@ -49,12 +42,8 @@ pub trait XmlExt {
         default: T,
     ) -> Result<T, Error>;
 
-    fn attribute_bool(
-        &self,
-        name: &'static str,
-    ) -> Result<bool, Error>;
+    fn attribute_bool(&self, name: &'static str) -> Result<bool, Error>;
 }
-
 
 #[inline(always)]
 fn parse_int_radix<T: FromStrRadix>(s: &str) -> Result<T, Error> {
@@ -132,7 +121,8 @@ impl FromStrRadix for usize {
 
 impl XmlExt for xml::Node<'_, '_> {
     fn attribute_endian(&self, name: &'static str) -> Result<Endian, Error> {
-        let n = self.attribute(name)
+        let n = self
+            .attribute(name)
             .ok_or_else(|| Error::AttributeExpected(name))?;
         match n {
             "big" | "BIG" | "be" | "BE" => Ok(Endian::Big),
@@ -141,20 +131,24 @@ impl XmlExt for xml::Node<'_, '_> {
         }
     }
 
-    fn attribute_string(
-        &self,
-        name: &'static str,
-    ) -> Result<String, Error> {
+    fn attribute_string(&self, name: &'static str) -> Result<String, Error> {
         self.attribute(name)
             .map(String::from)
             .ok_or_else(|| Error::AttributeExpected(name))
     }
 
-    fn attribute_string_opt(
+    fn attribute_string_or(
         &self,
-        name: &'static str,
-        default: &str,
-    ) -> String {
+        name1: &'static str,
+        name2: &'static str,
+    ) -> Result<String, Error> {
+        self.attribute(name1)
+            .or_else(|| self.attribute(name2))
+            .map(String::from)
+            .ok_or_else(|| Error::AttributeExpected(name1))
+    }
+
+    fn attribute_string_opt(&self, name: &'static str, default: &str) -> String {
         self.attribute(name)
             .map(String::from)
             .unwrap_or_else(|| default.to_owned())
@@ -164,14 +158,15 @@ impl XmlExt for xml::Node<'_, '_> {
         &self,
         name: &'static str,
     ) -> Result<(T, T), Error> {
-        let s = self.attribute(name)
+        let s = self
+            .attribute(name)
             .ok_or_else(|| Error::AttributeExpected(name))?;
 
         let b = s.as_bytes();
         if let Some(pos) = b.iter().position(|v| *v == b':') {
             // Two part index:line
             let index = parse_int_radix(&s[..pos])?;
-            let line = parse_int_radix(&s[pos+1..])?;
+            let line = parse_int_radix(&s[pos + 1..])?;
             Ok((index, line))
         } else {
             // One part 0:line
@@ -181,12 +176,22 @@ impl XmlExt for xml::Node<'_, '_> {
         }
     }
 
-    fn attribute_int<T: FromStrRadix>(
-        &self,
-        name: &'static str,
-    ) -> Result<T, Error> {
-        let s = self.attribute(name)
+    fn attribute_int<T: FromStrRadix>(&self, name: &'static str) -> Result<T, Error> {
+        let s = self
+            .attribute(name)
             .ok_or_else(|| Error::AttributeExpected(name))?;
+        parse_int_radix(s)
+    }
+
+    fn attribute_int_or<T: FromStrRadix>(
+        &self,
+        name1: &'static str,
+        name2: &'static str,
+    ) -> Result<T, Error> {
+        let s = self
+            .attribute(name1)
+            .or_else(|| self.attribute(name2))
+            .ok_or_else(|| Error::AttributeExpected(name1))?;
         parse_int_radix(s)
     }
 
@@ -202,10 +207,7 @@ impl XmlExt for xml::Node<'_, '_> {
         }
     }
 
-    fn attribute_bool(
-        &self,
-        name: &'static str,
-    ) -> Result<bool, Error> {
+    fn attribute_bool(&self, name: &'static str) -> Result<bool, Error> {
         self.attribute(name)
             .ok_or_else(|| Error::AttributeExpected(name))?
             .parse::<bool>()
