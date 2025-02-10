@@ -74,7 +74,7 @@ impl Context {
             },
             "commit" => Self::Commit {
                 symbol_id: input.attribute_int("id")?,
-                num: input.attribute_int("num")?,
+                num: input.attribute_int_or("num", "number")?,
                 mask: input.attribute_int("mask")?,
                 flow: input.attribute_bool("flow")?,
             },
