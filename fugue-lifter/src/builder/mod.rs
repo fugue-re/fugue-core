@@ -1,6 +1,8 @@
+use std::env;
 use std::path::Path;
 
 use fugue_ir::{LanguageDB, Translator};
+use fugue_sleighc::{SleighCompiler, SleighCompilerError};
 use prettyplease::unparse;
 use proc_macro2::TokenStream;
 use quote::ToTokens;
@@ -23,6 +25,8 @@ pub enum CodegenError {
     Language(String),
     #[error("cannot build language translator for `{0}`: {1}")]
     LanguageBuild(String, anyhow::Error),
+    #[error("cannot compile language: {0}")]
+    LanguageCompile(#[from] SleighCompilerError),
     #[error("cannot load/locate language database: {0}")]
     LanguageDB(anyhow::Error),
 }
@@ -50,9 +54,23 @@ pub fn build_with(
         .flatten()
         .ok_or_else(|| CodegenError::Language(language_def.to_owned()))?;
 
-    let translator = language
-        .build_with(true)
-        .map_err(|e| CodegenError::LanguageBuild(language_def.to_owned(), e.into()))?;
+    let sla_file = language.language().sla_file();
+
+    let translator = if sla_file.exists() {
+        language.build_with(true)
+    } else {
+        let slaf = Path::new(&env::var("OUT_DIR").expect("OUR_DIR set"))
+            .join(sla_file.file_name().expect("sla file name"));
+        let spec = sla_file.with_extension("");
+        let slac = SleighCompiler::new()?
+            .xml_mode(true)
+            .build_with(spec, slaf)?
+            .expect("compiled sla file name");
+        language.build_with_sla(slac, true)
+    };
+
+    let translator =
+        translator.map_err(|e| CodegenError::LanguageBuild(language_def.to_owned(), e.into()))?;
 
     let tokens = from_translator(&translator).map_err(CodegenError::Generate)?;
     let output = tokens.to_string();
