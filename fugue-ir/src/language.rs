@@ -9,14 +9,14 @@ use crate::processor::Specification as PSpec;
 use crate::Translator;
 
 use ahash::AHashMap as Map;
-use fugue_arch::{ArchitectureDef, ArchDefParseError};
+use fugue_arch::{ArchDefParseError, ArchitectureDef};
 use itertools::Itertools;
 use walkdir::WalkDir;
 
+use log;
 use std::fs::File;
 use std::io::Read;
 use std::path::{Path, PathBuf};
-use log;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Language {
@@ -187,12 +187,16 @@ impl<'a> LanguageBuilder<'a> {
     }
 
     #[inline(always)]
-    pub fn build_with(&self, apply_context: bool) -> Result<Translator, Error> {
+    pub fn build_with_sla(
+        &self,
+        sla: impl AsRef<Path>,
+        apply_context: bool,
+    ) -> Result<Translator, Error> {
         let mut translator = Translator::from_file(
             self.language.processor_spec.program_counter(),
             &self.language.architecture,
             &self.language.compiler_specs,
-            &self.language.sla_file,
+            sla,
         )?;
 
         if apply_context {
@@ -200,6 +204,11 @@ impl<'a> LanguageBuilder<'a> {
         }
 
         Ok(translator)
+    }
+
+    #[inline(always)]
+    pub fn build_with(&self, apply_context: bool) -> Result<Translator, Error> {
+        self.build_with_sla(&self.language.sla_file, apply_context)
     }
 
     pub fn build(&self) -> Result<Translator, Error> {
@@ -230,7 +239,8 @@ impl LanguageDB {
         definition: S,
     ) -> Result<Option<LanguageBuilder<'a>>, ArchDefParseError> {
         let def = definition.as_ref().parse::<ArchitectureDef>()?;
-        Ok(self.db
+        Ok(self
+            .db
             .get(&def)
             .map(|language| LanguageBuilder { language }))
     }
