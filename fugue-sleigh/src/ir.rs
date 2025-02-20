@@ -1553,14 +1553,13 @@ impl IRBuilder {
     }
 }
 
-/*
 #[cfg(test)]
 mod test {
     use super::IRBuilder;
 
     #[test]
     fn test_features() -> Result<(), Box<dyn std::error::Error>> {
-        use fugue_lifter_x86le64::LANGUAGE;
+        use fugue_lifter::x86_64::LANGUAGE;
 
         let mut builder = IRBuilder::new(LANGUAGE);
         let mut context = LANGUAGE.builder();
@@ -1598,7 +1597,7 @@ mod test {
 
     #[test]
     fn test_bit_range() -> Result<(), Box<dyn std::error::Error>> {
-        use fugue_lifter_x86le64::LANGUAGE;
+        use fugue_lifter::x86_64::LANGUAGE;
 
         let mut builder = IRBuilder::new(LANGUAGE);
         let mut context = LANGUAGE.builder();
@@ -1626,7 +1625,7 @@ mod test {
 
     #[test]
     fn test_eh_prolog() -> Result<(), Box<dyn std::error::Error>> {
-        use fugue_lifter_x86le64::LANGUAGE;
+        use fugue_lifter::x86_64::LANGUAGE;
 
         let mut builder = IRBuilder::new(LANGUAGE);
         let mut context = LANGUAGE.builder();
@@ -1657,7 +1656,7 @@ mod test {
 
     #[test]
     fn test_alloca_probe() -> Result<(), Box<dyn std::error::Error>> {
-        use fugue_lifter_x86le64::LANGUAGE;
+        use fugue_lifter::x86_64::LANGUAGE;
 
         let mut builder = IRBuilder::new(LANGUAGE);
         let mut context = LANGUAGE.builder();
@@ -1678,7 +1677,7 @@ mod test {
 
     #[test]
     fn test_seh_prolog() -> Result<(), Box<dyn std::error::Error>> {
-        use fugue_lifter_x86le64::LANGUAGE;
+        use fugue_lifter::x86_64::LANGUAGE;
 
         let mut builder = IRBuilder::new(LANGUAGE);
         let mut context = LANGUAGE.builder();
@@ -1707,7 +1706,7 @@ mod test {
 
     #[test]
     fn test_seh_prolog4() -> Result<(), Box<dyn std::error::Error>> {
-        use fugue_lifter_x86le64::LANGUAGE;
+        use fugue_lifter::x86_64::LANGUAGE;
 
         let mut builder = IRBuilder::new(LANGUAGE);
         let mut context = LANGUAGE.builder();
@@ -1734,4 +1733,3 @@ mod test {
         Ok(())
     }
 }
-*/

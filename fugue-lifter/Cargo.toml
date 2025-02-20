@@ -2,8 +2,19 @@
 name = "fugue-lifter"
 version = "0.3.0"
 edition = "2021"
+build = "build.rs"
+
+[features]
+arm = []
+aarch64 = []
+x86 = []
+x86-64 = []
+default = ["x86", "x86-64"]
 
 [dependencies]
 arrayvec = "0.7"
 itertools = "0.14"
 phf = { version = "0.11", features = ["macros"] }
+
+[build-dependencies]
+fugue-lifter-codegen = { version = "0.3", path = "../fugue-lifter-codegen" }

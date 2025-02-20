@@ -10,7 +10,6 @@ default = ["bundled-compiler"]
 [dependencies]
 anyhow = "1"
 fugue-ir = { path = "../fugue-ir" }
-fugue-lifter = { path = "../fugue-lifter" }
 fugue-sleighc = { git = "ssh://git@github.com/fugue-re/fugue-sleighc.git", optional = true }
 heck = "0.5"
 itertools = "0.14"
