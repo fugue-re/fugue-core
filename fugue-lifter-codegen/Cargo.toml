@@ -1,0 +1,21 @@
+[package]
+name = "fugue-lifter-codegen"
+version = "0.3.0"
+edition = "2021"
+
+[features]
+bundled-compiler = ["fugue-sleighc"]
+default = ["bundled-compiler"]
+
+[dependencies]
+anyhow = "1"
+fugue-ir = { path = "../fugue-ir" }
+fugue-lifter = { path = "../fugue-lifter" }
+fugue-sleighc = { git = "ssh://git@github.com/fugue-re/fugue-sleighc.git", optional = true }
+heck = "0.5"
+itertools = "0.14"
+prettyplease = "0.2"
+proc-macro2 = "1"
+quote = "1"
+syn = { version = "2", features = ["parsing"] }
+thiserror = "2"

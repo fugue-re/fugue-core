@@ -9,6 +9,7 @@ members = [
   "fugue-fp",
   "fugue-ir",
   "fugue-lifter",
+  "fugue-lifter-codegen",
   "fugue-state",
   "fugue-state-derive",
   "fugue-fspec",

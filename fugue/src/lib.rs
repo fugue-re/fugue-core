@@ -9,3 +9,4 @@ pub use fugue_bv as bv;
 pub use fugue_bytes as bytes;
 pub use fugue_core as core;
 pub use fugue_ir as ir;
+pub use fugue_lifter as lifter;

@@ -12,10 +12,10 @@ use proc_macro2::{Span, TokenStream};
 use quote::{format_ident, quote, ToTokens, TokenStreamExt};
 use syn::Ident;
 
-use crate::builder::types::context::ContextAdaptor;
-use crate::builder::types::pattern::PatternExpressionAdaptor;
-use crate::builder::types::symbol::SymbolAdaptor;
-use crate::builder::types::template::TplAdaptor;
+use crate::types::context::ContextAdaptor;
+use crate::types::pattern::PatternExpressionAdaptor;
+use crate::types::symbol::SymbolAdaptor;
+use crate::types::template::TplAdaptor;
 use crate::LifterGeneratorError;
 
 pub struct LifterGenerator<'a> {

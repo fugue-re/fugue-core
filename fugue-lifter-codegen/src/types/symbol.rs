@@ -5,7 +5,7 @@ use proc_macro2::TokenStream;
 use quote::{format_ident, quote, ToTokens};
 use syn::Ident;
 
-use crate::builder::types::pattern::PatternExpressionAdaptor;
+use crate::types::pattern::PatternExpressionAdaptor;
 
 pub struct SymbolAdaptor<'a> {
     translator: &'a Translator,

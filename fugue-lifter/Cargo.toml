@@ -3,29 +3,7 @@ name = "fugue-lifter"
 version = "0.3.0"
 edition = "2021"
 
-[features]
-build = [
-  "anyhow",
-  "fugue-ir",
-  "fugue-sleighc",
-  "prettyplease",
-  "proc-macro2",
-  "quote",
-  "syn",
-  "thiserror",
-]
-default = []
-
 [dependencies]
-anyhow = { version = "1", optional = true }
 arrayvec = "0.7"
-fugue-ir = { path = "../fugue-ir", optional = true }
-fugue-sleighc = { git = "ssh://git@github.com/fugue-re/fugue-sleighc.git", optional = true }
-heck = "0.5"
 itertools = "0.14"
 phf = { version = "0.11", features = ["macros"] }
-prettyplease = { version = "0.2", optional = true }
-proc-macro2 = { version = "1", optional = true }
-quote = { version = "1", optional = true }
-syn = { version = "2", features = ["parsing"], optional = true }
-thiserror = { version = "2", optional = true }

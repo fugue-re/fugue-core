@@ -913,7 +913,8 @@ mod test {
 
     #[test]
     fn test_parse() -> Result<(), Box<dyn std::error::Error>> {
-        let ast = CodeBlock::parse(r#"
+        let ast = CodeBlock::parse(
+            r#"
             memcpy(a || b || c, *[other] b, 10 + 20);
 
             local b:32 = 10;

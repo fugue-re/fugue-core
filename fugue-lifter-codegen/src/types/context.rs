@@ -5,7 +5,7 @@ use fugue_ir::Translator;
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote, ToTokens};
 
-use crate::builder::types::pattern::PatternExpressionAdaptor;
+use crate::types::pattern::PatternExpressionAdaptor;
 
 pub struct ContextAdaptor<'a> {
     translator: &'a Translator,

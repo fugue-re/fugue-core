@@ -18,4 +18,5 @@ fugue-bytes = { path = "../fugue-bytes", version = "0.3" }
 fugue-core = { path = "../fugue-core", version = "0.3" }
 fugue-fp = { path = "../fugue-fp", version = "0.3", optional = true }
 fugue-ir = { path = "../fugue-ir", version = "0.3" }
+fugue-lifter = { path = "../fugue-lifter", version = "0.3" }
 fugue-state = { path = "../fugue-state", version = "0.3", optional = true }
