@@ -19,4 +19,4 @@ thiserror = "2"
 ustr = "1"
 
 [dev-dependencies]
-fugue-lifter = { path = "../fugue-lifter", version = "0.3" }
+fugue-lifter = { path = "../fugue-lifter", version = "0.3", features = ["x86-64"], default-features = false }
