@@ -6,9 +6,9 @@ pub use runtime::{
     PCodeBuilderContext, PCodeOp, Varnode,
 };
 
-#[cfg(feature = "arm")]
+#[cfg(any(feature = "arm-be", feature = "arm-le"))]
 pub mod arm;
-#[cfg(feature = "aarch64")]
+#[cfg(any(feature = "aarch64-be", feature = "aarch64-le"))]
 pub mod aarch64;
 #[cfg(feature = "x86")]
 pub mod x86;

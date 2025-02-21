@@ -5,11 +5,15 @@ edition = "2021"
 build = "build.rs"
 
 [features]
-arm = []
-aarch64 = []
+arm-be = []
+arm-le = []
+arm = ["arm-be", "arm-le"]
+aarch64-be = []
+aarch64-le = []
+aarch64 = ["aarch64-be", "aarch64-le"]
 x86 = []
 x86-64 = []
-default = ["x86", "x86-64"]
+default = ["arm", "aarch64", "x86", "x86-64"]
 
 [dependencies]
 arrayvec = "0.7"
