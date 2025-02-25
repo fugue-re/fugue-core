@@ -1,4 +1,4 @@
-use std::borrow::Cow;
+use std::borrow::{Borrow, Cow};
 use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::File;
@@ -128,7 +128,10 @@ impl Serialize for PlatformConstraint {
 }
 
 #[derive(Clone, Default)]
-pub struct FunctionPatterns(BTreeMap<Option<Language>, Vec<PatternsWithContext>>);
+pub struct FunctionPatterns {
+    languages: BTreeMap<Language, Vec<PatternsWithContext>>,
+    default: Vec<PatternsWithContext>,
+}
 
 impl<'de> Deserialize<'de> for FunctionPatterns {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
@@ -136,15 +139,19 @@ impl<'de> Deserialize<'de> for FunctionPatterns {
         D: Deserializer<'de>,
     {
         let d = Vec::<AttrOptWithVal<Language, PatternsWithContext>>::deserialize(deserializer)?;
-        let mut m = BTreeMap::new();
+        let mut languages = BTreeMap::new();
+        let mut default = Vec::new();
 
         for d in d.into_iter() {
             let (k, v) = match d {
-                AttrOptWithVal::Val(v) => (None, v),
-                AttrOptWithVal::AttrWithVal(av) => (Some(av.attr), av.val),
+                AttrOptWithVal::Val(v) => {
+                    default.push(v);
+                    continue;
+                }
+                AttrOptWithVal::AttrWithVal(av) => (av.attr, av.val),
             };
 
-            match m.entry(k) {
+            match languages.entry(k) {
                 Entry::Vacant(entry) => {
                     entry.insert(vec![v]);
                 }
@@ -154,7 +161,7 @@ impl<'de> Deserialize<'de> for FunctionPatterns {
             }
         }
 
-        Ok(Self(m))
+        Ok(Self { languages, default })
     }
 }
 
@@ -163,14 +170,33 @@ impl Serialize for FunctionPatterns {
     where
         S: Serializer,
     {
-        let mut seq = serializer.serialize_seq(Some(self.0.len()))?;
-        for (k, v) in self.0.iter() {
-            seq.serialize_element(&match k {
-                None => AttrOptWithVal::Val(v),
-                Some(k) => AttrOptWithVal::AttrWithVal(AttrWithVal { attr: k, val: v }),
-            })?;
+        let mut seq = serializer.serialize_seq(None)?;
+        for (k, v) in self.languages.iter() {
+            seq.serialize_element(&AttrOptWithVal::AttrWithVal(AttrWithVal {
+                attr: k,
+                val: v,
+            }))?;
+        }
+        for v in self.default.iter() {
+            seq.serialize_element(&AttrOptWithVal::<Language, _>::Val(v))?;
         }
         seq.end()
+    }
+}
+
+impl FunctionPatterns {
+    pub fn matches(&self, language: impl Borrow<Language>, bytes: impl AsRef<[u8]>) -> bool {
+        let bytes = bytes.as_ref();
+        self.languages
+            .get(language.borrow())
+            .into_iter()
+            .flatten()
+            .chain(self.default.iter())
+            .any(|pat| pat.matches_from_start(bytes))
+    }
+
+    pub fn len(&self) -> usize {
+        self.languages.len() + !self.default.is_empty() as usize
     }
 }
 
@@ -440,7 +466,7 @@ patterns:
 
         assert_eq!(fspec.name, "Perl_croak_no_mem");
         assert!(fspec.properties.contains(FunctionProperties::NON_RETURNING));
-        assert_eq!(fspec.patterns.0.len(), 2);
+        assert_eq!(fspec.patterns.len(), 2);
 
         let constraints = fspec.constraints.unwrap();
 
@@ -490,7 +516,7 @@ fixup: |
         let fspec = serde_yaml::from_str::<FunctionSpec>(input1)?;
 
         assert_eq!(fspec.name, "get_pc_thunk_bx");
-        assert_eq!(fspec.patterns.0.len(), 1);
+        assert_eq!(fspec.patterns.len(), 1);
         assert!(fspec.fixup.is_some());
 
         Ok(())

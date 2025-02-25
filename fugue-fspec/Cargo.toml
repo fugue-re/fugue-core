@@ -1,6 +1,6 @@
 [package]
 name = "fugue-fspec"
-version = "0.2.1"
+version = "0.2.2"
 authors = ["Sam Thomas <st@xv.ax>"]
 edition = "2021"
 license = "MIT"

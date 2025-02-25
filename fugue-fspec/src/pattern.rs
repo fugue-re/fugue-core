@@ -646,7 +646,7 @@ impl<'de> Deserialize<'de> for PatternsWithContext {
                 patterns: Vec<Pattern>,
                 #[serde(default)]
                 context: PatternContext,
-            }
+            },
         }
 
         let result = match PatternWithContexT::deserialize(deserializer)? {
@@ -654,10 +654,9 @@ impl<'de> Deserialize<'de> for PatternsWithContext {
                 patterns: vec![pattern],
                 context: PatternContext::default(),
             },
-            PatternWithContexT::PatternWithContext { patterns, context } => Self {
-                patterns,
-                context,
-            },
+            PatternWithContexT::PatternWithContext { patterns, context } => {
+                Self { patterns, context }
+            }
         };
 
         Ok(result)
@@ -682,6 +681,16 @@ impl PatternsWithContext {
                         None
                     }
                 })
+        })
+    }
+
+    pub fn matches_from_start<'a>(&'a self, bytes: &'a [u8]) -> bool {
+        self.patterns.iter().any(|pattern| {
+            pattern
+                .normalised_matcher()
+                .find_at(&bytes, 0)
+                .map(|m| pattern.is_match(m.as_bytes()))
+                .unwrap_or_default()
         })
     }
 }
