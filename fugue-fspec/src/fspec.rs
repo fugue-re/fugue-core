@@ -373,11 +373,12 @@ impl FunctionSpecs {
         &self.functions
     }
 
-    pub fn functions_matching<'a, V>(
+    pub fn functions_matching<'a, 'v, V>(
         &'a self,
-        visitor: &'a V,
-    ) -> impl Iterator<Item = &'a FunctionSpec> + 'a
+        visitor: &'v V,
+    ) -> impl Iterator<Item = &'a FunctionSpec> + 'v
     where
+        'a: 'v,
         V: GroupOrValueVisitor<PlatformConstraint>,
     {
         self.functions.iter().filter(|f| f.matches(visitor))
