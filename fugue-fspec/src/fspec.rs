@@ -192,7 +192,7 @@ impl FunctionPatterns {
             .into_iter()
             .flatten()
             .chain(self.default.iter())
-            .any(|pat| pat.matches_from_start(bytes))
+            .any(|pat| pat.matches_exact(bytes))
     }
 
     pub fn len(&self) -> usize {

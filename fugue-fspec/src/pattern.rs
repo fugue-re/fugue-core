@@ -36,6 +36,7 @@ pub struct Pattern {
     data: Vec<u8>,
     mask: Vec<u8>,
     norm: Regex,
+    norm_pfx: Regex,
     bits: u32,
 }
 
@@ -177,7 +178,7 @@ impl Pattern {
     fn parse(input: &str) -> IResult<&str, Pattern> {
         let (input, (data, mask, regex)) = fold_many1(
             delimited(space0, Self::parse_one, space0),
-            || (Vec::new(), Vec::new(), String::new()),
+            || (Vec::new(), Vec::new(), String::from("^")),
             |(mut acc_v, mut acc_m, mut acc_r), (v, m)| {
                 acc_v.push(v);
                 acc_m.push(m);
@@ -192,7 +193,13 @@ impl Pattern {
             },
         )(input)?;
 
-        let norm = RegexBuilder::new(regex.as_ref())
+        let norm = RegexBuilder::new(&regex[1..])
+            .unicode(false)
+            .dot_matches_new_line(true)
+            .build()
+            .map_err(|_| Err::Error(Error::new(input, ErrorKind::MapRes)))?;
+
+        let norm_pfx = RegexBuilder::new(&regex)
             .unicode(false)
             .dot_matches_new_line(true)
             .build()
@@ -206,6 +213,7 @@ impl Pattern {
                 data,
                 mask,
                 norm,
+                norm_pfx,
                 bits,
             },
         ))
@@ -243,6 +251,10 @@ impl Pattern {
         &self.norm
     }
 
+    pub fn normalised_prefix_matcher(&self) -> &Regex {
+        &self.norm_pfx
+    }
+
     pub fn find_iter<'a>(&'a self, bytes: &'a [u8]) -> impl Iterator<Item = Match<'a>> {
         self.normalised_matcher()
             .find_iter(bytes)
@@ -251,6 +263,10 @@ impl Pattern {
 
     pub fn bits(&self) -> u32 {
         self.bits
+    }
+
+    pub fn len(&self) -> usize {
+        self.data.len()
     }
 }
 
@@ -684,13 +700,11 @@ impl PatternsWithContext {
         })
     }
 
-    pub fn matches_from_start<'a>(&'a self, bytes: &'a [u8]) -> bool {
+    pub fn matches_exact<'a>(&'a self, bytes: &'a [u8]) -> bool {
         self.patterns.iter().any(|pattern| {
-            pattern
-                .normalised_matcher()
-                .find_at(&bytes, 0)
-                .map(|m| pattern.is_match(m.as_bytes()))
-                .unwrap_or_default()
+            bytes.len() == pattern.len()
+                && pattern.normalised_prefix_matcher().is_match(&bytes)
+                && pattern.is_match(bytes)
         })
     }
 }
