@@ -1,6 +1,6 @@
-use crate::runtime::context::ContextBitRange;
-use crate::runtime::pcode::{LiftingContext, PCodeBuilderContext, PCodeOp, Varnode};
-use crate::runtime::wrap_offset;
+use crate::context::ContextBitRange;
+use crate::pcode::{LiftingContext, PCodeBuilderContext, PCodeOp, Varnode};
+use crate::wrap_offset;
 
 pub trait LanguageImpl {
     const ADDRESS_ALIGNMENT: usize;

@@ -1,8 +1,8 @@
-use crate::runtime::lifter::{Language, Lifter};
+use fugue_lifter_runtime::lifter::{Language, Lifter};
 
 mod __impl {
     #![allow(unused)]
-    include!(concat!(env!("OUT_DIR"), "/aarch64_le.rs"));
+    include!(concat!(env!("OUT_DIR"), "/aarch64_be.rs"));
 }
 pub use __impl::{context, register, space, user_op, LANGUAGE};
 

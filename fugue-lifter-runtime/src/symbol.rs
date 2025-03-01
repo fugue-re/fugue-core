@@ -1,9 +1,9 @@
 use std::fmt;
 
-use crate::runtime::constructor::ConstructorResolver;
-use crate::runtime::input::FixedHandle;
-use crate::runtime::pattern::PatternExpression;
-use crate::runtime::pcode::LiftingContextState;
+use crate::constructor::ConstructorResolver;
+use crate::input::FixedHandle;
+use crate::pattern::PatternExpression;
+use crate::pcode::LiftingContextState;
 
 #[derive(Clone)]
 pub enum Symbol {

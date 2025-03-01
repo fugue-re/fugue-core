@@ -1,11 +1,11 @@
 use std::fmt::{self, Debug};
 
-use crate::runtime::context::{ContextPostAction, ContextPreAction};
-use crate::runtime::input::{ContextCommit, FixedHandle, INVALID_HANDLE};
-use crate::runtime::pattern::PatternExpression;
-use crate::runtime::pcode::LiftingContextState;
-use crate::runtime::symbol::Symbol;
-use crate::runtime::template::{ConstructTpl, HandleTpl};
+use crate::context::{ContextPostAction, ContextPreAction};
+use crate::input::{ContextCommit, FixedHandle, INVALID_HANDLE};
+use crate::pattern::PatternExpression;
+use crate::pcode::LiftingContextState;
+use crate::symbol::Symbol;
+use crate::template::{ConstructTpl, HandleTpl};
 
 pub type ContextActionSet = fn(&mut LiftingContextState<'_>) -> Option<()>;
 

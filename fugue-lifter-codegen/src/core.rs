@@ -106,9 +106,9 @@ impl<'a> LifterGenerator<'a> {
                 match tsym {
                     Symbol::Subtable { id, scope, .. } => {
                         let stname = format_ident!("SubTable{id}In{scope}");
-                        let resolver = quote! { fugue_lifter::runtime::OperandResolver::Constructor(<#stname>::resolve) };
+                        let resolver = quote! { fugue_lifter_runtime::OperandResolver::Constructor(<#stname>::resolve) };
                         let handle_resolver =
-                            quote! { fugue_lifter::runtime::OperandHandleResolver::None };
+                            quote! { fugue_lifter_runtime::OperandHandleResolver::None };
 
                         (resolver, handle_resolver)
                     }
@@ -118,14 +118,14 @@ impl<'a> LifterGenerator<'a> {
                         ..
                     } => {
                         let resolver = if *table_is_filled {
-                            quote! { fugue_lifter::runtime::OperandResolver::None }
+                            quote! { fugue_lifter_runtime::OperandResolver::None }
                         } else {
                             let ident = format_ident!("__SYM{id}_FILTER");
-                            quote! { fugue_lifter::runtime::OperandResolver::Filter(&#ident) }
+                            quote! { fugue_lifter_runtime::OperandResolver::Filter(&#ident) }
                         };
 
                         let ident = format_ident!("__SYM{id}");
-                        let handle_resolver = quote! { fugue_lifter::runtime::OperandHandleResolver::Symbol(&#ident) };
+                        let handle_resolver = quote! { fugue_lifter_runtime::OperandHandleResolver::Symbol(&#ident) };
 
                         (resolver, handle_resolver)
                     }
@@ -135,14 +135,14 @@ impl<'a> LifterGenerator<'a> {
                         ..
                     } => {
                         let resolver = if *table_is_filled {
-                            quote! { fugue_lifter::runtime::OperandResolver::None }
+                            quote! { fugue_lifter_runtime::OperandResolver::None }
                         } else {
                             let ident = format_ident!("__SYM{id}_FILTER");
-                            quote! { fugue_lifter::runtime::OperandResolver::Filter(&#ident) }
+                            quote! { fugue_lifter_runtime::OperandResolver::Filter(&#ident) }
                         };
 
                         let ident = format_ident!("__SYM{id}");
-                        let handle_resolver = quote! { fugue_lifter::runtime::OperandHandleResolver::Symbol(&#ident) };
+                        let handle_resolver = quote! { fugue_lifter_runtime::OperandHandleResolver::Symbol(&#ident) };
 
                         (resolver, handle_resolver)
                     }
@@ -152,40 +152,40 @@ impl<'a> LifterGenerator<'a> {
                         ..
                     } => {
                         let resolver = if *table_is_filled {
-                            quote! { fugue_lifter::runtime::OperandResolver::None }
+                            quote! { fugue_lifter_runtime::OperandResolver::None }
                         } else {
                             let ident = format_ident!("__SYM{id}_FILTER");
-                            quote! { fugue_lifter::runtime::OperandResolver::Filter(&#ident) }
+                            quote! { fugue_lifter_runtime::OperandResolver::Filter(&#ident) }
                         };
 
                         let ident = format_ident!("__SYM{id}");
-                        let handle_resolver = quote! { fugue_lifter::runtime::OperandHandleResolver::Symbol(&#ident) };
+                        let handle_resolver = quote! { fugue_lifter_runtime::OperandHandleResolver::Symbol(&#ident) };
 
                         (resolver, handle_resolver)
                     }
                     symbol => {
-                        let resolver = quote! { fugue_lifter::runtime::OperandResolver::None };
+                        let resolver = quote! { fugue_lifter_runtime::OperandResolver::None };
 
                         let id = symbol.id();
                         let ident = format_ident!("__SYM{id}");
-                        let handle_resolver = quote! { fugue_lifter::runtime::OperandHandleResolver::Symbol(&#ident) };
+                        let handle_resolver = quote! { fugue_lifter_runtime::OperandHandleResolver::Symbol(&#ident) };
 
                         (resolver, handle_resolver)
                     }
                 }
             } else {
-                let resolver = quote! { fugue_lifter::runtime::OperandResolver::None };
+                let resolver = quote! { fugue_lifter_runtime::OperandResolver::None };
 
                 let pexp = operand.defining_expression().unwrap();
                 let value = PatternExpressionAdaptor::new(&self.translator, pexp);
                 let handle_resolver =
-                    quote! { fugue_lifter::runtime::OperandHandleResolver::Expression(#value) };
+                    quote! { fugue_lifter_runtime::OperandHandleResolver::Expression(#value) };
 
                 (resolver, handle_resolver)
             };
 
             operands.push(quote! {
-                fugue_lifter::runtime::Operand {
+                fugue_lifter_runtime::Operand {
                     resolver: #resolver,
                     handle_resolver: #handle_resolver,
                     offset_base: #offset_base,
@@ -266,9 +266,9 @@ impl<'a> LifterGenerator<'a> {
 
             let pieces = ctor.print_pieces().iter().map(|piece| if piece.as_bytes()[0] == b'\n' {
                 let index = (piece.as_bytes()[1] - b'A') as usize;
-                quote! { fugue_lifter::runtime::constructor::PrintPiece::Operand(#index) }
+                quote! { fugue_lifter_runtime::constructor::PrintPiece::Operand(#index) }
             } else {
-                quote! { fugue_lifter::runtime::constructor::PrintPiece::Token(#piece) }
+                quote! { fugue_lifter_runtime::constructor::PrintPiece::Token(#piece) }
             });
 
             let first_whitespace = ctor.first_whitespace()
@@ -284,7 +284,7 @@ impl<'a> LifterGenerator<'a> {
             let lifting_action = self.generate_constructor_lifting_actions(ctor);
 
             quote! {
-                pub static #ctor_vname: fugue_lifter::runtime::Constructor = fugue_lifter::runtime::Constructor {
+                pub static #ctor_vname: fugue_lifter_runtime::Constructor = fugue_lifter_runtime::Constructor {
                     id: #ctor_id,
                     context_pre_actions: &[#(#pre_actions),*],
                     context_post_actions: &[#(#post_actions),*],
@@ -440,7 +440,7 @@ impl<'a> LifterGenerator<'a> {
 
                     trees.push(quote! {
                         #[inline]
-                        fn #tree_fn(input: &mut fugue_lifter::runtime::LiftingContextState) -> Option<&'static fugue_lifter::runtime::Constructor> {
+                        fn #tree_fn(input: &mut fugue_lifter_runtime::LiftingContextState) -> Option<&'static fugue_lifter_runtime::Constructor> {
                             unsafe {
                                 #body
                             }
@@ -448,7 +448,7 @@ impl<'a> LifterGenerator<'a> {
                     });
 
                     quote! {
-                        (#tree_fn as fn(&mut fugue_lifter::runtime::LiftingContextState) -> Option<&'static fugue_lifter::runtime::Constructor>)
+                        (#tree_fn as fn(&mut fugue_lifter_runtime::LiftingContextState) -> Option<&'static fugue_lifter_runtime::Constructor>)
                     }
                 })
                 .collect::<Vec<_>>();
@@ -470,7 +470,7 @@ impl<'a> LifterGenerator<'a> {
             );
 
             trees.push(quote! {
-                const #table: [fn(&mut fugue_lifter::runtime::LiftingContextState) -> Option<&'static fugue_lifter::runtime::Constructor>; #nodes] = [
+                const #table: [fn(&mut fugue_lifter_runtime::LiftingContextState) -> Option<&'static fugue_lifter_runtime::Constructor>; #nodes] = [
                     #(#parts),*
                 ];
             });
@@ -493,7 +493,7 @@ impl<'a> LifterGenerator<'a> {
         let body = self.generate_dtree_aux(id, scope, dtree, &tree_fn, trees);
         quote! {
             #[inline]
-            pub fn resolve(input: &mut fugue_lifter::runtime::LiftingContextState) -> Option<&'static fugue_lifter::runtime::Constructor> {
+            pub fn resolve(input: &mut fugue_lifter_runtime::LiftingContextState) -> Option<&'static fugue_lifter_runtime::Constructor> {
                 unsafe {
                     #body
                 }
@@ -599,12 +599,12 @@ impl<'a> ToTokens for LifterGenerator<'a> {
                 let i = i as u8;
                 if i == 0 {
                     // constant
-                    quote! { #i => offset & fugue_lifter::runtime::calculate_mask(size as usize) }
+                    quote! { #i => offset & fugue_lifter_runtime::calculate_mask(size as usize) }
                 } else if spc.id().is_unique() {
                     quote! { #i => offset | unique_offset }
                 } else {
                     let highest = spc.highest_offset();
-                    quote! { #i => fugue_lifter::runtime::wrap_offset(#highest, offset) }
+                    quote! { #i => fugue_lifter_runtime::wrap_offset(#highest, offset) }
                 }
             });
 
@@ -638,8 +638,8 @@ impl<'a> ToTokens for LifterGenerator<'a> {
                 Span::call_site(),
             );
             quote! {
-                pub const #upper_snake_name: fugue_lifter::runtime::context::ContextBitRange =
-                    fugue_lifter::runtime::context::ContextBitRange::new(#start, #end);
+                pub const #upper_snake_name: fugue_lifter_runtime::context::ContextBitRange =
+                    fugue_lifter_runtime::context::ContextBitRange::new(#start, #end);
             }
         });
 
@@ -677,8 +677,8 @@ impl<'a> ToTokens for LifterGenerator<'a> {
 
             // for register by known symbol/const
             let var = quote! {
-                pub const #upper_snake_name: fugue_lifter::runtime::pcode::Varnode =
-                    fugue_lifter::runtime::pcode::Varnode::new(#register_space_id, #off, #sz);
+                pub const #upper_snake_name: fugue_lifter_runtime::pcode::Varnode =
+                    fugue_lifter_runtime::pcode::Varnode::new(#register_space_id, #off, #sz);
             };
 
             let nm = nm.as_str();
@@ -723,24 +723,24 @@ impl<'a> ToTokens for LifterGenerator<'a> {
             ];
 
             pub mod context {
-                use fugue_lifter::runtime::phf;
+                use fugue_lifter_runtime::phf;
 
                 #(#context_variable_consts)*
 
-                static CONTEXT_VARIABLES_TO_BITS: phf::Map<&'static str, fugue_lifter::runtime::context::ContextBitRange> = phf::phf_map! {
+                static CONTEXT_VARIABLES_TO_BITS: phf::Map<&'static str, fugue_lifter_runtime::context::ContextBitRange> = phf::phf_map! {
                     #(#context_variable_names,)*
                 };
 
                 #[inline(always)]
                 pub fn context_variable_by_name(
                     name: &str,
-                ) -> Option<fugue_lifter::runtime::context::ContextBitRange> {
+                ) -> Option<fugue_lifter_runtime::context::ContextBitRange> {
                     CONTEXT_VARIABLES_TO_BITS.get(name).copied()
                 }
             }
 
             pub mod space {
-                use fugue_lifter::runtime::phf;
+                use fugue_lifter_runtime::phf;
 
                 pub const SPACES: [&'static str; #n_spaces] = [
                     #(#space_names,)*
@@ -766,7 +766,7 @@ impl<'a> ToTokens for LifterGenerator<'a> {
             }
 
             pub mod register {
-                use fugue_lifter::runtime::phf;
+                use fugue_lifter_runtime::phf;
 
                 #(#registers)*
 
@@ -774,20 +774,20 @@ impl<'a> ToTokens for LifterGenerator<'a> {
                     #(#register_ranges),*
                 ];
 
-                static REGISTERS_TO_VARNODE: phf::Map<&'static str, fugue_lifter::runtime::pcode::Varnode> = phf::phf_map! {
+                static REGISTERS_TO_VARNODE: phf::Map<&'static str, fugue_lifter_runtime::pcode::Varnode> = phf::phf_map! {
                     #(#register_names,)*
                 };
 
                 #[inline(always)]
                 pub fn register_by_name(
                     name: &str,
-                ) -> Option<fugue_lifter::runtime::pcode::Varnode> {
+                ) -> Option<fugue_lifter_runtime::pcode::Varnode> {
                     REGISTERS_TO_VARNODE.get(name).copied()
                 }
 
                 #[inline]
                 pub fn register_name(
-                    varnode: &fugue_lifter::runtime::pcode::Varnode,
+                    varnode: &fugue_lifter_runtime::pcode::Varnode,
                 ) -> Option<&'static str> {
                     if varnode.space != #register_space_id {
                         return None;
@@ -802,7 +802,7 @@ impl<'a> ToTokens for LifterGenerator<'a> {
             }
 
             pub mod user_op {
-                use fugue_lifter::runtime::phf;
+                use fugue_lifter_runtime::phf;
 
                 #(#userops)*
 
@@ -827,15 +827,15 @@ impl<'a> ToTokens for LifterGenerator<'a> {
 
             struct Instruction;
 
-            impl fugue_lifter::runtime::ConstructorResolver for Instruction {
+            impl fugue_lifter_runtime::ConstructorResolver for Instruction {
                 const ADDRESS_SIZE: usize = ADDRESS_SIZE;
                 const DEFAULT_SPACE: u8 = DEFAULT_SPACE;
                 const UNIQUE_SPACE: u8 = UNIQUE_SPACE;
 
                 #[inline(always)]
                 fn resolve(
-                    state: &mut fugue_lifter::runtime::LiftingContextState,
-                ) -> Option<&'static fugue_lifter::runtime::Constructor> {
+                    state: &mut fugue_lifter_runtime::LiftingContextState,
+                ) -> Option<&'static fugue_lifter_runtime::Constructor> {
                     resolve_constructor(state)
                 }
 
@@ -862,8 +862,8 @@ impl<'a> ToTokens for LifterGenerator<'a> {
 
             #[inline(always)]
             pub fn resolve_constructor(
-                state: &mut fugue_lifter::runtime::LiftingContextState,
-            ) -> Option<&'static fugue_lifter::runtime::Constructor> {
+                state: &mut fugue_lifter_runtime::LiftingContextState,
+            ) -> Option<&'static fugue_lifter_runtime::Constructor> {
                 unsafe {
                     let ctor = SubTable0In0::resolve(state)?;
                     ctor.resolve_operands::<Instruction>(state)?;
@@ -873,8 +873,8 @@ impl<'a> ToTokens for LifterGenerator<'a> {
 
             #[inline(always)]
             pub fn resolve_state(
-                state: &mut fugue_lifter::runtime::LiftingContextState,
-            ) -> Option<&'static fugue_lifter::runtime::Constructor> {
+                state: &mut fugue_lifter_runtime::LiftingContextState,
+            ) -> Option<&'static fugue_lifter_runtime::Constructor> {
                 unsafe {
                     let ctor = resolve_constructor(state)?;
                     ctor.resolve_handles::<Instruction>(state)?;
@@ -888,7 +888,7 @@ impl<'a> ToTokens for LifterGenerator<'a> {
             pub fn resolve(
                 address: u64,
                 bytes: &[u8],
-                context: &mut fugue_lifter::runtime::LiftingContext,
+                context: &mut fugue_lifter_runtime::LiftingContext,
                 apply_commits: bool,
             ) -> Option<usize> {
                 unsafe {
@@ -922,7 +922,7 @@ impl<'a> ToTokens for LifterGenerator<'a> {
             pub(crate) fn disassemble_to_string(
                 address: u64,
                 bytes: &[u8],
-                context: &mut fugue_lifter::runtime::LiftingContext,
+                context: &mut fugue_lifter_runtime::LiftingContext,
                 output: &mut String,
             ) -> Option<usize> {
                 disassemble(address, bytes, context, output).unwrap()
@@ -932,7 +932,7 @@ impl<'a> ToTokens for LifterGenerator<'a> {
             pub fn disassemble<W: std::fmt::Write>(
                 address: u64,
                 bytes: &[u8],
-                context: &mut fugue_lifter::runtime::LiftingContext,
+                context: &mut fugue_lifter_runtime::LiftingContext,
                 writer: &mut W,
             ) -> Result<Option<usize>, std::fmt::Error> {
                 unsafe {
@@ -971,8 +971,8 @@ impl<'a> ToTokens for LifterGenerator<'a> {
             pub fn lift(
                 address: u64,
                 bytes: &[u8],
-                context: &mut fugue_lifter::runtime::LiftingContext,
-                issued: &mut Vec<fugue_lifter::runtime::pcode::PCodeOp>,
+                context: &mut fugue_lifter_runtime::LiftingContext,
+                issued: &mut Vec<fugue_lifter_runtime::pcode::PCodeOp>,
             ) -> Option<usize> {
                 unsafe {
                     let mut state = context.state_for(address, bytes, issued)?;
@@ -1032,23 +1032,23 @@ impl<'a> ToTokens for LifterGenerator<'a> {
             }
 
             #[inline]
-            pub fn lifter(ninputs: usize) -> fugue_lifter::runtime::LiftingContext {
+            pub fn lifter(ninputs: usize) -> fugue_lifter_runtime::LiftingContext {
                 lifter_with(ninputs, default_context())
             }
 
             #[inline]
             pub fn lifter_with(
                 ninputs: usize,
-                context: fugue_lifter::runtime::ContextDatabase,
-            ) -> fugue_lifter::runtime::LiftingContext {
-                fugue_lifter::runtime::LiftingContext::new(ninputs, context, UNIQUE_MASK)
+                context: fugue_lifter_runtime::ContextDatabase,
+            ) -> fugue_lifter_runtime::LiftingContext {
+                fugue_lifter_runtime::LiftingContext::new(ninputs, context, UNIQUE_MASK)
             }
 
             #[inline]
             #[allow(unused_mut)]
-            pub fn default_context() -> fugue_lifter::runtime::ContextDatabase {
+            pub fn default_context() -> fugue_lifter_runtime::ContextDatabase {
                 let mut context =
-                    fugue_lifter::runtime::ContextDatabase::new(ADDRESS_UPPER_BOUND);
+                    fugue_lifter_runtime::ContextDatabase::new(ADDRESS_UPPER_BOUND);
 
                 #(#context_variable_registrations)*
 
@@ -1056,7 +1056,7 @@ impl<'a> ToTokens for LifterGenerator<'a> {
             }
 
             struct L;
-            impl fugue_lifter::runtime::lifter::LanguageImpl for L {
+            impl fugue_lifter_runtime::lifter::LanguageImpl for L {
                 const ADDRESS_ALIGNMENT: usize = ADDRESS_ALIGNMENT;
                 const ADDRESS_BITS: u32 = ADDRESS_BITS;
                 const ADDRESS_SIZE: usize = ADDRESS_SIZE;
@@ -1077,19 +1077,19 @@ impl<'a> ToTokens for LifterGenerator<'a> {
                 const SPACE_BY_NAME: fn(&str) -> Option<u8> = space::space_by_name;
                 const SPACE_NAME: fn(u8) -> Option<&'static str> = space::space_name;
 
-                const CONTEXT_VARIABLE_BY_NAME: fn(&str) -> Option<fugue_lifter::runtime::context::ContextBitRange> = context::context_variable_by_name;
+                const CONTEXT_VARIABLE_BY_NAME: fn(&str) -> Option<fugue_lifter_runtime::context::ContextBitRange> = context::context_variable_by_name;
 
-                const REGISTER_BY_NAME: fn(&str) -> Option<fugue_lifter::runtime::pcode::Varnode> = register::register_by_name;
-                const REGISTER_NAME: fn(&fugue_lifter::runtime::pcode::Varnode) -> Option<&'static str> = register::register_name;
+                const REGISTER_BY_NAME: fn(&str) -> Option<fugue_lifter_runtime::pcode::Varnode> = register::register_by_name;
+                const REGISTER_NAME: fn(&fugue_lifter_runtime::pcode::Varnode) -> Option<&'static str> = register::register_name;
 
                 const USER_OP_BY_NAME: fn(&str) -> Option<u16> = user_op::user_op_by_name;
                 const USER_OP_BY_ID: fn(u16) -> Option<&'static str> = user_op::user_op_by_id;
 
-                const RESOLVE: fn(u64, &[u8], &mut fugue_lifter::runtime::pcode::LiftingContext, bool) -> Option<usize> = resolve;
-                const DISASSEMBLE: fn(u64, &[u8], &mut fugue_lifter::runtime::pcode::LiftingContext, &mut String) -> Option<usize> = disassemble_to_string;
-                const LIFT: fn(u64, &[u8], &mut fugue_lifter::runtime::pcode::LiftingContext, &mut Vec<fugue_lifter::runtime::pcode::PCodeOp>) -> Option<usize> = lift;
+                const RESOLVE: fn(u64, &[u8], &mut fugue_lifter_runtime::pcode::LiftingContext, bool) -> Option<usize> = resolve;
+                const DISASSEMBLE: fn(u64, &[u8], &mut fugue_lifter_runtime::pcode::LiftingContext, &mut String) -> Option<usize> = disassemble_to_string;
+                const LIFT: fn(u64, &[u8], &mut fugue_lifter_runtime::pcode::LiftingContext, &mut Vec<fugue_lifter_runtime::pcode::PCodeOp>) -> Option<usize> = lift;
             }
-            pub static LANGUAGE: &'static fugue_lifter::runtime::lifter::Language = &fugue_lifter::runtime::lifter::Language::new::<L>();
+            pub static LANGUAGE: &'static fugue_lifter_runtime::lifter::Language = &fugue_lifter_runtime::lifter::Language::new::<L>();
         });
 
         tokens.append_all(&self.symbols);

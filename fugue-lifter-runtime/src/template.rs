@@ -1,6 +1,6 @@
-use crate::runtime::constructor::ConstructorResolver;
-use crate::runtime::input::{FixedHandle, INVALID_HANDLE};
-use crate::runtime::{pcode, wrap_offset, LiftingContextState};
+use crate::constructor::ConstructorResolver;
+use crate::input::{FixedHandle, INVALID_HANDLE};
+use crate::{pcode, wrap_offset, LiftingContextState};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u16)]

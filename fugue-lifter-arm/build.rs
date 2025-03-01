@@ -26,15 +26,5 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(feature = "arm-le")]
     build_lifter("ARM:LE:32:v8", "arm_le.rs")?;
 
-    #[cfg(feature = "aarch64-be")]
-    build_lifter("AARCH64:BE:64:v8A", "aarch64_be.rs")?;
-    #[cfg(feature = "aarch64-le")]
-    build_lifter("AARCH64:LE:64:v8A", "aarch64_le.rs")?;
-
-    #[cfg(feature = "x86")]
-    build_lifter("x86:LE:32:default", "x86.rs")?;
-    #[cfg(feature = "x86-64")]
-    build_lifter("x86:LE:64:default", "x86_64.rs")?;
-
     Ok(())
 }

@@ -2,23 +2,23 @@
 name = "fugue-lifter"
 version = "0.3.0"
 edition = "2021"
-build = "build.rs"
 
 [features]
-arm-be = []
-arm-le = []
+arm-be = ["fugue-lifter-arm/arm-be"]
+arm-le = ["fugue-lifter-arm/arm-le"]
 arm = ["arm-be", "arm-le"]
-aarch64-be = []
-aarch64-le = []
+aarch64-be = ["fugue-lifter-aarch64/aarch64-be"]
+aarch64-le = ["fugue-lifter-aarch64/aarch64-le"]
 aarch64 = ["aarch64-be", "aarch64-le"]
-x86 = []
-x86-64 = []
+x86 = ["fugue-lifter-x86/x86"]
+x86-64 = ["fugue-lifter-x86/x86-64"]
 default = ["arm", "aarch64", "x86", "x86-64"]
 
 [dependencies]
-arrayvec = "0.7"
-itertools = "0.14"
-phf = { version = "0.11", features = ["macros"] }
+fugue-lifter-arm =  { version = "0.3", path = "../fugue-lifter-arm", default-features = false, optional = true }
+fugue-lifter-aarch64 =  { version = "0.3", path = "../fugue-lifter-aarch64", default-features = false, optional = true }
+fugue-lifter-runtime = { version = "0.3", path = "../fugue-lifter-runtime" }
+fugue-lifter-x86 =  { version = "0.3", path = "../fugue-lifter-x86", default-features = false, optional = true }
 
 [build-dependencies]
 fugue-lifter-codegen = { version = "0.3", path = "../fugue-lifter-codegen" }

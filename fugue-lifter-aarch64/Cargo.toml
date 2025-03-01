@@ -1,0 +1,16 @@
+[package]
+name = "fugue-lifter-aarch64"
+version = "0.3.0"
+edition = "2021"
+build = "build.rs"
+
+[features]
+aarch64-be = []
+aarch64-le = []
+default = ["aarch64-be", "aarch64-le"]
+
+[dependencies]
+fugue-lifter-runtime = { version = "0.3", path = "../fugue-lifter-runtime" }
+
+[build-dependencies]
+fugue-lifter-codegen = { version = "0.3", path = "../fugue-lifter-codegen" }

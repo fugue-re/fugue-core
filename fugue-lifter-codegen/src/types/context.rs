@@ -38,7 +38,7 @@ impl<'a> ToTokens for ContextAdaptor<'a> {
                 let value = PatternExpressionAdaptor::new(&self.translator, pattern_value);
 
                 quote! {
-                    fugue_lifter::runtime::context::ContextPreAction {
+                    fugue_lifter_runtime::context::ContextPreAction {
                         num: #num,
                         shift: #shift,
                         mask: #mask,
@@ -60,10 +60,10 @@ impl<'a> ToTokens for ContextAdaptor<'a> {
 
                 let handle = if let Symbol::Operand { handle_index, .. } = symbol {
                     let opid = *handle_index;
-                    quote! { fugue_lifter::runtime::context::ContextPostActionHandle::Operand(#opid) }
+                    quote! { fugue_lifter_runtime::context::ContextPostActionHandle::Operand(#opid) }
                 } else {
                     let ident = format_ident!("__SYM{symbol_id}");
-                    quote! { fugue_lifter::runtime::context::ContextPostActionHandle::Symbol(&#ident) }
+                    quote! { fugue_lifter_runtime::context::ContextPostActionHandle::Symbol(&#ident) }
                 };
 
                 let space = self.translator.manager().default_space_ref();
@@ -74,7 +74,7 @@ impl<'a> ToTokens for ContextAdaptor<'a> {
                 // NOTE: when we apply the pre-context actions, we perform extraction operations
                 // based on post actions.
                 quote! {
-                    fugue_lifter::runtime::context::ContextPostAction {
+                    fugue_lifter_runtime::context::ContextPostAction {
                         handle: #handle,
                         num: #num,
                         mask: #mask,

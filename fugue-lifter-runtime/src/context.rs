@@ -4,14 +4,14 @@ use std::ops::{Deref, DerefMut};
 
 use itertools::Itertools;
 
-use crate::runtime::constructor::ConstructorResolver;
-use crate::runtime::input::{ContextCommit, FixedHandle};
-use crate::runtime::partmap::{BoundKind, PartMap};
-use crate::runtime::pattern::PatternExpression;
-use crate::runtime::pcode::LiftingContextState;
-use crate::runtime::symbol::Symbol;
-use crate::runtime::varnode::VarnodeData;
-use crate::runtime::wrap_offset;
+use crate::constructor::ConstructorResolver;
+use crate::input::{ContextCommit, FixedHandle};
+use crate::partmap::{BoundKind, PartMap};
+use crate::pattern::PatternExpression;
+use crate::pcode::LiftingContextState;
+use crate::symbol::Symbol;
+use crate::varnode::VarnodeData;
+use crate::wrap_offset;
 
 #[derive(Clone)]
 pub struct ContextPreAction {

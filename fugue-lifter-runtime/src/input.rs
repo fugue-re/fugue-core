@@ -3,8 +3,8 @@ use std::ops::{Deref, DerefMut};
 
 use arrayvec::ArrayVec;
 
-use crate::runtime::constructor::Constructor;
-use crate::runtime::context::{ContextDatabase, ContextPostAction};
+use crate::constructor::Constructor;
+use crate::context::{ContextDatabase, ContextPostAction};
 
 const MAX_CTOR_STATES: usize = 256; // 128;
 const MAX_CTXT_CHUNKS: usize = 2;

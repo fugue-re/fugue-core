@@ -4,11 +4,11 @@ use std::mem;
 use arrayvec::ArrayVec;
 use itertools::{Itertools, Position};
 
-use crate::runtime::calculate_mask;
-use crate::runtime::constructor::{Constructor, ConstructorResolver};
-use crate::runtime::context::ContextDatabase;
-use crate::runtime::input::{FixedHandle, ParserInput, ParserInputs, INVALID_HANDLE};
-use crate::runtime::lifter::{Language, LanguageFormatter};
+use crate::calculate_mask;
+use crate::constructor::{Constructor, ConstructorResolver};
+use crate::context::ContextDatabase;
+use crate::input::{FixedHandle, ParserInput, ParserInputs, INVALID_HANDLE};
+use crate::lifter::{Language, LanguageFormatter};
 
 pub const MAX_LABELS: usize = 192;
 pub const MAX_INPUTS_SPILL: usize = 8;

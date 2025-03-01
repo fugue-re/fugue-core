@@ -1,9 +1,9 @@
 use std::fmt;
 
-use crate::runtime::constructor::{Constructor, ConstructorResolver};
-use crate::runtime::input::{BREADCRUMBS, INVALID_HANDLE};
-use crate::runtime::pcode::LiftingContextState;
-use crate::runtime::{byte_swap, sign_extend, zero_extend};
+use crate::constructor::{Constructor, ConstructorResolver};
+use crate::input::{BREADCRUMBS, INVALID_HANDLE};
+use crate::pcode::LiftingContextState;
+use crate::{byte_swap, sign_extend, zero_extend};
 
 #[derive(Copy, Clone)]
 pub enum OperandOffset {

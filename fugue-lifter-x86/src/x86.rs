@@ -1,4 +1,4 @@
-use crate::runtime::lifter::Lifter;
+use fugue_lifter_runtime::lifter::Lifter;
 
 mod __impl {
     #![allow(unused)]

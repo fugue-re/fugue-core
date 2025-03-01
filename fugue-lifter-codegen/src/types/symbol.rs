@@ -49,8 +49,8 @@ impl<'a> SymbolAdaptor<'a> {
         let ident = self.filter_identifier();
         let pvalue = PatternExpressionAdaptor::new(&self.translator, pattern);
         quote! {
-            pub(crate) const #ident: fugue_lifter::runtime::constructor::OperandFilter =
-                fugue_lifter::runtime::constructor::OperandFilter {
+            pub(crate) const #ident: fugue_lifter_runtime::constructor::OperandFilter =
+                fugue_lifter_runtime::constructor::OperandFilter {
                     pattern: #pvalue,
                     indices: &[#(#indices),*],
                     limit: #limit,
@@ -65,12 +65,12 @@ impl<'a> ToTokens for SymbolAdaptor<'a> {
 
         let value = match self.symbol {
             S::Epsilon { .. } => quote! {
-                fugue_lifter::runtime::symbol::Symbol::Epsilon
+                fugue_lifter_runtime::symbol::Symbol::Epsilon
             },
             S::Value { pattern_value, .. } => {
                 let pvalue = PatternExpressionAdaptor::new(&self.translator, pattern_value);
                 quote! {
-                    fugue_lifter::runtime::symbol::Symbol::Value {
+                    fugue_lifter_runtime::symbol::Symbol::Value {
                         pattern_value: #pvalue,
                     }
                 }
@@ -87,7 +87,7 @@ impl<'a> ToTokens for SymbolAdaptor<'a> {
                     let values = value_table.iter().copied();
 
                     quote! {
-                        fugue_lifter::runtime::symbol::Symbol::ValueMapFilled {
+                        fugue_lifter_runtime::symbol::Symbol::ValueMapFilled {
                             pattern_value: #pvalue,
                             value_table: &[#(#values),*],
                         }
@@ -114,7 +114,7 @@ impl<'a> ToTokens for SymbolAdaptor<'a> {
                     });
 
                     quote! {
-                        fugue_lifter::runtime::symbol::Symbol::ValueMap {
+                        fugue_lifter_runtime::symbol::Symbol::ValueMap {
                             pattern_value: #pvalue,
                             value_table: &[#(#values),*],
                         }
@@ -152,7 +152,7 @@ impl<'a> ToTokens for SymbolAdaptor<'a> {
                 });
 
                 quote! {
-                    fugue_lifter::runtime::symbol::Symbol::Name {
+                    fugue_lifter_runtime::symbol::Symbol::Name {
                         pattern_value: #pvalue,
                         symbol_table: &[#(#symbols),*],
                     }
@@ -171,7 +171,7 @@ impl<'a> ToTokens for SymbolAdaptor<'a> {
                 let size = *size as u16;
 
                 quote! {
-                    fugue_lifter::runtime::symbol::Symbol::Varnode {
+                    fugue_lifter_runtime::symbol::Symbol::Varnode {
                         name: #name,
                         space: #space,
                         offset: #offset,
@@ -204,7 +204,7 @@ impl<'a> ToTokens for SymbolAdaptor<'a> {
                     });
 
                     quote! {
-                        fugue_lifter::runtime::symbol::Symbol::VarnodeListFilled {
+                        fugue_lifter_runtime::symbol::Symbol::VarnodeListFilled {
                             pattern_value: #pvalue,
                             varnode_table: &[#(& #values),*],
                             symbol_table: &[#(#symbols),*],
@@ -248,7 +248,7 @@ impl<'a> ToTokens for SymbolAdaptor<'a> {
                     });
 
                     quote! {
-                        fugue_lifter::runtime::symbol::Symbol::VarnodeList {
+                        fugue_lifter_runtime::symbol::Symbol::VarnodeList {
                             pattern_value: #pvalue,
                             varnode_table: &[#(#values),*],
                             symbol_table: &[#(#symbols),*],
@@ -259,7 +259,7 @@ impl<'a> ToTokens for SymbolAdaptor<'a> {
             S::Operand { handle_index, .. } => {
                 let handle_index = *handle_index;
                 quote! {
-                    fugue_lifter::runtime::symbol::Symbol::Operand {
+                    fugue_lifter_runtime::symbol::Symbol::Operand {
                         handle_index: #handle_index,
                     }
                 }
@@ -270,7 +270,7 @@ impl<'a> ToTokens for SymbolAdaptor<'a> {
                 let size = space.address_size() as u16;
 
                 quote! {
-                    fugue_lifter::runtime::symbol::Symbol::Start {
+                    fugue_lifter_runtime::symbol::Symbol::Start {
                         space: #id,
                         size: #size,
                     }
@@ -282,7 +282,7 @@ impl<'a> ToTokens for SymbolAdaptor<'a> {
                 let size = space.address_size() as u16;
 
                 quote! {
-                    fugue_lifter::runtime::symbol::Symbol::End {
+                    fugue_lifter_runtime::symbol::Symbol::End {
                         space: #id,
                         size: #size,
                     }
@@ -294,7 +294,7 @@ impl<'a> ToTokens for SymbolAdaptor<'a> {
                 let size = space.address_size() as u16;
 
                 quote! {
-                    fugue_lifter::runtime::symbol::Symbol::Next2 {
+                    fugue_lifter_runtime::symbol::Symbol::Next2 {
                         space: #id,
                         size: #size,
                     }
@@ -307,7 +307,7 @@ impl<'a> ToTokens for SymbolAdaptor<'a> {
 
         let ident = self.identifier();
         let declaration = quote! {
-            pub(crate) const #ident: fugue_lifter::runtime::symbol::Symbol = #value;
+            pub(crate) const #ident: fugue_lifter_runtime::symbol::Symbol = #value;
         };
 
         declaration.to_tokens(tokens)

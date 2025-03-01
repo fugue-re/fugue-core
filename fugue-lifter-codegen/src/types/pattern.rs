@@ -34,97 +34,97 @@ impl<'a> ToTokens for PatternExpressionAdaptor<'a> {
         let value = match self.expression {
             E::StartInstruction => {
                 quote! {
-                    fugue_lifter::runtime::pattern::PatternExpression::StartInstruction
+                    fugue_lifter_runtime::pattern::PatternExpression::StartInstruction
                 }
             }
             E::EndInstruction => {
                 quote! {
-                    fugue_lifter::runtime::pattern::PatternExpression::EndInstruction
+                    fugue_lifter_runtime::pattern::PatternExpression::EndInstruction
                 }
             }
             E::Next2Instruction => {
                 quote! {
-                    fugue_lifter::runtime::pattern::PatternExpression::Next2Instruction
+                    fugue_lifter_runtime::pattern::PatternExpression::Next2Instruction
                 }
             }
             E::Constant { value } => {
                 quote! {
-                    fugue_lifter::runtime::pattern::PatternExpression::Constant { value: #value }
+                    fugue_lifter_runtime::pattern::PatternExpression::Constant { value: #value }
                 }
             }
             E::And(lhs, rhs) => {
                 let lhs = self.wrap(lhs);
                 let rhs = self.wrap(rhs);
                 quote! {
-                    fugue_lifter::runtime::pattern::PatternExpression::And(&#lhs, &#rhs)
+                    fugue_lifter_runtime::pattern::PatternExpression::And(&#lhs, &#rhs)
                 }
             }
             E::Or(lhs, rhs) => {
                 let lhs = self.wrap(lhs);
                 let rhs = self.wrap(rhs);
                 quote! {
-                    fugue_lifter::runtime::pattern::PatternExpression::Or(&#lhs, &#rhs)
+                    fugue_lifter_runtime::pattern::PatternExpression::Or(&#lhs, &#rhs)
                 }
             }
             E::Xor(lhs, rhs) => {
                 let lhs = self.wrap(lhs);
                 let rhs = self.wrap(rhs);
                 quote! {
-                    fugue_lifter::runtime::pattern::PatternExpression::Xor(&#lhs, &#rhs)
+                    fugue_lifter_runtime::pattern::PatternExpression::Xor(&#lhs, &#rhs)
                 }
             }
             E::Plus(lhs, rhs) => {
                 let lhs = self.wrap(lhs);
                 let rhs = self.wrap(rhs);
                 quote! {
-                    fugue_lifter::runtime::pattern::PatternExpression::Plus(&#lhs, &#rhs)
+                    fugue_lifter_runtime::pattern::PatternExpression::Plus(&#lhs, &#rhs)
                 }
             }
             E::Sub(lhs, rhs) => {
                 let lhs = self.wrap(lhs);
                 let rhs = self.wrap(rhs);
                 quote! {
-                    fugue_lifter::runtime::pattern::PatternExpression::Sub(&#lhs, &#rhs)
+                    fugue_lifter_runtime::pattern::PatternExpression::Sub(&#lhs, &#rhs)
                 }
             }
             E::Mult(lhs, rhs) => {
                 let lhs = self.wrap(lhs);
                 let rhs = self.wrap(rhs);
                 quote! {
-                    fugue_lifter::runtime::pattern::PatternExpression::Mult(&#lhs, &#rhs)
+                    fugue_lifter_runtime::pattern::PatternExpression::Mult(&#lhs, &#rhs)
                 }
             }
             E::Div(lhs, rhs) => {
                 let lhs = self.wrap(lhs);
                 let rhs = self.wrap(rhs);
                 quote! {
-                    fugue_lifter::runtime::pattern::PatternExpression::Div(&#lhs, &#rhs)
+                    fugue_lifter_runtime::pattern::PatternExpression::Div(&#lhs, &#rhs)
                 }
             }
             E::LeftShift(lhs, rhs) => {
                 let lhs = self.wrap(lhs);
                 let rhs = self.wrap(rhs);
                 quote! {
-                    fugue_lifter::runtime::pattern::PatternExpression::LeftShift(&#lhs, &#rhs)
+                    fugue_lifter_runtime::pattern::PatternExpression::LeftShift(&#lhs, &#rhs)
                 }
             }
             E::RightShift(lhs, rhs) => {
                 let lhs = self.wrap(lhs);
                 let rhs = self.wrap(rhs);
                 quote! {
-                    fugue_lifter::runtime::pattern::PatternExpression::RightShift(&#lhs, &#rhs)
+                    fugue_lifter_runtime::pattern::PatternExpression::RightShift(&#lhs, &#rhs)
                 }
             }
             E::Minus(rhs) => {
                 let rhs = self.wrap(rhs);
                 quote! {
-                    fugue_lifter::runtime::pattern::PatternExpression::Minus(&#rhs)
+                    fugue_lifter_runtime::pattern::PatternExpression::Minus(&#rhs)
                 }
             }
             E::Not(rhs) => {
                 let rhs = self.wrap(rhs);
                 quote! {
-                    fugue_lifter::runtime::pattern::PatternExpression::Not(&#rhs)
+                    fugue_lifter_runtime::pattern::PatternExpression::Not(&#rhs)
                 }
             }
             E::TokenField {
@@ -137,7 +137,7 @@ impl<'a> ToTokens for PatternExpressionAdaptor<'a> {
                 shift,
             } => {
                 quote! {
-                    fugue_lifter::runtime::pattern::PatternExpression::TokenField {
+                    fugue_lifter_runtime::pattern::PatternExpression::TokenField {
                         big_endian: #big_endian,
                         sign_bit: #sign_bit,
                         bit_start: #bit_start,
@@ -157,7 +157,7 @@ impl<'a> ToTokens for PatternExpressionAdaptor<'a> {
                 shift,
             } => {
                 quote! {
-                    fugue_lifter::runtime::pattern::PatternExpression::ContextField {
+                    fugue_lifter_runtime::pattern::PatternExpression::ContextField {
                         sign_bit: #sign_bit,
                         bit_start: #bit_start,
                         bit_end: #bit_end,
@@ -200,7 +200,7 @@ impl<'a> ToTokens for PatternExpressionAdaptor<'a> {
                     sym.pattern_value()
                 } else {
                     quote! {
-                        fugue_lifter::runtime::pattern::PatternExpression::Constant { value: 0i64 }
+                        fugue_lifter_runtime::pattern::PatternExpression::Constant { value: 0i64 }
                     }
                     .to_tokens(tokens);
                     return;
@@ -216,17 +216,17 @@ impl<'a> ToTokens for PatternExpressionAdaptor<'a> {
                 let rel_offset = operand.relative_offset() as u8;
                 let offset = if operand.offset_base().is_none() {
                     quote! {
-                        fugue_lifter::runtime::pattern::OperandOffset::Relative(#rel_offset)
+                        fugue_lifter_runtime::pattern::OperandOffset::Relative(#rel_offset)
                     }
                 } else {
                     let index = index as u8;
                     quote! {
-                        fugue_lifter::runtime::pattern::OperandOffset::Operand(#index)
+                        fugue_lifter_runtime::pattern::OperandOffset::Operand(#index)
                     }
                 };
 
                 quote! {
-                    fugue_lifter::runtime::pattern::PatternExpression::Operand {
+                    fugue_lifter_runtime::pattern::PatternExpression::Operand {
                         constructor: &#ctor_vname,
                         offset: #offset,
                         value: &#value,
