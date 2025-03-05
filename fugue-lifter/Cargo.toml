@@ -15,10 +15,12 @@ x86-64 = ["fugue-lifter-x86/x86-64"]
 default = ["arm", "aarch64", "x86", "x86-64"]
 
 [dependencies]
+fugue-bytes = { version = "0.3", path = "../fugue-bytes" }
 fugue-lifter-arm =  { version = "0.3", path = "../fugue-lifter-arm", default-features = false, optional = true }
 fugue-lifter-aarch64 =  { version = "0.3", path = "../fugue-lifter-aarch64", default-features = false, optional = true }
 fugue-lifter-runtime = { version = "0.3", path = "../fugue-lifter-runtime" }
 fugue-lifter-x86 =  { version = "0.3", path = "../fugue-lifter-x86", default-features = false, optional = true }
+thiserror = "2"
 
 [build-dependencies]
 fugue-lifter-codegen = { version = "0.3", path = "../fugue-lifter-codegen" }

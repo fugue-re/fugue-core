@@ -7,4 +7,7 @@ pub use fugue_lifter_x86::x86;
 #[cfg(feature = "x86-64")]
 pub use fugue_lifter_x86::x86_64;
 
+pub mod builder;
+pub use builder::{LifterBuilder, LifterBuilderError};
+
 pub use fugue_lifter_runtime as runtime;
