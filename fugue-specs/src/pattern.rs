@@ -1,10 +1,7 @@
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::fmt::{Display, Write};
-use std::fs::File;
-use std::io::{self, BufReader, Read};
 use std::ops::Range;
-use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
 use nom::branch::alt;
@@ -22,8 +19,6 @@ use serde::de::{SeqAccess, Visitor};
 use serde::ser::SerializeSeq;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use thiserror::Error;
-
-use crate::common::ArchSpec;
 
 #[derive(Debug, Error)]
 pub enum PatternError {
@@ -324,99 +319,22 @@ impl Serialize for Pattern {
     }
 }
 
-#[derive(Debug, Error)]
-pub enum PatternSetError {
-    #[error("cannot parse patterns: {0}")]
-    Parse(serde_yaml::Error),
-    #[error("cannot parse patterns from `{0}`: {1}")]
-    ParseFile(PathBuf, serde_yaml::Error),
-    #[error("cannot parse patterns from `{0}`: {1}")]
-    ReadFile(PathBuf, io::Error),
+pub struct PatternMatchIter<'a>(Box<dyn Iterator<Item = (Range<usize>, &'a PatternContext)> + 'a>);
+
+impl<'a> PatternMatchIter<'a> {
+    pub(crate) fn new<I>(iter: I) -> Self
+    where
+        I: Iterator<Item = (Range<usize>, &'a PatternContext)> + 'a,
+    {
+        Self(Box::new(iter))
+    }
 }
 
-#[derive(Clone)]
-pub struct PatternSet {
-    architecture: ArchSpec,
-    groups: Vec<PatternGroup>,
-    patterns: Vec<PatternsWithContext>,
-}
-
-pub struct PatternSetMatchIter<'a>(
-    Box<dyn Iterator<Item = (Range<usize>, &'a PatternContext)> + 'a>,
-);
-
-impl<'a> Iterator for PatternSetMatchIter<'a> {
+impl<'a> Iterator for PatternMatchIter<'a> {
     type Item = (Range<usize>, &'a PatternContext);
 
     fn next(&mut self) -> Option<Self::Item> {
         self.0.next()
-    }
-}
-
-impl PatternSet {
-    pub fn from_str(input: impl AsRef<str>) -> Result<PatternSet, PatternSetError> {
-        serde_yaml::from_str(input.as_ref()).map_err(PatternSetError::Parse)
-    }
-
-    pub fn from_reader(reader: impl Read) -> Result<PatternSet, PatternSetError> {
-        serde_yaml::from_reader(reader).map_err(PatternSetError::Parse)
-    }
-
-    pub fn from_file(path: impl AsRef<Path>) -> Result<PatternSet, PatternSetError> {
-        let path = path.as_ref();
-        let file = BufReader::new(
-            File::open(path).map_err(|e| PatternSetError::ReadFile(path.to_owned(), e))?,
-        );
-        serde_yaml::from_reader(file).map_err(|e| PatternSetError::ParseFile(path.to_owned(), e))
-    }
-
-    pub fn architecture(&self) -> &ArchSpec {
-        &self.architecture
-    }
-
-    pub fn matches<'a>(&'a self, bytes: &'a [u8]) -> PatternSetMatchIter<'a> {
-        PatternSetMatchIter(Box::new(
-            self.groups
-                .iter()
-                .flat_map(|group| group.matches(bytes))
-                .chain(
-                    self.patterns
-                        .iter()
-                        .flat_map(|pattern| pattern.matches(bytes)),
-                ),
-        ))
-    }
-}
-
-impl<'de> Deserialize<'de> for PatternSet {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let ps = PatternSetT::deserialize(deserializer)?;
-
-        Ok(Self {
-            architecture: ps.architecture.into_owned(),
-            groups: ps.patterns.groups.into_owned(),
-            patterns: ps.patterns.patterns.into_owned(),
-        })
-    }
-}
-
-impl Serialize for PatternSet {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let t = PatternSetT {
-            architecture: Cow::Borrowed(&self.architecture),
-            patterns: PatternOrGroupSeq {
-                groups: Cow::Borrowed(&self.groups),
-                patterns: Cow::Borrowed(&self.patterns),
-            },
-        };
-
-        t.serialize(serializer)
     }
 }
 
@@ -432,8 +350,8 @@ impl Patterns {
         self.patterns.extend(other.patterns);
     }
 
-    pub fn matches<'a>(&'a self, bytes: &'a [u8]) -> PatternSetMatchIter<'a> {
-        PatternSetMatchIter(Box::new(
+    pub fn matches<'a>(&'a self, bytes: &'a [u8]) -> PatternMatchIter<'a> {
+        PatternMatchIter::new(
             self.groups
                 .iter()
                 .flat_map(|group| group.matches(bytes))
@@ -442,7 +360,7 @@ impl Patterns {
                         .iter()
                         .flat_map(|pattern| pattern.matches(bytes)),
                 ),
-        ))
+        )
     }
 }
 
@@ -486,17 +404,10 @@ enum PatternOrGroup<'a> {
     },
 }
 
-#[derive(Deserialize, Serialize)]
-struct PatternSetT<'a> {
-    architecture: Cow<'a, ArchSpec>,
-    #[serde(bound(deserialize = "PatternOrGroupSeq<'a>: Deserialize<'de>"))]
-    patterns: PatternOrGroupSeq<'a>,
-}
-
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub(crate) struct PatternOrGroupSeq<'a> {
-    groups: Cow<'a, [PatternGroup]>,
-    patterns: Cow<'a, [PatternsWithContext]>,
+    pub(crate) groups: Cow<'a, [PatternGroup]>,
+    pub(crate) patterns: Cow<'a, [PatternsWithContext]>,
 }
 
 impl<'de> Deserialize<'de> for PatternOrGroupSeq<'_> {
@@ -646,7 +557,7 @@ impl<'de> Deserialize<'de> for PatternsWithContext {
                 patterns: Vec<Pattern>,
                 #[serde(default)]
                 context: PatternContext,
-            }
+            },
         }
 
         let result = match PatternWithContexT::deserialize(deserializer)? {
@@ -654,10 +565,9 @@ impl<'de> Deserialize<'de> for PatternsWithContext {
                 patterns: vec![pattern],
                 context: PatternContext::default(),
             },
-            PatternWithContexT::PatternWithContext { patterns, context } => Self {
-                patterns,
-                context,
-            },
+            PatternWithContexT::PatternWithContext { patterns, context } => {
+                Self { patterns, context }
+            }
         };
 
         Ok(result)
@@ -758,8 +668,6 @@ impl Serialize for PatternContext {
 
 #[cfg(test)]
 mod test {
-    use std::io::Cursor;
-
     use super::*;
 
     const PAT_GROUP: &'static str = r#"
@@ -885,78 +793,15 @@ patterns:
     total-bits: 32
 "#;
 
-    const PAT: &'static str = r#"
-architecture: ARM:LE:32:*:*
-patterns:
-- pattern-group:
-    post:
-      context:
-      - name: TMode
-        value: 1
-      patterns:
-      - .. b5 1....... b0
-      - .. b5 00...... 1c
-      - .. b5 .. 46
-      - .. b5 .. 01.01...
-      - .. b5 .. 68
-      - .. b5 .. 01.01... 10...... b0
-      - 1....... b5 .. af
-      - 100..... b0 .0 b5
-      - 00...... 1c .0 b5
-      - .. 01.01... .0 b5
-      - .. 68 .0 b5
-      - 2d e9 .. 0.
-      - 4d f8 04 ed
-    post-bits: 16
-    pre:
-      - '.......0 bd'
-      - '.......0 bd 00 00'
-      - '.......0 bd 00 bf'
-      - '.......0 bd c0 46'
-      - ff ff
-      - c0 46
-      - 70 47
-      - 70 47 00 00
-      - 70 47 c0 46
-      - 70 47 00 bf
-      - 000..... b0 .0 bd
-      - 00 bf
-      - af f3 00 80
-      - bd e8 .. 0.
-      - 46 f7
-      - 5d f8 0....... fb
-      - 5d f8 04 fb
-      - bd e8 .. 100.....
-    total-bits: 32
-- pattern:
-    context:
-    - name: TMode
-      value: 0
-    patterns:
-    - .. 0. 8f e2 .. 0. 8c e2 .. 0. bc e5
-- pattern:
-    context:
-    - name: TMode
-      value: 1
-    patterns:
-    - 03 b4 01 48 01 90 01 bd
-- pattern:
-    context:
-    - name: TMode
-      value: 1
-    patterns:
-    - 10 b5
-"#;
-
     #[test]
     fn test_yaml_parse() -> Result<(), Box<dyn std::error::Error>> {
         let _ = serde_yaml::from_str::<PatternGroup>(PAT_GROUP)?;
         let _ = serde_yaml::from_str::<PatternsWithContext>(PAT_WITH_CTX)?;
         let _ = serde_yaml::from_str::<PatternOrGroupSeq>(PATS_WITH_CTX)?;
 
-        let _ = serde_yaml::from_reader::<_, PatternSet>(Cursor::new(PAT))?;
-        let v = serde_yaml::from_str::<PatternSet>(PAT)?;
-        let _ = serde_yaml::to_string(&v)?;
+        // let _ = serde_yaml::from_reader::<_, PatternSet>(Cursor::new(PAT))?;
+        // let v = serde_yaml::from_str::<PatternSet>(PAT)?;
+        // let _ = serde_yaml::to_string(&v)?;
 
         Ok(())
     }

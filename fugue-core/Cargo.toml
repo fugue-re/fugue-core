@@ -11,10 +11,11 @@ fugue-arch = { version = "0.3", path = "../fugue-arch" }
 fugue-bv = { version = "0.3", path = "../fugue-bv" }
 fugue-bytes = { version = "0.3", path = "../fugue-bytes" }
 fugue-ir = { version = "0.3", path = "../fugue-ir" }
+fugue-specs = { version = "0.3", path = "../fugue-specs" }
 gazebo = "0.8"
 heed = { version = "0.20", features = ["read-txn-no-tls", "posix-sem"] }
-iset = "0.2"
-itertools = "0.13"
+iset = "0.3"
+itertools = "0.14"
 nom = "7"
 memmap2 = "0.9"
 object = "0.35"
@@ -28,7 +29,7 @@ serde_yaml = "0.9"
 smallvec = "1.13"
 static_init = "1"
 tempfile = "3"
-thiserror = "1"
+thiserror = "2"
 yaxpeax-arch = { version = "0.2", default-features = false }
 yaxpeax-arm = "0.2"
 yaxpeax-x86 = "1.2"

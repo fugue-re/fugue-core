@@ -10,7 +10,6 @@ use bitflags::bitflags;
 use fugue_lifter::{Language, PCodeOp};
 use fugue_sleigh::{CodeBlock, IRBuilder, IRBuilderError};
 
-use serde::de::value::StringDeserializer;
 use serde::ser::SerializeSeq;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
@@ -18,6 +17,7 @@ use thiserror::Error;
 
 use crate::common::{
     ArchSpec, AttrOptWithVal, AttrWithVal, GroupOrValue, GroupOrValueVisitor, OneOrMany,
+    PlatformConstraint, PlatformConstraints,
 };
 use crate::pattern::PatternsWithContext;
 
@@ -75,54 +75,6 @@ impl From<FunctionProperties> for Vec<FunctionProperty> {
 impl From<FunctionProperties> for OneOrMany<FunctionProperty> {
     fn from(value: FunctionProperties) -> Self {
         Vec::from(value).into()
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum PlatformConstraint {
-    Arch(ArchSpec),
-    Platform(String),
-}
-
-impl<'de> Deserialize<'de> for PlatformConstraint {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let av = AttrWithVal::<String, String>::deserialize(deserializer)?;
-        match av.attr.as_ref() {
-            "arch" => {
-                Ok(Self::Arch(ArchSpec::deserialize(StringDeserializer::new(av.val))?))
-            }
-            "platform" => {
-                Ok(Self::Platform(av.val))
-            }
-            _ => {
-                Err(<D::Error as serde::de::Error>::custom(
-                    "invalid arch/platform constraint (should be of the form arch: ... or platform: ...)",
-                ))
-            }
-        }
-    }
-}
-
-impl Serialize for PlatformConstraint {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        match self {
-            Self::Arch(arch) => AttrWithVal {
-                attr: "arch",
-                val: arch,
-            }
-            .serialize(serializer),
-            Self::Platform(platform) => AttrWithVal {
-                attr: "platform",
-                val: platform,
-            }
-            .serialize(serializer),
-        }
     }
 }
 
@@ -317,9 +269,13 @@ impl FunctionSpec {
 
 #[derive(Clone, Deserialize, Serialize)]
 pub struct FunctionSpecs {
+    #[serde(default)]
     author: Option<String>,
+    #[serde(default)]
     description: Option<String>,
-    constraints: Option<GroupOrValue<PlatformConstraint>>,
+    #[serde(default)]
+    constraints: Option<PlatformConstraints>,
+    #[serde(default)]
     functions: Vec<FunctionSpec>,
 }
 
@@ -358,7 +314,11 @@ impl FunctionSpecs {
         self.description.as_deref()
     }
 
-    pub fn matches<V>(&self, visitor: &V) -> bool
+    pub fn constraints(&self) -> Option<&PlatformConstraints> {
+        self.constraints.as_ref()
+    }
+
+    pub fn can_match<V>(&self, visitor: &V) -> bool
     where
         V: GroupOrValueVisitor<PlatformConstraint>,
     {

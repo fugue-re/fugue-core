@@ -6,6 +6,7 @@ use std::str::FromStr;
 use fugue_arch::ArchitectureDef;
 use fugue_bytes::Endian;
 
+use serde::de::value::StringDeserializer;
 use serde::de::{Error, Visitor};
 use serde::ser::SerializeMap;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -556,6 +557,56 @@ impl Serialize for ArchSpec {
         serializer.serialize_str(&parts)
     }
 }
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum PlatformConstraint {
+    Arch(ArchSpec),
+    Platform(String),
+}
+
+impl<'de> Deserialize<'de> for PlatformConstraint {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let av = AttrWithVal::<String, String>::deserialize(deserializer)?;
+        match av.attr.as_ref() {
+            "arch" => {
+                Ok(Self::Arch(ArchSpec::deserialize(StringDeserializer::new(av.val))?))
+            }
+            "platform" => {
+                Ok(Self::Platform(av.val))
+            }
+            _ => {
+                Err(<D::Error as serde::de::Error>::custom(
+                    "invalid arch/platform constraint (should be of the form arch: ... or platform: ...)",
+                ))
+            }
+        }
+    }
+}
+
+impl Serialize for PlatformConstraint {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match self {
+            Self::Arch(arch) => AttrWithVal {
+                attr: "arch",
+                val: arch,
+            }
+            .serialize(serializer),
+            Self::Platform(platform) => AttrWithVal {
+                attr: "platform",
+                val: platform,
+            }
+            .serialize(serializer),
+        }
+    }
+}
+
+pub type PlatformConstraints = GroupOrValue<PlatformConstraint>;
 
 #[cfg(test)]
 mod test {

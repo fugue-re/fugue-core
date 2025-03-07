@@ -14,10 +14,10 @@ members = [
   "fugue-lifter-codegen",
   "fugue-lifter-runtime",
   "fugue-lifter-x86",
+  "fugue-specs",
+  "fugue-sleigh",
   "fugue-state",
   "fugue-state-derive",
-  "fugue-fspec",
-  "fugue-sleigh",
 ]
 resolver = "2"
 

@@ -1,8 +1,7 @@
 use std::borrow::Cow;
 use std::fs::File;
 use std::io::Error;
-use std::ops::Deref;
-use std::ops::Range;
+use std::ops::{Deref, Range};
 use std::path::Path;
 use std::sync::Arc;
 

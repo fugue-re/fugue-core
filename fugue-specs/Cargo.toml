@@ -1,5 +1,5 @@
 [package]
-name = "fugue-fspec"
+name = "fugue-specs"
 version = "0.3.0"
 authors = ["Sam Thomas <st@xv.ax>"]
 edition = "2021"
