@@ -5,7 +5,6 @@ members = [
   "fugue-base",
   "fugue-bytes",
   "fugue-bv",
-  "fugue-core",
   "fugue-fp",
   "fugue-lifter",
   "fugue-lifter-aarch64",
@@ -17,8 +16,6 @@ members = [
   "fugue-sleigh",
   "fugue-sleigh-language",
   "fugue-sleigh-semantics",
-  "fugue-state",
-  "fugue-state-derive",
 ]
 resolver = "2"
 

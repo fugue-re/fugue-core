@@ -3,9 +3,8 @@ use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 
 use fugue_bytes::Order;
-use fugue_ir::convention::{Convention, ReturnAddress};
-use fugue_ir::register::RegisterNames;
-use fugue_ir::{Address, AddressSpace, Translator, VarnodeData};
+use fugue_base::{Address, AddressSpace, Translator, VarnodeData};
+use fugue_lifter_runtime::Language;
 
 use crate::flat::FlatState;
 use crate::{FromStateValues, IntoStateValues, State, StateOps, StateValue};
@@ -163,7 +162,7 @@ impl<V: StateValue, O: Order> StateOps for RegisterState<V, O> {
 }
 
 impl<T: StateValue, O: Order> RegisterState<T, O> {
-    pub fn new(translator: &Translator, convention: &Convention) -> Self {
+    pub fn new(language: &'static Language) -> Self {
         let program_counter = *translator.program_counter();
         let stack_pointer = *convention.stack_pointer().varnode();
         let return_location = ReturnLocation::from_convention(convention);
@@ -175,7 +174,7 @@ impl<T: StateValue, O: Order> RegisterState<T, O> {
         log::debug!("register space size: {} bytes", size);
 
         Self {
-            inner: FlatState::new(space, size),
+            inner: FlatState::new(size),
             program_counter,
             stack_pointer,
             return_location,

@@ -6,8 +6,9 @@ use crate::deserialise::{DeserialiseError, XmlExt};
 
 pub type FloatFormats = Map<usize, Arc<FloatFormat>>;
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[derive(serde::Deserialize, serde::Serialize)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Deserialize, serde::Serialize,
+)]
 pub struct FloatFormat {
     pub size: usize,
     pub sign_pos: u32,

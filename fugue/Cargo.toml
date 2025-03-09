@@ -9,13 +9,10 @@ homepage = "https://fugue.re"
 
 [features]
 fp = ["fugue-fp"]
-state = ["fugue-state"]
 
 [dependencies]
 fugue-arch = { path = "../fugue-arch", version = "0.3" }
 fugue-bv = { path = "../fugue-bv", version = "0.3" }
 fugue-bytes = { path = "../fugue-bytes", version = "0.3" }
-fugue-core = { path = "../fugue-core", version = "0.3" }
 fugue-fp = { path = "../fugue-fp", version = "0.3", optional = true }
 fugue-lifter = { path = "../fugue-lifter", version = "0.3" }
-fugue-state = { path = "../fugue-state", version = "0.3", optional = true }

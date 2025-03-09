@@ -1,20 +1,11 @@
 pub use fugue_bv::BitVec;
-pub use fugue_ir::float_format::FloatFormat;
+pub use fugue_sleigh_language::float_format::FloatFormat;
 
 use std::cmp::Ordering;
-use std::ops::Add;
-use std::ops::AddAssign;
-use std::ops::Div;
-use std::ops::DivAssign;
-use std::ops::Mul;
-use std::ops::MulAssign;
-use std::ops::Neg;
-use std::ops::Sub;
-use std::ops::SubAssign;
 use std::mem::take;
+use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 
-use rug::Assign;
-use rug::Integer as BigInt;
+use rug::{Assign, Integer as BigInt};
 
 use thiserror::Error;
 
@@ -57,8 +48,8 @@ impl Float {
         kind: FloatKind,
         sign: Sign,
         unscaled: BigInt,
-        scale: i32) -> Self {
-
+        scale: i32,
+    ) -> Self {
         let max_scale = (1i32 << (exp_bits - 1u32)) - 1i32;
         let min_scale = 1 - max_scale;
 
@@ -66,7 +57,11 @@ impl Float {
             frac_bits,
             exp_bits,
             kind,
-            sign: if matches!(sign, Sign::Positive) { 1 } else { -1 },
+            sign: if matches!(sign, Sign::Positive) {
+                1
+            } else {
+                -1
+            },
             unscaled,
             scale,
             max_scale,
@@ -79,7 +74,11 @@ impl Float {
             frac_bits,
             exp_bits,
             FloatKind::Finite,
-            if value >= 0 { Sign::Positive } else { Sign::Negative },
+            if value >= 0 {
+                Sign::Positive
+            } else {
+                Sign::Negative
+            },
             value.abs(),
             frac_bits as i32,
         );
@@ -126,8 +125,8 @@ impl Float {
     }
 
     pub fn is_normal(&self) -> bool {
-        matches!(self.kind, FloatKind::Finite) &&
-            self.unscaled.significant_bits() >= self.frac_bits + 1
+        matches!(self.kind, FloatKind::Finite)
+            && self.unscaled.significant_bits() >= self.frac_bits + 1
     }
 
     pub fn is_infinite(&self) -> bool {
@@ -168,12 +167,14 @@ impl Float {
                 panic!("rounding zero + epsilon, need a bit length")
             }
             self.make_zero();
-            return
+            return;
         }
 
-        let extra_bits =
-            (self.unscaled.significant_bits().wrapping_sub(self.frac_bits - 1) as i32).max(
-                self.min_scale.wrapping_sub(self.scale));
+        let extra_bits = (self
+            .unscaled
+            .significant_bits()
+            .wrapping_sub(self.frac_bits - 1) as i32)
+            .max(self.min_scale.wrapping_sub(self.scale));
 
         if extra_bits <= 0 {
             panic!("round with no extra bits of precision")
@@ -181,7 +182,12 @@ impl Float {
 
         let mid_bit = (extra_bits - 1) as u32;
         let mid_bit_set = self.unscaled.get_bit(mid_bit);
-        let eps = eps || self.unscaled.find_one(0).map(|pos| pos < mid_bit).unwrap_or(true);
+        let eps = eps
+            || self
+                .unscaled
+                .find_one(0)
+                .map(|pos| pos < mid_bit)
+                .unwrap_or(true);
 
         self.unscaled <<= extra_bits as u32;
         self.scale = self.scale.wrapping_add(extra_bits);
@@ -191,8 +197,10 @@ impl Float {
         if mid_bit_set && (eps || is_odd) {
             self.unscaled += 1;
             if self.unscaled.significant_bits() > self.frac_bits + 1 {
-                assert_eq!(self.unscaled.significant_bits(),
-                           self.unscaled.find_one(0).map(|pos| pos + 1).unwrap_or(0));
+                assert_eq!(
+                    self.unscaled.significant_bits(),
+                    self.unscaled.find_one(0).map(|pos| pos + 1).unwrap_or(0)
+                );
                 self.unscaled >>= 1;
                 self.scale = self.scale.wrapping_add(1);
             }
@@ -209,8 +217,10 @@ impl Float {
         }
 
         self.scale.wrapping_add(
-            self.unscaled.significant_bits()
-                .wrapping_sub(self.frac_bits) as i32) as u32
+            self.unscaled
+                .significant_bits()
+                .wrapping_sub(self.frac_bits) as i32,
+        ) as u32
     }
 
     fn upscale(&mut self, bits: u32) {
@@ -258,7 +268,7 @@ impl DivAssign<Self> for Float {
     fn div_assign(&mut self, rhs: Self) {
         if self.is_nan() || rhs.is_nan() {
             self.make_quiet_nan();
-            return
+            return;
         }
 
         if self.is_infinite() {
@@ -267,19 +277,19 @@ impl DivAssign<Self> for Float {
             } else {
                 self.sign *= rhs.sign;
             }
-            return
+            return;
         }
 
         match rhs.kind {
             FloatKind::QuietNaN | FloatKind::SignallingNaN => {
                 self.make_quiet_nan();
-                return
-            },
+                return;
+            }
             FloatKind::Infinite => {
                 self.make_zero();
                 self.sign *= rhs.sign;
-                return
-            },
+                return;
+            }
             FloatKind::Finite => {
                 if rhs.is_zero() {
                     if self.is_zero() {
@@ -288,10 +298,11 @@ impl DivAssign<Self> for Float {
                         self.kind = FloatKind::Infinite;
                         self.sign *= rhs.sign;
                     }
-                    return
+                    return;
                 }
 
-                let lshift = self.frac_bits
+                let lshift = self
+                    .frac_bits
                     .wrapping_add(2)
                     .wrapping_add(rhs.unscaled.significant_bits())
                     .wrapping_sub(self.unscaled.significant_bits());
@@ -302,11 +313,12 @@ impl DivAssign<Self> for Float {
                 let mut r = rhs.unscaled;
                 self.unscaled.div_rem_mut(&mut r);
                 self.sign *= rhs.sign;
-                self.scale = self.scale
+                self.scale = self
+                    .scale
                     .wrapping_sub(rhs.scale)
                     .wrapping_sub(self.frac_bits as i32);
                 self.internal_round(r != 0);
-            },
+            }
         }
     }
 }
@@ -335,23 +347,24 @@ impl MulAssign<Self> for Float {
     fn mul_assign(&mut self, rhs: Self) {
         if self.is_nan() || rhs.is_nan() {
             self.make_quiet_nan();
-            return
+            return;
         }
 
         if (self.is_zero() && rhs.is_infinite()) || (self.is_infinite() && rhs.is_zero()) {
             self.make_quiet_nan();
-            return
+            return;
         }
 
         if self.is_infinite() || rhs.is_infinite() {
             self.kind = FloatKind::Infinite;
             self.sign *= rhs.sign;
-            return
+            return;
         }
 
         self.sign *= rhs.sign;
         self.unscaled *= rhs.unscaled;
-        self.scale = self.scale
+        self.scale = self
+            .scale
             .wrapping_add(rhs.scale)
             .wrapping_sub(self.frac_bits as i32);
         self.scale_up_to(self.frac_bits + 2);
@@ -364,10 +377,10 @@ impl Float {
         let rhs = rhs;
         let d = self.scale.wrapping_sub(rhs.scale);
         if d as u32 > self.frac_bits + 1 {
-            return
+            return;
         } else if d < -(self.frac_bits as i32 + 1) {
             *self = rhs;
-            return
+            return;
         }
 
         let (d, mut a, b) = if d >= 0 {
@@ -400,7 +413,10 @@ impl Float {
             (-d, a, b)
         };
 
-        let residue = b.unscaled.find_one(0).map(|pos| (pos as i32) < (d - 1))
+        let residue = b
+            .unscaled
+            .find_one(0)
+            .map(|pos| (pos as i32) < (d - 1))
             .unwrap_or(true);
         self.scale = a.scale.wrapping_sub(1);
 
@@ -416,10 +432,10 @@ impl Float {
     fn sub0_assign(&mut self, rhs: Self) {
         let d = self.scale.wrapping_sub(rhs.scale);
         if d as u32 > self.frac_bits + 2 {
-            return
+            return;
         } else if d < -(self.frac_bits as i32 + 2) {
             *self = rhs;
-            return
+            return;
         }
 
         let (d, mut a, mut b) = if d >= 0 {
@@ -452,7 +468,10 @@ impl Float {
             (-d, a, b)
         };
 
-        let residue = b.unscaled.find_one(0).map(|pos| (pos as i32) < (d - 2))
+        let residue = b
+            .unscaled
+            .find_one(0)
+            .map(|pos| (pos as i32) < (d - 2))
             .unwrap_or(true);
         self.sign = a.sign;
         self.scale = a.scale.wrapping_sub(2);
@@ -504,35 +523,35 @@ impl AddAssign<Self> for Float {
     fn add_assign(&mut self, rhs: Self) {
         if self.is_nan() || rhs.is_nan() {
             self.make_quiet_nan();
-            return
+            return;
         }
 
         if self.is_infinite() && rhs.is_infinite() {
             if self.sign != rhs.sign {
                 self.make_quiet_nan();
             }
-            return
+            return;
         }
 
         if self.is_infinite() {
-            return
+            return;
         }
 
         if rhs.is_infinite() {
             *self = rhs;
-            return
+            return;
         }
 
         if rhs.is_zero() {
             if self.is_zero() {
                 self.sign = if self.sign < 0 && rhs.sign < 0 { -1 } else { 1 };
             }
-            return
+            return;
         }
 
         if self.is_zero() {
             *self = rhs;
-            return
+            return;
         }
 
         if self.sign == rhs.sign {
@@ -588,21 +607,19 @@ impl Float {
 
     pub fn sqrt_assign(&mut self) {
         if self.is_zero() {
-            return
+            return;
         }
 
         if self.is_nan() || self.sign == -1 {
             self.make_quiet_nan();
-            return
+            return;
         }
 
         if self.is_infinite() {
-            return
+            return;
         }
 
-        let sig_bits = self.frac_bits
-            .wrapping_mul(2)
-            .wrapping_add(3);
+        let sig_bits = self.frac_bits.wrapping_mul(2).wrapping_add(3);
         self.scale_up_to(sig_bits);
 
         if self.scale.wrapping_add(self.frac_bits as i32) & 1 != 0 {
@@ -636,7 +653,7 @@ impl Float {
     fn floor0_assign(&mut self) {
         if self.scale < 0 {
             self.make_zero();
-            return
+            return;
         }
         let nbits = self.frac_bits.wrapping_sub(self.scale as u32);
         let temp = take(&mut self.unscaled);
@@ -645,14 +662,18 @@ impl Float {
 
     fn ceil0_assign(&mut self) {
         if self.is_zero() {
-            return
+            return;
         } else if self.scale < 0 {
             self.make_one();
-            return
+            return;
         }
 
         let nbits = self.frac_bits.wrapping_sub(self.scale as u32);
-        let increment = self.unscaled.find_one(0).map(|pos| pos < nbits).unwrap_or(true);
+        let increment = self
+            .unscaled
+            .find_one(0)
+            .map(|pos| pos < nbits)
+            .unwrap_or(true);
         let temp = take(&mut self.unscaled);
         self.unscaled.assign((temp >> nbits) << nbits);
 
@@ -674,10 +695,11 @@ impl Float {
     pub fn floor_assign(&mut self) {
         match self.kind {
             FloatKind::Finite | FloatKind::QuietNaN => return,
-            FloatKind::SignallingNaN => { // should we return here?
+            FloatKind::SignallingNaN => {
+                // should we return here?
                 self.make_quiet_nan();
-                return
-            },
+                return;
+            }
             _ => (),
         }
 
@@ -697,10 +719,11 @@ impl Float {
     pub fn ceil_assign(&mut self) {
         match self.kind {
             FloatKind::Finite | FloatKind::QuietNaN => return,
-            FloatKind::SignallingNaN => { // should we return here?
+            FloatKind::SignallingNaN => {
+                // should we return here?
                 self.make_quiet_nan();
-                return
-            },
+                return;
+            }
             _ => (),
         }
 
@@ -728,7 +751,7 @@ impl Float {
 
     pub fn trunc_into_bitvec(self, bits: u32) -> BitVec {
         if self.is_nan() {
-            return BitVec::zero(bits)
+            return BitVec::zero(bits);
         }
 
         if self.is_infinite() {
@@ -736,7 +759,7 @@ impl Float {
                 BitVec::min_value_with(bits, true)
             } else {
                 BitVec::max_value_with(bits, true)
-            }
+            };
         }
 
         let sign = self.sign < 0;
@@ -776,7 +799,7 @@ impl Float {
             FloatKind::Finite,
             Sign::Positive,
             BigInt::from(1) << self.frac_bits,
-            -1
+            -1,
         );
         self.add_assign(half);
         self.floor_assign();
@@ -830,37 +853,37 @@ impl Neg for &'_ Float {
 impl PartialEq<Self> for Float {
     fn eq(&self, other: &Self) -> bool {
         if self.is_nan() {
-            return other.is_nan()
+            return other.is_nan();
         }
 
         if other.is_nan() {
-            return false
+            return false;
         }
 
         if self.is_infinite() {
             if self.sign < 0 {
-                return other.is_infinite() && other.sign < 0
+                return other.is_infinite() && other.sign < 0;
             }
 
-            return other.is_infinite() && other.sign > 0
+            return other.is_infinite() && other.sign > 0;
         }
 
         if other.is_infinite() {
-            return false
+            return false;
         }
 
         if self.sign != other.sign {
-            return self.sign == 0
+            return self.sign == 0;
         }
 
         if self.scale != other.scale {
-            return self.sign == 0
+            return self.sign == 0;
         }
 
         self.sign == 0 || self.unscaled == other.unscaled
     }
 }
-impl Eq for Float { }
+impl Eq for Float {}
 
 impl Ord for Float {
     fn cmp(&self, other: &Self) -> Ordering {
@@ -869,11 +892,11 @@ impl Ord for Float {
                 Ordering::Equal
             } else {
                 Ordering::Greater
-            }
+            };
         }
 
         if other.is_nan() {
-            return Ordering::Less
+            return Ordering::Less;
         }
 
         if self.is_infinite() {
@@ -882,34 +905,42 @@ impl Ord for Float {
                     Ordering::Equal
                 } else {
                     Ordering::Less
-                }
+                };
             }
 
             return if other.is_infinite() && other.sign > 0 {
                 Ordering::Equal
             } else {
                 Ordering::Greater
-            }
+            };
         }
 
         if other.is_infinite() {
-            return other.sign.cmp(&0).reverse()
+            return other.sign.cmp(&0).reverse();
         }
 
         if self.sign != other.sign {
-            return self.sign.cmp(&0)
+            return self.sign.cmp(&0);
         }
 
         if self.scale != other.scale {
-            let sign = if self.scale < other.scale { -self.sign } else { self.sign };
-            return sign.cmp(&0)
+            let sign = if self.scale < other.scale {
+                -self.sign
+            } else {
+                self.sign
+            };
+            return sign.cmp(&0);
         }
 
         if self.sign == 0 {
             Ordering::Equal
         } else {
             let res = self.unscaled.cmp(&other.unscaled);
-            if self.sign < 0 { res.reverse() } else { res }
+            if self.sign < 0 {
+                res.reverse()
+            } else {
+                res
+            }
         }
     }
 }
@@ -936,7 +967,11 @@ trait FloatFormatOpsInternal {
 
 impl FloatFormatOpsInternal for FloatFormat {
     fn extract_sign(&self, val: &BigInt) -> Sign {
-        if val.get_bit(self.sign_pos) { Sign::Positive } else { Sign::Negative }
+        if val.get_bit(self.sign_pos) {
+            Sign::Positive
+        } else {
+            Sign::Negative
+        }
     }
 
     fn extract_fractional(&self, val: &BigInt) -> BigInt {
@@ -969,9 +1004,7 @@ impl FloatFormatOpsInternal for FloatFormat {
     }
 
     fn encode_nan(&self, sign: Sign) -> BigInt {
-        let mut res = BigInt::from(1) << self.frac_pos
-            .wrapping_add(self.frac_size)
-            .wrapping_sub(1);
+        let mut res = BigInt::from(1) << self.frac_pos.wrapping_add(self.frac_size).wrapping_sub(1);
         res |= BigInt::from(self.exp_max) << self.exp_pos;
         self.set_sign(res, sign)
     }
@@ -1083,81 +1116,87 @@ pub const fn float_format_from_size(bytes: usize) -> Result<FloatFormat, Error> 
 impl FloatFormatOps for FloatFormat {
     fn into_bitvec(&self, fp: Float, bits: u32) -> BitVec {
         let mut res = match fp.kind {
-            FloatKind::QuietNaN | FloatKind::SignallingNaN => {
-                self.encode_nan(Sign::Positive)
-            },
+            FloatKind::QuietNaN | FloatKind::SignallingNaN => self.encode_nan(Sign::Positive),
             FloatKind::Infinite => {
-                let sign = if fp.sign < 0 { Sign::Negative } else { Sign::Positive };
-                self.encode_infinity(sign)
-            },
-            FloatKind::Finite => if fp.is_zero() {
-                let sign = if fp.sign < 0 { Sign::Negative } else { Sign::Positive };
-                self.encode_zero(sign)
-            } else if self.j_bit_implied {
-                let lead_bit = fp.leading_bit();
-                let (exp, mut frac) = {
-                    let tmp = fp.scale
-                        .wrapping_sub(fp.frac_bits as i32)
-                        .wrapping_add(lead_bit as i32);
-                    if tmp >= 1i32.wrapping_sub(self.bias) {
-                        let mut exp = tmp.wrapping_add(self.bias);
-                        let mut frac = self.round_to_lead_bit(fp.unscaled, self.frac_size as i32);
-                        if frac.significant_bits().wrapping_sub(1) > self.frac_size {
-                            frac >>= 1;
-                            exp += 1;
-                        }
-                        frac.set_bit(self.frac_size, false);
-                        (exp, frac)
-                    } else {
-                        let exp = 0;
-                        let n = tmp
-                            .wrapping_sub(1)
-                            .wrapping_add(self.bias as i32)
-                            .wrapping_add(self.frac_size as i32);
-                        if n < 0 {
-                            let sign = if fp.sign < 0 {
-                                Sign::Negative
-                            } else {
-                                Sign::Positive
-                            };
-
-                            let mut res = self.encode_zero(sign);
-                            let sign = res < 0;
-                            res.abs_mut();
-
-                            let bv = BitVec::from_bigint(res, bits);
-                            return if sign {
-                                -bv
-                            } else {
-                                bv
-                            }
-                        }
-                        let frac = self.round_to_lead_bit(fp.unscaled, n);
-                        (exp, frac)
-                    }
+                let sign = if fp.sign < 0 {
+                    Sign::Negative
+                } else {
+                    Sign::Positive
                 };
-                if exp >= self.exp_max {
-                    let sign = if fp.sign < 0 { Sign::Negative } else { Sign::Positive };
-                    let mut res = self.encode_infinity(sign);
-                    let sign = res < 0;
-                    res.abs_mut();
-
-                    let bv = BitVec::from_bigint(res, bits);
-                    return if sign {
-                        -bv
+                self.encode_infinity(sign)
+            }
+            FloatKind::Finite => {
+                if fp.is_zero() {
+                    let sign = if fp.sign < 0 {
+                        Sign::Negative
                     } else {
-                        bv
-                    }
-                }
+                        Sign::Positive
+                    };
+                    self.encode_zero(sign)
+                } else if self.j_bit_implied {
+                    let lead_bit = fp.leading_bit();
+                    let (exp, mut frac) = {
+                        let tmp = fp
+                            .scale
+                            .wrapping_sub(fp.frac_bits as i32)
+                            .wrapping_add(lead_bit as i32);
+                        if tmp >= 1i32.wrapping_sub(self.bias) {
+                            let mut exp = tmp.wrapping_add(self.bias);
+                            let mut frac =
+                                self.round_to_lead_bit(fp.unscaled, self.frac_size as i32);
+                            if frac.significant_bits().wrapping_sub(1) > self.frac_size {
+                                frac >>= 1;
+                                exp += 1;
+                            }
+                            frac.set_bit(self.frac_size, false);
+                            (exp, frac)
+                        } else {
+                            let exp = 0;
+                            let n = tmp
+                                .wrapping_sub(1)
+                                .wrapping_add(self.bias as i32)
+                                .wrapping_add(self.frac_size as i32);
+                            if n < 0 {
+                                let sign = if fp.sign < 0 {
+                                    Sign::Negative
+                                } else {
+                                    Sign::Positive
+                                };
 
-                frac |= BigInt::from(exp) << self.exp_pos;
-                if fp.sign < 0 {
-                    frac.set_bit(self.sign_pos, true);
+                                let mut res = self.encode_zero(sign);
+                                let sign = res < 0;
+                                res.abs_mut();
+
+                                let bv = BitVec::from_bigint(res, bits);
+                                return if sign { -bv } else { bv };
+                            }
+                            let frac = self.round_to_lead_bit(fp.unscaled, n);
+                            (exp, frac)
+                        }
+                    };
+                    if exp >= self.exp_max {
+                        let sign = if fp.sign < 0 {
+                            Sign::Negative
+                        } else {
+                            Sign::Positive
+                        };
+                        let mut res = self.encode_infinity(sign);
+                        let sign = res < 0;
+                        res.abs_mut();
+
+                        let bv = BitVec::from_bigint(res, bits);
+                        return if sign { -bv } else { bv };
+                    }
+
+                    frac |= BigInt::from(exp) << self.exp_pos;
+                    if fp.sign < 0 {
+                        frac.set_bit(self.sign_pos, true);
+                    }
+                    frac
+                } else {
+                    panic!("unexpected j_bit_implied == false")
                 }
-                frac
-            } else {
-                panic!("unexpected j_bit_implied == false")
-            },
+            }
         };
 
         let sign = res < 0;
@@ -1186,9 +1225,9 @@ impl FloatFormatOps for FloatFormat {
                     FloatKind::Finite,
                     sign,
                     frac,
-                    1i32.wrapping_sub(self.bias)
+                    1i32.wrapping_sub(self.bias),
                 )
-            }
+            };
         } else if exp == self.exp_max {
             return if frac == 0 {
                 Float::from_parts(
@@ -1208,7 +1247,7 @@ impl FloatFormatOps for FloatFormat {
                     BigInt::new(),
                     self.exp_max,
                 )
-            }
+            };
         }
 
         if self.j_bit_implied {
@@ -1221,7 +1260,7 @@ impl FloatFormatOps for FloatFormat {
             FloatKind::Finite,
             sign,
             frac,
-            exp.wrapping_sub(self.bias)
+            exp.wrapping_sub(self.bias),
         )
     }
 }

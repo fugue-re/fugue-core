@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use fugue_ir::{Address, AddressSpace};
+use fugue_base::types::Address;
 use iset::IntervalSet;
 use thiserror::Error;
 
@@ -227,7 +227,6 @@ pub struct ChunkState<T: StateValue> {
     chunks: ChunkList,
     regions: IntervalSet<Address>,
     backing: FlatState<T>,
-    space: Arc<AddressSpace>,
 }
 
 impl<T: StateValue> AsRef<Self> for ChunkState<T> {
@@ -259,7 +258,7 @@ impl<T: StateValue> AsMut<FlatState<T>> for ChunkState<T> {
 }
 
 impl<T: StateValue> ChunkState<T> {
-    pub fn new<A>(space: Arc<AddressSpace>, base_address: A, size: usize) -> Self
+    pub fn new<A>(base_address: A, size: usize) -> Self
     where
         A: Into<Address>,
     {
@@ -267,8 +266,7 @@ impl<T: StateValue> ChunkState<T> {
             base_address: base_address.into(),
             chunks: ChunkList::new(size),
             regions: IntervalSet::new(),
-            backing: FlatState::read_only(space.clone(), size),
-            space,
+            backing: FlatState::read_only(size),
         }
     }
 
@@ -401,8 +399,7 @@ impl<T: StateValue> ChunkState<T> {
 
         // update region mappings
         self.regions.remove(interval);
-        self.regions
-            .insert(new_address..new_address + size);
+        self.regions.insert(new_address..new_address + size);
 
         Ok(new_address)
     }
@@ -448,9 +445,9 @@ impl<T: StateValue> ChunkState<T> {
         let mut regions = self.regions.iter(address..address + size);
 
         // we just need to know that it exists
-        let _region = regions.next().ok_or_else(|| {
-            Error::AccessUnmanaged { address, size }
-        })?;
+        let _region = regions
+            .next()
+            .ok_or_else(|| Error::AccessUnmanaged { address, size })?;
 
         // ..and that another does not exist
         if regions.next().is_some() {
@@ -471,7 +468,6 @@ impl<V: StateValue> State for ChunkState<V> {
             chunks: self.chunks.clone(),
             regions: self.regions.clone(),
             backing: self.backing.fork(),
-            space: self.space.clone(),
         }
     }
 
