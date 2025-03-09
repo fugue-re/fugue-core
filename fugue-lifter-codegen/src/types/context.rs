@@ -1,6 +1,6 @@
-use fugue_ir::disassembly::Symbol;
-use fugue_ir::disassembly::symbol::sub_table::Context;
-use fugue_ir::Translator;
+use fugue_sleigh_language::symbol::sub_table::Context;
+use fugue_sleigh_language::symbol::Symbol;
+use fugue_sleigh_language::Language;
 
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote, ToTokens};
@@ -8,16 +8,13 @@ use quote::{format_ident, quote, ToTokens};
 use crate::types::pattern::PatternExpressionAdaptor;
 
 pub struct ContextAdaptor<'a> {
-    translator: &'a Translator,
+    language: &'a Language,
     context: &'a Context,
 }
 
 impl<'a> ContextAdaptor<'a> {
-    pub fn new(translator: &'a Translator, context: &'a Context) -> Self {
-        Self {
-            translator,
-            context,
-        }
+    pub fn new(language: &'a Language, context: &'a Context) -> Self {
+        Self { language, context }
     }
 }
 
@@ -35,7 +32,7 @@ impl<'a> ToTokens for ContextAdaptor<'a> {
                 let num = *num;
                 let shift = *shift;
                 let mask = *mask;
-                let value = PatternExpressionAdaptor::new(&self.translator, pattern_value);
+                let value = PatternExpressionAdaptor::new(&self.language, pattern_value);
 
                 quote! {
                     fugue_lifter_runtime::context::ContextPreAction {
@@ -53,7 +50,7 @@ impl<'a> ToTokens for ContextAdaptor<'a> {
                 flow,
             } => {
                 let symbol = self
-                    .translator
+                    .language
                     .symbol_table()
                     .symbol(*symbol_id)
                     .expect("valid symbol");
@@ -66,7 +63,7 @@ impl<'a> ToTokens for ContextAdaptor<'a> {
                     quote! { fugue_lifter_runtime::context::ContextPostActionHandle::Symbol(&#ident) }
                 };
 
-                let space = self.translator.manager().default_space_ref();
+                let space = self.language.spaces().default_space_ref();
                 let word_size = space.word_size() as u64;
                 let highest = space.highest_offset();
                 let flow = *flow;

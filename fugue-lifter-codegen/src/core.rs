@@ -1,12 +1,12 @@
 use std::mem::size_of;
 
-use fugue_ir::disassembly::construct::{ConstructTpl, HandleTpl};
-use fugue_ir::disassembly::symbol::sub_table::{
+use fugue_sleigh_language::construct::{ConstructTpl, HandleTpl};
+use fugue_sleigh_language::pattern::PatternExpression;
+use fugue_sleigh_language::symbol::sub_table::{
     Context, ContextPattern, DecisionPair, DisjointPattern, InstructionPattern,
 };
-use fugue_ir::disassembly::symbol::{Constructor, DecisionNode, Symbol};
-use fugue_ir::disassembly::PatternExpression;
-use fugue_ir::Translator;
+use fugue_sleigh_language::symbol::{Constructor, DecisionNode, Symbol};
+use fugue_sleigh_language::Language;
 
 use proc_macro2::{Span, TokenStream};
 use quote::{format_ident, quote, ToTokens, TokenStreamExt};
@@ -21,15 +21,15 @@ use crate::LifterGeneratorError;
 pub struct LifterGenerator<'a> {
     context_variables: Vec<(&'a str, usize, usize)>,
     symbols: Vec<TokenStream>,
-    translator: &'a Translator,
+    language: &'a Language,
 }
 
 impl<'a> LifterGenerator<'a> {
-    pub fn new(translator: &'a Translator) -> Result<Self, LifterGeneratorError> {
+    pub fn new(language: &'a Language) -> Result<Self, LifterGeneratorError> {
         let mut slf = Self {
             context_variables: Vec::new(),
             symbols: Vec::new(),
-            translator,
+            language,
         };
 
         slf.build()?;
@@ -38,7 +38,7 @@ impl<'a> LifterGenerator<'a> {
     }
 
     pub fn build(&mut self) -> Result<(), LifterGeneratorError> {
-        let symtab = self.translator.symbol_table();
+        let symtab = self.language.symbol_table();
 
         for symbol in symtab.symbols().iter() {
             if let Symbol::Subtable {
@@ -57,7 +57,7 @@ impl<'a> LifterGenerator<'a> {
                 )?);
             } else {
                 self.symbols
-                    .push(SymbolAdaptor::new(&self.translator, symbol).to_token_stream());
+                    .push(SymbolAdaptor::new(&self.language, symbol).to_token_stream());
             }
         }
 
@@ -87,7 +87,7 @@ impl<'a> LifterGenerator<'a> {
 
         for oid in 0..ctor.operand_count() {
             let index = ctor.operand(oid);
-            let operand = self.translator.symbol_table().symbol(index).unwrap();
+            let operand = self.language.symbol_table().symbol(index).unwrap();
 
             let offset_base = operand
                 .offset_base()
@@ -101,7 +101,7 @@ impl<'a> LifterGenerator<'a> {
             };
 
             let (resolver, handle_resolver) = if let Some(tsym) =
-                operand.defining_symbol(self.translator.symbol_table())
+                operand.defining_symbol(self.language.symbol_table())
             {
                 match tsym {
                     Symbol::Subtable { id, scope, .. } => {
@@ -125,7 +125,8 @@ impl<'a> LifterGenerator<'a> {
                         };
 
                         let ident = format_ident!("__SYM{id}");
-                        let handle_resolver = quote! { fugue_lifter_runtime::OperandHandleResolver::Symbol(&#ident) };
+                        let handle_resolver =
+                            quote! { fugue_lifter_runtime::OperandHandleResolver::Symbol(&#ident) };
 
                         (resolver, handle_resolver)
                     }
@@ -142,7 +143,8 @@ impl<'a> LifterGenerator<'a> {
                         };
 
                         let ident = format_ident!("__SYM{id}");
-                        let handle_resolver = quote! { fugue_lifter_runtime::OperandHandleResolver::Symbol(&#ident) };
+                        let handle_resolver =
+                            quote! { fugue_lifter_runtime::OperandHandleResolver::Symbol(&#ident) };
 
                         (resolver, handle_resolver)
                     }
@@ -159,7 +161,8 @@ impl<'a> LifterGenerator<'a> {
                         };
 
                         let ident = format_ident!("__SYM{id}");
-                        let handle_resolver = quote! { fugue_lifter_runtime::OperandHandleResolver::Symbol(&#ident) };
+                        let handle_resolver =
+                            quote! { fugue_lifter_runtime::OperandHandleResolver::Symbol(&#ident) };
 
                         (resolver, handle_resolver)
                     }
@@ -168,7 +171,8 @@ impl<'a> LifterGenerator<'a> {
 
                         let id = symbol.id();
                         let ident = format_ident!("__SYM{id}");
-                        let handle_resolver = quote! { fugue_lifter_runtime::OperandHandleResolver::Symbol(&#ident) };
+                        let handle_resolver =
+                            quote! { fugue_lifter_runtime::OperandHandleResolver::Symbol(&#ident) };
 
                         (resolver, handle_resolver)
                     }
@@ -177,7 +181,7 @@ impl<'a> LifterGenerator<'a> {
                 let resolver = quote! { fugue_lifter_runtime::OperandResolver::None };
 
                 let pexp = operand.defining_expression().unwrap();
-                let value = PatternExpressionAdaptor::new(&self.translator, pexp);
+                let value = PatternExpressionAdaptor::new(&self.language, pexp);
                 let handle_resolver =
                     quote! { fugue_lifter_runtime::OperandHandleResolver::Expression(#value) };
 
@@ -208,12 +212,11 @@ impl<'a> LifterGenerator<'a> {
         for action in ctor.context().iter() {
             match action {
                 Context::Operator { .. } => {
-                    pre_actions
-                        .push(ContextAdaptor::new(&self.translator, action).to_token_stream());
+                    pre_actions.push(ContextAdaptor::new(&self.language, action).to_token_stream());
                 }
                 Context::Commit { .. } => {
                     post_actions
-                        .push(ContextAdaptor::new(&self.translator, action).to_token_stream());
+                        .push(ContextAdaptor::new(&self.language, action).to_token_stream());
                 }
             }
         }
@@ -222,7 +225,7 @@ impl<'a> LifterGenerator<'a> {
     }
 
     fn generate_handle_template(&self, tmpl: &HandleTpl) -> TokenStream {
-        TplAdaptor::new(&self.translator, tmpl).to_token_stream()
+        TplAdaptor::new(&self.language, tmpl).to_token_stream()
     }
 
     fn generate_constructor_template_resolvers(&self, ctor: &Constructor) -> TokenStream {
@@ -237,7 +240,7 @@ impl<'a> LifterGenerator<'a> {
     }
 
     fn generate_constructor_build_action(&self, tmpl: &ConstructTpl) -> TokenStream {
-        TplAdaptor::new(&self.translator, tmpl).to_token_stream()
+        TplAdaptor::new(&self.language, tmpl).to_token_stream()
     }
 
     fn generate_constructor_lifting_actions(&self, ctor: &Constructor) -> TokenStream {
@@ -534,28 +537,28 @@ impl<'a> LifterGenerator<'a> {
 
 impl<'a> ToTokens for LifterGenerator<'a> {
     fn to_tokens(&self, tokens: &mut TokenStream) {
-        let alignment = self.translator.alignment();
-        let unique_mask = self.translator.unique_mask();
+        let alignment = self.language.alignment();
+        let unique_mask = self.language.unique_mask();
 
-        let default_space = self.translator.manager().default_space_ref();
+        let default_space = self.language.spaces().default_space_ref();
 
-        let constant_space_id = self.translator.manager().constant_space_id().index() as u8;
+        let constant_space_id = self.language.spaces().constant_space_id().index() as u8;
         let default_space_id = default_space.index() as u8;
-        let register_space_id = self.translator.manager().register_space_id().index() as u8;
-        let unique_space_id = self.translator.manager().unique_space_id().index() as u8;
+        let register_space_id = self.language.spaces().register_space_id().index() as u8;
+        let unique_space_id = self.language.spaces().unique_space_id().index() as u8;
 
         let address_size = default_space.address_size();
         let address_bits = address_size as u32 * 8;
         let max_address = default_space.highest_offset();
 
-        let register_space_size = self.translator.register_space_size();
-        let unique_space_size = self.translator.unique_space_size();
+        let register_space_size = self.language.register_space_size();
+        let unique_space_size = self.language.unique_space_size();
 
         let mut userops = Vec::new();
         let mut userop_to_ids = Vec::new();
         let mut userop_to_names = Vec::new();
 
-        for (i, op) in self.translator.user_ops().iter().enumerate() {
+        for (i, op) in self.language.user_ops().iter().enumerate() {
             let id = i as u16;
             let name = op.as_str();
 
@@ -571,42 +574,30 @@ impl<'a> ToTokens for LifterGenerator<'a> {
             userop_to_ids.push(quote! { #name => #id });
         }
 
-        let n_userops = self.translator.user_ops().len();
+        let n_userops = self.language.user_ops().len();
 
-        let space_word_sizes = self
-            .translator
-            .manager()
-            .spaces()
-            .iter()
-            .map(|spc| spc.word_size());
+        let space_word_sizes = self.language.spaces().iter().map(|spc| spc.word_size());
 
         let space_upper_bounds = self
-            .translator
-            .manager()
+            .language
             .spaces()
             .iter()
             .map(|spc| spc.highest_offset());
 
-        let n_spaces = self.translator.manager().spaces().len();
+        let n_spaces = self.language.spaces().len();
 
-        let space_cases = self
-            .translator
-            .manager()
-            .spaces()
-            .iter()
-            .enumerate()
-            .map(|(i, spc)| {
-                let i = i as u8;
-                if i == 0 {
-                    // constant
-                    quote! { #i => offset & fugue_lifter_runtime::calculate_mask(size as usize) }
-                } else if spc.id().is_unique() {
-                    quote! { #i => offset | unique_offset }
-                } else {
-                    let highest = spc.highest_offset();
-                    quote! { #i => fugue_lifter_runtime::wrap_offset(#highest, offset) }
-                }
-            });
+        let space_cases = self.language.spaces().iter().enumerate().map(|(i, spc)| {
+            let i = i as u8;
+            if i == 0 {
+                // constant
+                quote! { #i => offset & fugue_lifter_runtime::calculate_mask(size as usize) }
+            } else if spc.id().is_unique() {
+                quote! { #i => offset | unique_offset }
+            } else {
+                let highest = spc.highest_offset();
+                quote! { #i => fugue_lifter_runtime::wrap_offset(#highest, offset) }
+            }
+        });
 
         let space_match = quote! {
             match space {
@@ -615,22 +606,16 @@ impl<'a> ToTokens for LifterGenerator<'a> {
             }
         };
 
-        let space_names = self.translator.manager().spaces().iter().map(|spc| {
+        let space_names = self.language.spaces().iter().map(|spc| {
             let name = spc.name();
             quote! { #name }
         });
 
-        let space_ids = self
-            .translator
-            .manager()
-            .spaces()
-            .iter()
-            .enumerate()
-            .map(|(i, spc)| {
-                let name = spc.name();
-                let i = i as u8;
-                quote! { #name => #i }
-            });
+        let space_ids = self.language.spaces().iter().enumerate().map(|(i, spc)| {
+            let name = spc.name();
+            let i = i as u8;
+            quote! { #name => #i }
+        });
 
         let context_variable_consts = self.context_variables.iter().map(|(name, start, end)| {
             let upper_snake_name = Ident::new(
@@ -660,13 +645,13 @@ impl<'a> ToTokens for LifterGenerator<'a> {
                 }
             });
 
-        let n_registers = self.translator.registers().name_mapping().len();
+        let n_registers = self.language.registers().name_mapping().len();
 
         let mut registers = Vec::with_capacity(n_registers);
         let mut register_names = Vec::with_capacity(n_registers);
         let mut register_ranges = Vec::with_capacity(n_registers);
 
-        for ((off, sz), nm) in self.translator.registers().iter() {
+        for ((off, sz), nm) in self.language.registers().iter() {
             let off = *off;
             let sz = *sz as u16;
 

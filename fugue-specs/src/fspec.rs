@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use bitflags::bitflags;
 
 use fugue_lifter::{Language, PCodeOp};
-use fugue_sleigh::{CodeBlock, IRBuilder, IRBuilderError};
+use fugue_sleigh::semantics::{CodeBlock, IRBuilder, IRBuilderError};
 
 use serde::ser::SerializeSeq;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};

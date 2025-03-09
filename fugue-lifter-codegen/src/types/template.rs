@@ -1,25 +1,25 @@
-use fugue_ir::disassembly::construct::{
+use fugue_sleigh_language::construct::{
     ConstTpl, ConstructTpl, HandleKind, HandleTpl, OpTpl, VarnodeTpl,
 };
-use fugue_ir::disassembly::opcode::Opcode;
-use fugue_ir::Translator;
+use fugue_sleigh_language::opcode::Opcode;
+use fugue_sleigh_language::Language;
 
 use proc_macro2::TokenStream;
 use quote::{quote, ToTokens};
 
 pub struct TplAdaptor<'a, T> {
-    translator: &'a Translator,
+    language: &'a Language,
     tpl: &'a T,
 }
 
 impl<'a, T> TplAdaptor<'a, T> {
-    pub fn new(translator: &'a Translator, tpl: &'a T) -> Self {
-        Self { translator, tpl }
+    pub fn new(language: &'a Language, tpl: &'a T) -> Self {
+        Self { language, tpl }
     }
 
     pub fn wrap<U>(&self, tpl: &'a U) -> TplAdaptor<'a, U> {
         TplAdaptor {
-            translator: &self.translator,
+            language: &self.language,
             tpl,
         }
     }

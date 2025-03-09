@@ -1,5 +1,6 @@
-use fugue_ir::disassembly::{PatternExpression, Symbol};
-use fugue_ir::Translator;
+use fugue_sleigh_language::pattern::PatternExpression;
+use fugue_sleigh_language::symbol::Symbol;
+use fugue_sleigh_language::Language;
 
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote, ToTokens};
@@ -8,18 +9,18 @@ use syn::Ident;
 use crate::types::pattern::PatternExpressionAdaptor;
 
 pub struct SymbolAdaptor<'a> {
-    translator: &'a Translator,
+    language: &'a Language,
     symbol: &'a Symbol,
 }
 
 impl<'a> SymbolAdaptor<'a> {
-    pub fn new(translator: &'a Translator, symbol: &'a Symbol) -> Self {
-        Self { translator, symbol }
+    pub fn new(language: &'a Language, symbol: &'a Symbol) -> Self {
+        Self { language, symbol }
     }
 
     pub fn wrap(&self, symbol: &'a Symbol) -> Self {
         Self {
-            translator: self.translator,
+            language: self.language,
             symbol,
         }
     }
@@ -47,7 +48,7 @@ impl<'a> SymbolAdaptor<'a> {
         limit: usize,
     ) -> TokenStream {
         let ident = self.filter_identifier();
-        let pvalue = PatternExpressionAdaptor::new(&self.translator, pattern);
+        let pvalue = PatternExpressionAdaptor::new(&self.language, pattern);
         quote! {
             pub(crate) const #ident: fugue_lifter_runtime::constructor::OperandFilter =
                 fugue_lifter_runtime::constructor::OperandFilter {
@@ -68,7 +69,7 @@ impl<'a> ToTokens for SymbolAdaptor<'a> {
                 fugue_lifter_runtime::symbol::Symbol::Epsilon
             },
             S::Value { pattern_value, .. } => {
-                let pvalue = PatternExpressionAdaptor::new(&self.translator, pattern_value);
+                let pvalue = PatternExpressionAdaptor::new(&self.language, pattern_value);
                 quote! {
                     fugue_lifter_runtime::symbol::Symbol::Value {
                         pattern_value: #pvalue,
@@ -81,7 +82,7 @@ impl<'a> ToTokens for SymbolAdaptor<'a> {
                 table_is_filled,
                 ..
             } => {
-                let pvalue = PatternExpressionAdaptor::new(&self.translator, pattern_value);
+                let pvalue = PatternExpressionAdaptor::new(&self.language, pattern_value);
 
                 if *table_is_filled {
                     let values = value_table.iter().copied();
@@ -142,7 +143,7 @@ impl<'a> ToTokens for SymbolAdaptor<'a> {
                 }
 
                 // NOTE: we could merge those cases that are behaviourally similar
-                let pvalue = PatternExpressionAdaptor::new(&self.translator, pattern_value);
+                let pvalue = PatternExpressionAdaptor::new(&self.language, pattern_value);
                 let symbols = name_table.iter().map(|v| {
                     if v == "\t" {
                         quote! { None }
@@ -185,7 +186,7 @@ impl<'a> ToTokens for SymbolAdaptor<'a> {
                 table_is_filled,
                 ..
             } => {
-                let pvalue = PatternExpressionAdaptor::new(&self.translator, pattern_value);
+                let pvalue = PatternExpressionAdaptor::new(&self.language, pattern_value);
 
                 if *table_is_filled {
                     let values = varnode_table
@@ -195,7 +196,7 @@ impl<'a> ToTokens for SymbolAdaptor<'a> {
 
                     let symbols = varnode_table.iter().copied().map(|id| {
                         let name = self
-                            .translator
+                            .language
                             .symbol_table()
                             .symbol(id.expect("table is filled") as usize)
                             .expect("valid symbol")
@@ -238,7 +239,7 @@ impl<'a> ToTokens for SymbolAdaptor<'a> {
                         };
 
                         let name = self
-                            .translator
+                            .language
                             .symbol_table()
                             .symbol(id)
                             .expect("valid symbol")
@@ -265,7 +266,7 @@ impl<'a> ToTokens for SymbolAdaptor<'a> {
                 }
             }
             S::Start { .. } => {
-                let space = self.translator.manager().default_space_ref();
+                let space = self.language.spaces().default_space_ref();
                 let id = space.index() as u8;
                 let size = space.address_size() as u16;
 
@@ -277,7 +278,7 @@ impl<'a> ToTokens for SymbolAdaptor<'a> {
                 }
             }
             S::End { .. } => {
-                let space = self.translator.manager().default_space_ref();
+                let space = self.language.spaces().default_space_ref();
                 let id = space.index() as u8;
                 let size = space.address_size() as u16;
 
@@ -289,7 +290,7 @@ impl<'a> ToTokens for SymbolAdaptor<'a> {
                 }
             }
             S::Next2 { .. } => {
-                let space = self.translator.manager().default_space_ref();
+                let space = self.language.spaces().default_space_ref();
                 let id = space.index() as u8;
                 let size = space.address_size() as u16;
 

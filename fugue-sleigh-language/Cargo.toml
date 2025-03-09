@@ -1,0 +1,25 @@
+[package]
+name = "fugue-sleigh-language"
+version = "0.3.0"
+authors = ["Sam Thomas <st@xv.ax>"]
+edition = "2021"
+license = "MIT"
+description = "A binary analysis framework written in Rust"
+homepage = "https://fugue.re"
+
+[features]
+default = []
+
+[dependencies]
+ahash = { version = "0.8", features = ["serde"] }
+bitflags = { version = "2", features = ["serde"] }
+fugue-arch = { path = "../fugue-arch", version = "0.3" }
+fugue-bytes = { path = "../fugue-bytes", version = "0.3" }
+iset = { version = "0.3", features = ["serde"] }
+itertools = "0.14"
+roxmltree = "0.20"
+serde = { version = "1", features = ["derive", "rc"] }
+thiserror = "2"
+tracing = { version = "0.1", optional = true }
+ustr = { version = "1.1", features = ["serde"] }
+walkdir = "2"

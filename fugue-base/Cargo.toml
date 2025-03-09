@@ -1,0 +1,26 @@
+[package]
+name = "fugue-base"
+version = "0.3.0"
+authors = ["Sam Thomas <st@xv.ax>"]
+edition = "2021"
+
+[dependencies]
+anyhow = "1"
+bitflags = "2"
+fugue-arch = { version = "0.3", path = "../fugue-arch" }
+fugue-bv = { version = "0.3", path = "../fugue-bv" }
+fugue-bytes = { version = "0.3", path = "../fugue-bytes" }
+fugue-lifter = { version = "0.3", path = "../fugue-lifter" }
+fugue-specs = { version = "0.3", path = "../fugue-specs" }
+gazebo = "0.8"
+iset = "0.3"
+itertools = "0.14"
+memmap2 = "0.9"
+object = "0.35"
+rustc-hash = "1.1"
+sealed = "0.5"
+smallvec = "1.13"
+static_init = "1"
+thiserror = "2"
+tracing = "0.1"
+uuid = "1"

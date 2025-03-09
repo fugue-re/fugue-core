@@ -9,8 +9,8 @@ default = ["bundled-compiler"]
 
 [dependencies]
 anyhow = "1"
-fugue-ir = { path = "../fugue-ir" }
 fugue-sleighc = { version = "0.3", optional = true }
+fugue-sleigh-language = { path = "../fugue-sleigh-language" }
 heck = "0.5"
 itertools = "0.14"
 prettyplease = "0.2"

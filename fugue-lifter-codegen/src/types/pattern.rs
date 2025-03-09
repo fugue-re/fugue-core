@@ -1,5 +1,6 @@
-use fugue_ir::disassembly::{PatternExpression, Symbol};
-use fugue_ir::Translator;
+use fugue_sleigh_language::pattern::PatternExpression;
+use fugue_sleigh_language::symbol::Symbol;
+use fugue_sleigh_language::Language;
 
 use proc_macro2::TokenStream;
 use quote::{quote, ToTokens};
@@ -7,21 +8,21 @@ use quote::{quote, ToTokens};
 use crate::LifterGenerator;
 
 pub struct PatternExpressionAdaptor<'a> {
-    translator: &'a Translator,
+    language: &'a Language,
     expression: &'a PatternExpression,
 }
 
 impl<'a> PatternExpressionAdaptor<'a> {
-    pub fn new(translator: &'a Translator, expression: &'a PatternExpression) -> Self {
+    pub fn new(language: &'a Language, expression: &'a PatternExpression) -> Self {
         Self {
-            translator,
+            language,
             expression,
         }
     }
 
     pub fn wrap(&self, expression: &'a PatternExpression) -> Self {
         Self {
-            translator: self.translator,
+            language: self.language,
             expression,
         }
     }
@@ -172,7 +173,7 @@ impl<'a> ToTokens for PatternExpressionAdaptor<'a> {
                 table_id,
                 constructor_id,
             } => {
-                let symbols = self.translator.symbol_table();
+                let symbols = self.language.symbol_table();
                 let table = symbols.symbol(*table_id).unwrap();
                 let Symbol::Subtable {
                     constructors,
@@ -208,7 +209,7 @@ impl<'a> ToTokens for PatternExpressionAdaptor<'a> {
 
                 let index = *index;
                 let symbol = ctor.operand(index);
-                let operand = self.translator.symbol_table().symbol(symbol).unwrap();
+                let operand = self.language.symbol_table().symbol(symbol).unwrap();
 
                 let ctor_vname = LifterGenerator::ctor_vname(*table_id, *scope, *constructor_id);
                 let value = self.wrap(pexpr);

@@ -7,16 +7,12 @@ license = "MIT"
 description = "A binary analysis framework written in Rust"
 homepage = "https://fugue.re"
 
-[dependencies]
-arrayvec = "0.7"
-fugue-lifter = { path = "../fugue-lifter", version = "0.3", default-features = false }
-itertools = "0.14"
-once_cell = "1"
-pest = "2.7"
-pest_derive = "2.7"
-smallvec = "1.13"
-thiserror = "2"
-ustr = "1"
+[features]
+language-compiler = ["fugue-sleighc"]
+language-parsers = ["fugue-sleigh-language"]
+default = []
 
-[dev-dependencies]
-fugue-lifter = { path = "../fugue-lifter", version = "0.3", features = ["x86-64"], default-features = false }
+[dependencies]
+fugue-sleighc = { version = "0.3", optional = true }
+fugue-sleigh-language = { version = "0.3", path = "../fugue-sleigh-language", optional = true }
+fugue-sleigh-semantics = { version = "0.3", path = "../fugue-sleigh-semantics" }

@@ -1,7 +1,5 @@
-pub mod ast;
-pub mod cfg;
-pub mod ir;
-pub mod parse;
-
-pub use ast::{AstError, CodeBlock};
-pub use ir::{IRBlock, IRBuilder, IRBuilderError};
+#[cfg(feature = "language-compiler")]
+pub use fugue_sleighc as compiler;
+#[cfg(feature = "language-parsers")]
+pub use fugue_sleigh_language as language;
+pub use fugue_sleigh_semantics as semantics;

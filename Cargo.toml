@@ -2,12 +2,11 @@
 members = [
   "fugue",
   "fugue-arch",
+  "fugue-base",
   "fugue-bytes",
   "fugue-bv",
   "fugue-core",
-  "fugue-db",
   "fugue-fp",
-  "fugue-ir",
   "fugue-lifter",
   "fugue-lifter-aarch64",
   "fugue-lifter-arm",
@@ -16,6 +15,8 @@ members = [
   "fugue-lifter-x86",
   "fugue-specs",
   "fugue-sleigh",
+  "fugue-sleigh-language",
+  "fugue-sleigh-semantics",
   "fugue-state",
   "fugue-state-derive",
 ]
