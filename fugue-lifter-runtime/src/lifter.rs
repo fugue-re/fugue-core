@@ -82,7 +82,10 @@ impl<'a, T> LanguageFormatter<'a, T> {
     }
 
     pub fn wrap<'b, U>(&self, value: &'b U) -> LanguageFormatter<'b, U> {
-        LanguageFormatter { language: self.language, value }
+        LanguageFormatter {
+            language: self.language,
+            value,
+        }
     }
 }
 
@@ -143,12 +146,24 @@ impl Language {
         self.constant_space
     }
 
+    pub fn in_constant_space(&self, varnode: &Varnode) -> bool {
+        self.constant_space == varnode.space()
+    }
+
     pub fn default_space(&self) -> u8 {
         self.default_space
     }
 
+    pub fn in_default_space(&self, varnode: &Varnode) -> bool {
+        self.default_space == varnode.space()
+    }
+
     pub fn register_space(&self) -> u8 {
         self.register_space
+    }
+
+    pub fn in_register_space(&self, varnode: &Varnode) -> bool {
+        self.register_space == varnode.space()
     }
 
     pub fn register_space_size(&self) -> usize {
@@ -161,6 +176,10 @@ impl Language {
 
     pub fn unique_space(&self) -> u8 {
         self.unique_space
+    }
+
+    pub fn in_unique_space(&self, varnode: &Varnode) -> bool {
+        self.unique_space == varnode.space()
     }
 
     pub fn unique_space_size(&self) -> usize {

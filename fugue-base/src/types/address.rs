@@ -318,3 +318,9 @@ impl SubAssign<u32> for Address {
         self.0 = self.0.wrapping_sub(rhs as u64)
     }
 }
+
+impl Address {
+    pub const fn zero() -> Self {
+        Self(0u64)
+    }
+}

@@ -9,7 +9,6 @@ pub mod pattern;
 pub mod pcode;
 pub mod symbol;
 pub mod template;
-pub mod varnode;
 
 pub use constructor::{
     Constructor, ConstructorResolver, Operand, OperandHandleResolver, OperandResolver,

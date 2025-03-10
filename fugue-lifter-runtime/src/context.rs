@@ -8,9 +8,8 @@ use crate::constructor::ConstructorResolver;
 use crate::input::{ContextCommit, FixedHandle};
 use crate::partmap::{BoundKind, PartMap};
 use crate::pattern::PatternExpression;
-use crate::pcode::LiftingContextState;
+use crate::pcode::{LiftingContextState, Varnode};
 use crate::symbol::Symbol;
-use crate::varnode::VarnodeData;
 use crate::wrap_offset;
 
 #[derive(Clone)]
@@ -191,12 +190,12 @@ impl ContextBitRange {
 
 #[derive(Debug, Clone)]
 pub struct TrackedContext {
-    location: VarnodeData,
+    location: Varnode,
     value: u32,
 }
 
 impl TrackedContext {
-    pub fn location(&self) -> &VarnodeData {
+    pub fn location(&self) -> &Varnode {
         &self.location
     }
 
@@ -270,57 +269,6 @@ impl ContextDatabase {
             address_limit,
         }
     }
-
-    /*
-    pub fn from_translator(translator: &Translator) -> Self {
-        let limit = translator.manager().default_space_ref().highest_offset();
-        let ctxt = translator.context_database();
-
-        Self {
-            size: ctxt.size(),
-            address_limit: limit,
-            variables: ctxt
-                .variables()
-                .map(|(k, v)| {
-                    (
-                        k.to_owned(),
-                        ContextBitRange {
-                            start_bit: v.start_bit(),
-                            end_bit: v.end_bit(),
-                            mask: v.mask(),
-                            shift: v.shift(),
-                            word: v.word(),
-                        },
-                    )
-                })
-                .collect(),
-            database: PartMap::new({
-                let array = ctxt.database().default_value();
-
-                FreeArray {
-                    masks: array.masks().to_vec(),
-                    values: array.values().to_vec(),
-                }
-            }),
-            trackbase: PartMap::new({
-                let base = ctxt
-                    .trackbase()
-                    .default_value()
-                    .iter()
-                    .map(|ctxt| TrackedContext {
-                        location: VarnodeData {
-                            space: ctxt.location().space().index() as _,
-                            offset: ctxt.location().offset(),
-                            size: ctxt.location().size() as _,
-                        },
-                        value: ctxt.value(),
-                    })
-                    .collect();
-                TrackedSet(base)
-            }),
-        }
-    }
-    */
 
     pub fn size(&self) -> usize {
         self.size
