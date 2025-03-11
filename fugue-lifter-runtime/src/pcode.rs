@@ -16,6 +16,7 @@ pub const MAX_DELAY_CTXTS: usize = 8;
 
 const INVALID_LABEL: i16 = -1;
 
+#[derive(Clone)]
 pub struct PCodeBuilderContext {
     pub inputs: Inputs,
     pub inputs_count: u8,
@@ -35,9 +36,9 @@ pub struct PCodeBuilder<'a> {
     pub unique_offset: u64,
 }
 
-// These inputs will always be used
+#[derive(Clone)]
 pub struct LiftingContext {
-    inputs: Vec<ParserInput>,
+    inputs: Vec<ParserInput>, // These inputs will always be used
     lifting_context: PCodeBuilderContext,
     parsing_context: ContextDatabase,
 }

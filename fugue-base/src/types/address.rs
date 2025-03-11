@@ -1,6 +1,8 @@
 use std::fmt::{Debug, Display, LowerHex, UpperHex};
 use std::ops::{Add, AddAssign, Sub, SubAssign};
 
+use fugue_lifter::Language;
+
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(transparent)]
 pub struct Address(u64);
@@ -322,5 +324,22 @@ impl SubAssign<u32> for Address {
 impl Address {
     pub const fn zero() -> Self {
         Self(0u64)
+    }
+
+    pub fn offset(&self) -> u64 {
+        self.0
+    }
+
+    pub fn wrap(&self, language: &Language) -> Address {
+        language.wrap_offset_in_default_space(self.offset()).into()
+    }
+
+    pub fn in_space_bounds(&self, language: &Language) -> bool {
+        *self == self.wrap(language)
+    }
+
+    pub fn range_in_space_bounds(&self, language: &Language, size: usize) -> bool {
+        let upper = *self + size;
+        *self <= upper && self.in_space_bounds(language) && upper.in_space_bounds(language)
     }
 }

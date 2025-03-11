@@ -207,6 +207,10 @@ impl Language {
             .map(|highest| wrap_offset(highest, offset))
     }
 
+    pub fn wrap_offset_in_default_space(&self, offset: u64) -> u64 {
+        self.wrap_offset(self.default_space(), offset).expect("default space exists")
+    }
+
     pub fn context_variable_by_name(&self, name: impl AsRef<str>) -> Option<ContextBitRange> {
         (self.context_variable_by_name)(name.as_ref())
     }
@@ -266,6 +270,7 @@ impl Language {
     }
 }
 
+#[derive(Clone)]
 pub struct Lifter {
     language: &'static Language,
     context: LiftingContext,

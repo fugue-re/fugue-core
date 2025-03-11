@@ -1,8 +1,9 @@
 use std::borrow::Cow;
 
 use bitflags::bitflags;
+use fugue_lifter::{Language, Lifter};
 
-use crate::types::Address;
+use crate::types::{Address, AttributeMap};
 
 pub mod object;
 pub mod shellcode;
@@ -51,6 +52,17 @@ pub struct LoadedRegion<'a> {
 }
 
 pub trait LoadedBinary {
-    fn regions<'a>(&'a self) -> impl Iterator<Item = LoadedRegion<'a>> + 'a;
+    fn attributes(&self) -> &AttributeMap;
+    fn attributes_mut(&mut self) -> &mut AttributeMap;
+
     fn entry_address(&self) -> Option<Address>;
+
+    fn language(&self) -> &'static Language {
+        self.lifter().language()
+    }
+
+    fn lifter(&self) -> &Lifter;
+    fn lifter_mut(&mut self) -> &mut Lifter;
+
+    fn regions<'a>(&'a self) -> impl Iterator<Item = LoadedRegion<'a>> + 'a;
 }
