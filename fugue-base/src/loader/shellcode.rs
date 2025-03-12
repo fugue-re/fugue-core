@@ -103,12 +103,8 @@ impl LoadedBinary for Shellcode {
         self.lifter.language()
     }
 
-    fn lifter(&self) -> &Lifter {
-        &self.lifter
-    }
-
-    fn lifter_mut(&mut self) -> &mut Lifter {
-        &mut self.lifter
+    fn lifter(&self) -> Lifter {
+        self.lifter.clone()
     }
 
     fn attributes(&self) -> &AttributeMap {
@@ -117,5 +113,61 @@ impl LoadedBinary for Shellcode {
 
     fn attributes_mut(&mut self) -> &mut AttributeMap {
         &mut self.attributes
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::attributes;
+    use crate::loader::shellcode::Shellcode;
+    use crate::loader::LoadedBinary;
+    use crate::types::Address;
+
+    #[test]
+    fn test_arm_snippet() -> anyhow::Result<()> {
+        let shellcode = Shellcode::new_with(
+            "ARM:LE:32",
+            0x1000u32,
+            [
+                0x07, 0x50, 0xa0, 0xe1, 0x00, 0xb0, 0x95, 0xe5, 0x00, 0x10, 0x94, 0xe5, 0x01, 0x20,
+                0xa0, 0xe1, 0x00, 0x20, 0x87, 0xe5,
+            ],
+            attributes![
+                "path" => "/path/to/shellcode.exe",
+            ],
+        )?;
+
+        let regions = shellcode.regions().collect::<Vec<_>>();
+        assert_eq!(regions.len(), 1);
+
+        let region = &regions[0];
+        assert_eq!(region.address, Address::from(0x1000u32));
+
+        let mut lifter = shellcode.lifter();
+        let mut offset = 0usize;
+        let mut output = String::new();
+
+        let address = shellcode.address().offset();
+        let bytes = shellcode.bytes();
+
+        while offset < bytes.len() {
+            let len = lifter
+                .disassemble(address + offset as u64, &bytes[offset..], &mut output)
+                .expect("valid");
+            offset += len;
+            output.push('\n');
+        }
+
+        assert_eq!(
+            output,
+            r#"cpy r5,r7
+ldr r11,[r5,#0x0]
+ldr r1,[r4,#0x0]
+cpy r2,r1
+str r2,[r7,#0x0]
+"#
+        );
+
+        Ok(())
     }
 }

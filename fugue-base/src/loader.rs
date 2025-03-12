@@ -57,12 +57,8 @@ pub trait LoadedBinary {
 
     fn entry_address(&self) -> Option<Address>;
 
-    fn language(&self) -> &'static Language {
-        self.lifter().language()
-    }
-
-    fn lifter(&self) -> &Lifter;
-    fn lifter_mut(&mut self) -> &mut Lifter;
+    fn language(&self) -> &'static Language;
+    fn lifter(&self) -> Lifter;
 
     fn regions<'a>(&'a self) -> impl Iterator<Item = LoadedRegion<'a>> + 'a;
 }

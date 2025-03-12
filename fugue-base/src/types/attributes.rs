@@ -81,7 +81,7 @@ mod test {
         assert!(amap.contains("path"));
         assert_eq!(
             amap.get_attr::<PathBuf>("path"),
-            Some(PathBuf::from("/path/to/my/Module.efi"))
+            Some(PathBuf::from("/path/to/my/executable.elf"))
         );
 
         assert_eq!(amap.get_attr::<Uuid>("guid"), Some(guid));
