@@ -1,22 +1,22 @@
+use std::borrow::Borrow;
 use std::borrow::Cow;
 use std::fmt;
 use std::str::FromStr;
 
-use fugue_lifter::{Language, Lifter, LifterBuilder, LifterBuilderError};
+use fugue_lifter::{Language, Lifter, LifterBuilder};
 use thiserror::Error;
 
-use crate::loader::{LoadedBinary, LoadedRegion, LoadedRegionProperties};
-use crate::types::{Address, AttributeMap};
+use crate::loader::{Loadable, LoadableSegment, LoadableSegmentProperties, LoaderError};
+use crate::types::{Address, Attribute, AttributeMap, BytesOrMapping};
 
-#[derive(Clone)]
-pub struct Shellcode {
+pub struct Shellcode<'a> {
     address: Address,
-    bytes: Vec<u8>,
+    bytes: BytesOrMapping<'a>,
     lifter: Lifter,
     attributes: AttributeMap,
 }
 
-impl fmt::Debug for Shellcode {
+impl fmt::Debug for Shellcode<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Shellcode")
             .field("address", &self.address)
@@ -29,35 +29,32 @@ impl fmt::Debug for Shellcode {
 pub enum ShellcodeError {
     #[error("mapping {1} bytes at {0} will overflow the default address space")]
     AddressOverflow(Address, usize),
-    #[error("requested language `{0}` unsupported: {1}")]
-    UnsupportedLanguage(String, LifterBuilderError),
     #[error("buffer to map must be not be empty")]
     ZeroSized,
 }
 
-impl Shellcode {
+impl<'a> Shellcode<'a> {
     pub fn new(
         language: impl AsRef<str>,
         address: impl Into<Address>,
-        bytes: impl Into<Vec<u8>>,
-    ) -> Result<Self, ShellcodeError> {
+        bytes: impl Into<BytesOrMapping<'a>>,
+    ) -> Result<Self, LoaderError> {
         Self::new_with(language, address, bytes, AttributeMap::default())
     }
 
     pub fn new_with(
         language: impl AsRef<str>,
         address: impl Into<Address>,
-        bytes: impl Into<Vec<u8>>,
+        bytes: impl Into<BytesOrMapping<'a>>,
         attributes: impl Into<AttributeMap>,
-    ) -> Result<Self, ShellcodeError> {
+    ) -> Result<Self, LoaderError> {
         let language = language.as_ref();
         let lifter = LifterBuilder::from_str(language)
-            .and_then(|builder| builder.build())
-            .map_err(|e| ShellcodeError::UnsupportedLanguage(language.to_owned(), e))?;
+            .and_then(|builder| builder.build())?;
 
         let bytes = bytes.into();
         if bytes.is_empty() {
-            return Err(ShellcodeError::ZeroSized);
+            return Err(LoaderError::format(ShellcodeError::ZeroSized));
         }
 
         let address = address.into();
@@ -65,7 +62,9 @@ impl Shellcode {
 
         let language = lifter.language();
         if !address.range_in_space_bounds(language, size) {
-            return Err(ShellcodeError::AddressOverflow(address, size));
+            return Err(LoaderError::format(ShellcodeError::AddressOverflow(
+                address, size,
+            )));
         }
 
         Ok(Self {
@@ -85,16 +84,16 @@ impl Shellcode {
     }
 }
 
-impl LoadedBinary for Shellcode {
+impl Loadable for Shellcode<'_> {
     fn entry_address(&self) -> Option<Address> {
         Some(self.address())
     }
 
-    fn regions<'a>(&'a self) -> impl Iterator<Item = LoadedRegion<'a>> + 'a {
-        std::iter::once(LoadedRegion {
+    fn segments<'a>(&'a self) -> impl Iterator<Item = LoadableSegment<'a>> + 'a {
+        std::iter::once(LoadableSegment {
             name: Cow::Borrowed("LOAD"),
             address: self.address,
-            properties: LoadedRegionProperties::PERM_ALL,
+            properties: LoadableSegmentProperties::PERM_ALL,
             bytes: Cow::Borrowed(self.bytes()),
         })
     }
@@ -107,12 +106,15 @@ impl LoadedBinary for Shellcode {
         self.lifter.clone()
     }
 
-    fn attributes(&self) -> &AttributeMap {
-        &self.attributes
+    fn get_attr<T>(&self, key: impl Borrow<str>) -> Option<T>
+    where
+        T: Attribute,
+    {
+        self.attributes.get_attr(key)
     }
 
-    fn attributes_mut(&mut self) -> &mut AttributeMap {
-        &mut self.attributes
+    fn set_attr(&mut self, key: impl ToString, val: impl Attribute) {
+        self.attributes.set_attr(key, val);
     }
 }
 
@@ -120,7 +122,7 @@ impl LoadedBinary for Shellcode {
 mod test {
     use crate::attributes;
     use crate::loader::shellcode::Shellcode;
-    use crate::loader::LoadedBinary;
+    use crate::loader::Loadable;
     use crate::types::Address;
 
     #[test]
@@ -128,7 +130,7 @@ mod test {
         let shellcode = Shellcode::new_with(
             "ARM:LE:32",
             0x1000u32,
-            [
+            &[
                 0x07, 0x50, 0xa0, 0xe1, 0x00, 0xb0, 0x95, 0xe5, 0x00, 0x10, 0x94, 0xe5, 0x01, 0x20,
                 0xa0, 0xe1, 0x00, 0x20, 0x87, 0xe5,
             ],

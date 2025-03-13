@@ -19,6 +19,10 @@ impl From<FxHashMap<String, serde_json::Value>> for AttributeMap {
     }
 }
 
+pub trait Attribute: serde::de::DeserializeOwned + serde::Serialize {}
+
+impl<T> Attribute for T where T: serde::de::DeserializeOwned + serde::Serialize {}
+
 impl AttributeMap {
     pub fn new() -> Self {
         Self(Default::default())
