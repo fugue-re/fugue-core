@@ -1,13 +1,12 @@
-use std::borrow::Borrow;
 use std::borrow::Cow;
 use std::fmt;
 use std::str::FromStr;
 
-use fugue_lifter::{Language, Lifter, LifterBuilder};
 use thiserror::Error;
 
+use crate::lifter::{Language, Lifter, LifterBuilder};
 use crate::loader::{Loadable, LoadableSegment, LoadableSegmentProperties, LoaderError};
-use crate::types::{Address, Attribute, AttributeMap, BytesOrMapping};
+use crate::types::{Address, AttributeMap, BytesOrMapping};
 
 pub struct Shellcode<'a> {
     address: Address,
@@ -49,8 +48,7 @@ impl<'a> Shellcode<'a> {
         attributes: impl Into<AttributeMap>,
     ) -> Result<Self, LoaderError> {
         let language = language.as_ref();
-        let lifter = LifterBuilder::from_str(language)
-            .and_then(|builder| builder.build())?;
+        let lifter = LifterBuilder::from_str(language).and_then(|builder| builder.build())?;
 
         let bytes = bytes.into();
         if bytes.is_empty() {
@@ -106,15 +104,12 @@ impl Loadable for Shellcode<'_> {
         self.lifter.clone()
     }
 
-    fn get_attr<T>(&self, key: impl Borrow<str>) -> Option<T>
-    where
-        T: Attribute,
-    {
-        self.attributes.get_attr(key)
+    fn attributes(&self) -> &AttributeMap {
+        &self.attributes
     }
 
-    fn set_attr(&mut self, key: impl ToString, val: impl Attribute) {
-        self.attributes.set_attr(key, val);
+    fn attributes_mut(&mut self) -> &mut AttributeMap {
+        &mut self.attributes
     }
 }
 

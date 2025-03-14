@@ -1,21 +1,47 @@
 use std::borrow::Cow;
+use std::str::FromStr;
 
-use fugue_lifter::{Language, Lifter};
-use object::{File, Object as _, ObjectSegment};
+use object::{File, Object as ObjectT, ObjectSegment};
 
+use crate::lifter::{Language, Lifter, LifterBuilder};
 use crate::loader::{Loadable, LoadableSegment, LoadableSegmentProperties, LoaderError};
-use crate::types::{Address, Attribute, AttributeMap, BytesOrMapping};
+use crate::types::{Address, AttributeMap, BytesOrMapping};
 
 #[ouroboros::self_referencing]
 struct ObjectInner<'a> {
     data: BytesOrMapping<'a>,
-    attrs: AttributeMap,
     #[borrows(data)]
     #[covariant]
     view: File<'this, &'this BytesOrMapping<'a>>,
 }
 
-pub struct Object<'a>(ObjectInner<'a>);
+pub struct Object<'a> {
+    object: ObjectInner<'a>,
+    lifter: Lifter,
+    attributes: AttributeMap,
+}
+
+pub fn object_lifter<'a>(object: &impl ObjectT<'a>) -> Result<Lifter, LoaderError> {
+    use object::Architecture as A;
+
+    let is_64 = object.is_64();
+    let is_le = object.is_little_endian();
+    let is_tmode = object.entry() & 1 == 1;
+
+    let triple = match object.architecture() {
+        A::Arm if is_64 && is_le => "AARCH64:LE:64",
+        A::Arm if is_64 => "AARCH64:BE:64",
+        A::Arm if is_le && is_tmode => "ARM:LE:32:v8T",
+        A::Arm if is_le => "ARM:LE:32",
+        A::Arm if is_tmode => "ARM:BE:32:v8T",
+        A::Arm => "ARM:BE:32",
+        A::I386 => "x86:LE:32",
+        A::X86_64 => "x86:LE:64",
+        _ => return Err(LoaderError::UnsupportedArch),
+    };
+
+    LifterBuilder::from_str(triple)?.build().map_err(LoaderError::Lifter)
+}
 
 impl<'a> Object<'a> {
     pub fn new(data: impl Into<BytesOrMapping<'a>>) -> Result<Self, LoaderError> {
@@ -26,41 +52,48 @@ impl<'a> Object<'a> {
         data: impl Into<BytesOrMapping<'a>>,
         attributes: impl Into<AttributeMap>,
     ) -> Result<Self, LoaderError> {
-        ObjectInner::try_new(data.into(), attributes.into(), |data| {
+
+        let object = ObjectInner::try_new(data.into(), |data| {
             File::parse(data).map_err(LoaderError::format)
+        })?;
+
+        let view = object.borrow_view();
+        let lifter = object_lifter(view)?;
+
+        Ok(Self {
+            object,
+            lifter,
+            attributes: attributes.into(),
         })
-        .map(Self)
     }
 }
 
 impl Loadable for Object<'_> {
     fn entry_address(&self) -> Option<Address> {
-        Some(self.0.borrow_view().entry().into())
+        Some(self.object.borrow_view().entry().into())
     }
 
-    fn get_attr<T>(&self, key: impl std::borrow::Borrow<str>) -> Option<T>
-    where
-        T: Attribute,
-    {
-        self.0.borrow_attrs().get_attr(key)
+    fn attributes(&self) -> &AttributeMap {
+        &self.attributes
     }
 
-    fn set_attr(&mut self, key: impl ToString, val: impl Attribute) {
-        self.0.with_attrs_mut(|attrs| attrs.set_attr(key, val))
+    fn attributes_mut(&mut self) -> &mut AttributeMap {
+        &mut self.attributes
     }
 
     fn language(&self) -> &'static Language {
-        todo!()
+        self.lifter.language()
     }
 
     fn lifter(&self) -> Lifter {
-        todo!()
+        self.lifter.clone()
     }
 
     fn segments<'a>(&'a self) -> impl Iterator<Item = LoadableSegment<'a>> + 'a {
-        let view = self.0.borrow_view();
+        let view = self.object.borrow_view();
 
-        // TODO: we need to apply relocations
+        // NOTE: we need to apply relocations
+        // NOTE: we need to make a mapping of externs
 
         view.segments().into_iter().filter_map(|segm| {
             if segm.size() == 0 {
@@ -92,65 +125,5 @@ impl Loadable for Object<'_> {
                 bytes,
             })
         })
-    }
-
-    /*
-    fn language(&self, builder: &LanguageBuilder) -> Result<Language, LoaderError> {
-        if let Some(convention) = self.get_attr_as::<CompilerConvention, _>() {
-            return self.language_with(builder, convention);
-        }
-
-        let convention = match self.0.borrow_view() {
-            File::Pe32(_) | File::Pe64(_) => "windows",
-            File::Elf32(_) | File::Elf64(_) => "gcc",
-            _ => "default",
-        };
-
-        self.language_with(builder, convention)
-    }
-
-    fn language_with(
-        &self,
-        builder: &LanguageBuilder,
-        convention: impl AsRef<str>,
-    ) -> Result<Language, LoaderError> {
-        use object::{Architecture as A, Endianness as E};
-
-        let view = self.0.borrow_view();
-        let bits = if view.is_64() { 64 } else { 32 };
-        let conv = convention.as_ref();
-
-        let language = match (view.architecture(), view.endianness(), bits) {
-            (A::Arm, E::Big, 32) => builder.build_with("ARM", Endian::Big, 32, "v7", conv)?,
-            (A::Arm, E::Little, 32) => builder.build_with("ARM", Endian::Little, 32, "v7", conv)?,
-            (A::Arm, E::Big, 64) => builder.build_with("AARCH64", Endian::Big, 64, "v8A", conv)?,
-            (A::Arm, E::Little, 64) => {
-                builder.build_with("AARCH64", Endian::Little, 64, "v8A", conv)?
-            }
-            (A::I386, E::Little, 32) => {
-                builder.build_with("x86", Endian::Little, 32, "default", conv)?
-            }
-            (A::X86_64, E::Little, 64) => {
-                builder.build_with("x86", Endian::Little, 64, "default", conv)?
-            }
-            _ => return Err(LanguageBuilderError::UnsupportedArch.into()),
-        };
-
-        Ok(language)
-    }
-    */
-}
-
-#[cfg(test)]
-mod test {
-    use crate::types::BytesOrMapping;
-
-    use super::Object;
-
-    #[test]
-    #[ignore]
-    fn test_elf() -> Result<(), Box<dyn std::error::Error>> {
-        let _elf = Object::new(BytesOrMapping::from_file("tests/ls.elf")?)?;
-        Ok(())
     }
 }
