@@ -1,14 +1,16 @@
-use std::borrow::Borrow;
 use std::borrow::Cow;
 use std::fmt::{Debug, Display};
 
 use bitflags::bitflags;
-use fugue_lifter::{Language, Lifter, LifterBuilderError};
 use thiserror::Error;
 
-use crate::types::{Address, Attribute};
+use crate::lifter::{Language, Lifter, LifterBuilderError};
+use crate::types::{AttributeMap, Address};
 
+pub mod elf;
+// pub mod macho
 pub mod object;
+// pub mod pe;
 pub mod shellcode;
 
 #[derive(Debug, Error)]
@@ -17,6 +19,8 @@ pub enum LoaderError {
     Format(anyhow::Error),
     #[error(transparent)]
     Lifter(#[from] LifterBuilderError),
+    #[error("cannot load object; unsupported architecture")]
+    UnsupportedArch,
 }
 
 impl LoaderError {
@@ -79,11 +83,8 @@ pub struct LoadableSegment<'a> {
 }
 
 pub trait Loadable {
-    fn get_attr<T>(&self, key: impl Borrow<str>) -> Option<T>
-    where
-        T: Attribute;
-
-    fn set_attr(&mut self, key: impl ToString, val: impl Attribute);
+    fn attributes(&self) -> &AttributeMap;
+    fn attributes_mut(&mut self) -> &mut AttributeMap;
 
     fn entry_address(&self) -> Option<Address>;
 
