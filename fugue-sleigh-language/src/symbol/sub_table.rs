@@ -1,5 +1,8 @@
 use std::mem::size_of;
 
+use fugue_ghidra_marshal::sla::*;
+use fugue_ghidra_marshal::Decoder;
+
 use crate::construct::ConstructTpl;
 use crate::deserialise::{DeserialiseError, XmlExt};
 use crate::pattern::PatternExpression;
@@ -22,6 +25,42 @@ pub enum Context {
 }
 
 impl Context {
+    pub fn from_decoder<D: Decoder>(input: &mut D, kind: u32) -> Result<Self, DeserialiseError> {
+        // NOTE: we assume the element is opened
+        #[cfg(feature = "tracing")]
+        tracing::trace!("decoding context operation");
+
+        Ok(match kind {
+            ELEM_CONTEXT_OP_ID => {
+                let num = input.read_signed_integer_with_id(&ATTRIB_I)? as usize;
+                let shift = input.read_signed_integer_with_id(&ATTRIB_SHIFT)? as u32;
+                let mask = input.read_unsigned_integer_with_id(&ATTRIB_MASK)? as u32;
+                let pattern_value = PatternExpression::from_decoder(input)?;
+                Self::Operator {
+                    num,
+                    shift,
+                    mask,
+                    pattern_value,
+                }
+            }
+            ELEM_COMMIT_ID => {
+                let symbol_id = input.read_unsigned_integer_with_id(&ATTRIB_ID)? as usize;
+                let num = input.read_signed_integer_with_id(&ATTRIB_NUMBER)? as usize;
+                let mask = input.read_unsigned_integer_with_id(&ATTRIB_MASK)? as u32;
+                let flow = input.read_bool_with_id(&ATTRIB_FLOW)?;
+                Self::Commit {
+                    symbol_id,
+                    num,
+                    mask,
+                    flow,
+                }
+            }
+            _ => {
+                return Err(DeserialiseError::ElementUnexpected(kind));
+            }
+        })
+    }
+
     pub fn from_xml(input: xml::Node) -> Result<Self, DeserialiseError> {
         Ok(match input.tag_name().name() {
             "context_op" => Self::Operator {
@@ -126,6 +165,97 @@ impl Constructor {
         } else {
             unreachable!()
         }
+    }
+
+    pub fn from_decoder<D: Decoder>(
+        spaces: &AddressSpaces,
+        input: &mut D,
+        id: (usize, usize),
+    ) -> Result<Self, DeserialiseError> {
+        // NOTE: we assume the element is opened
+        #[cfg(feature = "tracing")]
+        tracing::trace!("decoding constructor {id:?}");
+
+        let mut operands = Vec::new();
+        let mut print_pieces = Vec::new();
+        let mut context = Vec::new();
+        let mut template = None;
+        let mut named_template = Vec::<Option<ConstructTpl>>::new();
+
+        let parent = input.read_unsigned_integer_with_id(&ATTRIB_PARENT)? as usize;
+        let first_whitespace = input.read_signed_integer_with_id(&ATTRIB_FIRST)?;
+        let min_length = input.read_signed_integer_with_id(&ATTRIB_LENGTH)? as usize;
+        let source_file_index = input.read_signed_integer_with_id(&ATTRIB_SOURCE)? as usize;
+        let line_number = input.read_signed_integer_with_id(&ATTRIB_LINE)? as usize;
+
+        while input.peek_element()? != 0 {
+            let elem = input.open_element()?;
+
+            match elem {
+                ELEM_OPER_ID => {
+                    operands.push(input.read_unsigned_integer_with_id(&ATTRIB_ID)? as usize);
+                }
+                ELEM_PRINT_ID => {
+                    print_pieces.push(input.read_string_with_id(&ATTRIB_PIECE)?);
+                }
+                ELEM_OPPRINT_ID => {
+                    let index = input.read_signed_integer_with_id(&ATTRIB_ID)? as u8;
+                    print_pieces.push(format!("\n{}", char::from(index + b'A')));
+                }
+                ELEM_CONTEXT_OP_ID | ELEM_COMMIT_ID => {
+                    context.push(Context::from_decoder(input, elem)?);
+                }
+                ELEM_CONSTRUCT_TPL_ID => {
+                    let cur = ConstructTpl::from_decoder(spaces, input)?;
+                    if let Some(section_id) = cur.section_id() {
+                        if named_template.len() <= section_id {
+                            named_template.resize_with(section_id + 1, Default::default);
+                        }
+
+                        if named_template[section_id].is_some() {
+                            return Err(DeserialiseError::Invariant("duplicate named section"));
+                        }
+
+                        named_template[section_id] = Some(cur);
+                    } else if template.is_none() {
+                        template = Some(cur);
+                    } else {
+                        return Err(DeserialiseError::Invariant("duplicate main section"));
+                    }
+                }
+                _ => {
+                    return Err(DeserialiseError::ElementUnexpected(elem));
+                }
+            }
+
+            input.close_element(elem)?;
+        }
+
+        let flow_through_index =
+            if print_pieces.len() == 1 && print_pieces[0].chars().nth(0).unwrap() == '\n' {
+                Some((print_pieces[0].chars().nth(1).unwrap() as u8 - b'A') as usize)
+            } else {
+                None
+            };
+
+        Ok(Self {
+            id,
+            parent_id: parent,
+            first_whitespace: if first_whitespace < 0 {
+                None
+            } else {
+                Some(first_whitespace as usize)
+            },
+            min_length,
+            source_file_index,
+            line_number,
+            operands,
+            print_pieces,
+            context,
+            template,
+            named_template,
+            flow_through_index,
+        })
     }
 
     pub fn from_xml(
@@ -246,6 +376,49 @@ impl DecisionNode {
         &self.children
     }
 
+    pub fn from_decoder<D: Decoder>(
+        input: &mut D,
+    ) -> Result<Self, DeserialiseError> {
+        // NOTE: we assume the element is opened
+        #[cfg(feature = "tracing")]
+        tracing::trace!("decoding decision node");
+
+        let number = input.read_signed_integer_with_id(&ATTRIB_NUMBER)? as usize;
+        let context_decision = input.read_bool_with_id(&ATTRIB_CONTEXT)?;
+        let start_bit = input.read_signed_integer_with_id(&ATTRIB_STARTBIT)? as usize;
+        let size = input.read_signed_integer_with_id(&ATTRIB_SIZE)? as usize;
+
+        let mut patterns = Vec::new();
+        let mut children = Vec::new();
+
+        while input.peek_element()? != 0 {
+            let elem = input.open_element()?;
+
+            match elem {
+                ELEM_PAIR_ID => {
+                    let id = input.read_signed_integer_with_id(&ATTRIB_ID)? as usize;
+                    let pattern = DisjointPattern::from_decoder(input)?;
+                    patterns.push(DecisionPair { id, pattern });
+                }
+                ELEM_DECISION_ID => {
+                    children.push(Self::from_decoder(input)?);
+                }
+                _ => (),
+            }
+
+            input.close_element(elem)?;
+        }
+
+        Ok(Self {
+            number,
+            context_decision,
+            start_bit,
+            size,
+            patterns,
+            children,
+        })
+    }
+
     pub fn from_xml(input: xml::Node) -> Result<Self, DeserialiseError> {
         let inputs = input.children().filter(xml::Node::is_element);
         let mut patterns = Vec::new();
@@ -309,6 +482,33 @@ pub enum DisjointPattern {
 }
 
 impl DisjointPattern {
+    pub fn from_decoder<D: Decoder>(
+        input: &mut D,
+    ) -> Result<Self, DeserialiseError> {
+        #[cfg(feature = "tracing")]
+        tracing::trace!("decoding decision node");
+
+        let elem = input.peek_element()?;
+
+        let pattern = match elem {
+            ELEM_INSTRUCT_PAT_ID => {
+                Self::Instruction(InstructionPattern::from_decoder(input)?)
+            }
+            ELEM_CONTEXT_PAT_ID => Self::Context(ContextPattern::from_decoder(input)?),
+            _ => {
+                let sub_elem = input.open_element_with_id(&ELEM_COMBINE_PAT)?;
+                let pattern = Self::Combine {
+                    context: ContextPattern::from_decoder(input)?,
+                    instruction: InstructionPattern::from_decoder(input)?,
+                };
+                input.close_element(sub_elem)?;
+                pattern
+            }
+        };
+
+        Ok(pattern)
+    }
+
     pub fn from_xml(input: xml::Node) -> Result<Self, DeserialiseError> {
         Ok(match input.tag_name().name() {
             "instruct_pat" => Self::Instruction(InstructionPattern::from_xml(input)?),
@@ -340,6 +540,21 @@ impl InstructionPattern {
         &self.mask_value
     }
 
+    pub fn from_decoder<D: Decoder>(
+        input: &mut D,
+    ) -> Result<Self, DeserialiseError> {
+        #[cfg(feature = "tracing")]
+        tracing::trace!("decoding instruction pattern");
+
+        let elem = input.open_element_with_id(&ELEM_INSTRUCT_PAT)?;
+
+        let mask_value = PatternBlock::from_decoder(input)?;
+
+        input.close_element(elem)?;
+
+        Ok(Self { mask_value })
+    }
+
     pub fn from_xml(input: xml::Node) -> Result<Self, DeserialiseError> {
         Ok(Self {
             mask_value: PatternBlock::from_xml(
@@ -361,6 +576,21 @@ pub struct ContextPattern {
 impl ContextPattern {
     pub fn mask_value(&self) -> &PatternBlock {
         &self.mask_value
+    }
+
+    pub fn from_decoder<D: Decoder>(
+        input: &mut D,
+    ) -> Result<Self, DeserialiseError> {
+        #[cfg(feature = "tracing")]
+        tracing::trace!("decoding context pattern");
+
+        let elem = input.open_element_with_id(&ELEM_CONTEXT_PAT)?;
+
+        let mask_value = PatternBlock::from_decoder(input)?;
+
+        input.close_element(elem)?;
+
+        Ok(Self { mask_value })
     }
 
     pub fn from_xml(input: xml::Node) -> Result<Self, DeserialiseError> {
@@ -499,6 +729,41 @@ impl PatternBlock {
             tmp >>= 8;
         }
         self.non_zero_size = Some(non_zero_size);
+    }
+
+    pub fn from_decoder<D: Decoder>(
+        input: &mut D,
+    ) -> Result<Self, DeserialiseError> {
+        #[cfg(feature = "tracing")]
+        tracing::trace!("decoding pattern block");
+
+        let elem = input.open_element_with_id(&ELEM_PAT_BLOCK)?;
+
+        let offset = input.read_signed_integer_with_id(&ATTRIB_OFF)? as usize;
+        let non_zero_size = input.read_signed_integer_with_id(&ATTRIB_NONZERO)? as usize;
+
+        let mut masks = Vec::new();
+        let mut values = Vec::new();
+
+        while input.peek_element()? != 0 {
+            let sub_elem = input.open_element_with_id(&ELEM_MASK_WORD)?;
+
+            masks.push(input.read_unsigned_integer_with_id(&ATTRIB_MASK)? as u32);
+            values.push(input.read_unsigned_integer_with_id(&ATTRIB_VAL)? as u32);
+
+            input.close_element(sub_elem)?;
+        }
+
+        input.close_element(elem)?;
+
+        let mut slf = Self {
+            offset,
+            non_zero_size: Some(non_zero_size),
+            masks,
+            values,
+        };
+        slf.normalise();
+        Ok(slf)
     }
 
     pub fn from_xml(input: xml::Node) -> Result<Self, DeserialiseError> {

@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 use crate::deserialise::DeserialiseError;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
@@ -21,37 +23,37 @@ pub enum Opcode {
     IntLessEq,
     IntZExt,
     IntSExt,
-    IntNeg,
-    IntNot,
     IntAdd,
     IntSub,
+    IntCarry,
+    IntSCarry,
+    IntSBorrow,
+    IntNeg,
+    IntNot,
+    IntXor,
+    IntAnd,
+    IntOr,
+    IntLShift,
+    IntRShift,
+    IntSRShift,
     IntMul,
     IntDiv,
     IntSDiv,
     IntRem,
     IntSRem,
-    IntCarry,
-    IntSCarry,
-    IntSBorrow,
-    IntAnd,
-    IntOr,
-    IntXor,
-    IntLShift,
-    IntRShift,
-    IntSRShift,
     BoolNot,
+    BoolXor,
     BoolAnd,
     BoolOr,
-    BoolXor,
     FloatEq,
     FloatNotEq,
     FloatLess,
     FloatLessEq,
     FloatIsNaN,
     FloatAdd,
-    FloatSub,
-    FloatMul,
     FloatDiv,
+    FloatMul,
+    FloatSub,
     FloatNeg,
     FloatAbs,
     FloatSqrt,
@@ -77,8 +79,92 @@ pub enum Opcode {
     LZCount,
 }
 
-impl Opcode {
-    pub fn from_str(input: &str) -> Result<Self, DeserialiseError> {
+impl TryFrom<i64> for Opcode {
+    type Error = DeserialiseError;
+
+    fn try_from(value: i64) -> Result<Self, Self::Error> {
+        Ok(match value {
+            1 => Self::Copy,
+            2 => Self::Load,
+            3 => Self::Store,
+            4 => Self::Branch,
+            5 => Self::CBranch,
+            6 => Self::IBranch,
+            7 => Self::Call,
+            8 => Self::ICall,
+            9 => Self::CallOther,
+            10 => Self::Return,
+            11 => Self::IntEq,
+            12 => Self::IntNotEq,
+            13 => Self::IntSLess,
+            14 => Self::IntSLessEq,
+            15 => Self::IntLess,
+            16 => Self::IntLessEq,
+            17 => Self::IntZExt,
+            18 => Self::IntSExt,
+            19 => Self::IntAdd,
+            20 => Self::IntSub,
+            21 => Self::IntCarry,
+            22 => Self::IntSCarry,
+            23 => Self::IntSBorrow,
+            24 => Self::IntNeg,
+            25 => Self::IntNot,
+            26 => Self::IntXor,
+            27 => Self::IntAnd,
+            28 => Self::IntOr,
+            29 => Self::IntLShift,
+            30 => Self::IntRShift,
+            31 => Self::IntSRShift,
+            32 => Self::IntMul,
+            33 => Self::IntDiv,
+            34 => Self::IntSDiv,
+            35 => Self::IntRem,
+            36 => Self::IntSRem,
+            37 => Self::BoolNot,
+            38 => Self::BoolXor,
+            39 => Self::BoolAnd,
+            40 => Self::BoolOr,
+            41 => Self::FloatEq,
+            42 => Self::FloatNotEq,
+            43 => Self::FloatLess,
+            44 => Self::FloatLessEq,
+            46 => Self::FloatIsNaN,
+            47 => Self::FloatAdd,
+            48 => Self::FloatDiv,
+            49 => Self::FloatMul,
+            50 => Self::FloatSub,
+            51 => Self::FloatNeg,
+            52 => Self::FloatAbs,
+            53 => Self::FloatSqrt,
+            54 => Self::FloatOfInt,
+            55 => Self::FloatOfFloat,
+            56 => Self::FloatTruncate,
+            57 => Self::FloatCeiling,
+            58 => Self::FloatFloor,
+            59 => Self::FloatRound,
+            60 => Self::Build,
+            61 => Self::DelaySlot,
+            62 => Self::Piece,
+            63 => Self::Subpiece,
+            64 => Self::Cast,
+            65 => Self::Label,
+            66 => Self::CrossBuild,
+            67 => Self::SegmentOp,
+            68 => Self::CPoolRef,
+            69 => Self::New,
+            70 => Self::Insert,
+            71 => Self::Extract,
+            72 => Self::PopCount,
+            73 => Self::LZCount,
+            _ => return Err(DeserialiseError::Invariant("invalid opcode")),
+        })
+    }
+}
+
+impl FromStr for Opcode {
+    type Err = DeserialiseError;
+
+    fn from_str(input: &str) -> Result<Self, DeserialiseError> {
         Ok(match input {
             "COPY" => Self::Copy,
             "LOAD" => Self::Load,
@@ -156,4 +242,8 @@ impl Opcode {
             _ => return Err(DeserialiseError::Invariant("invalid opcode name")),
         })
     }
+}
+
+impl Opcode {
+    pub const MAX: u16 = 74;
 }

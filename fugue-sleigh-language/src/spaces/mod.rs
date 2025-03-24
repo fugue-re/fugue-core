@@ -2,6 +2,9 @@ use std::fmt::Debug;
 use std::ops::Deref;
 use std::sync::Arc;
 
+use fugue_ghidra_marshal::sla::*;
+use fugue_ghidra_marshal::Decoder;
+
 use crate::deserialise::DeserialiseError;
 
 pub mod space;
@@ -105,6 +108,66 @@ impl AddressSpaces {
 
     pub fn unique_space_id(&self) -> AddressSpaceId {
         AddressSpaceId::unique_id(self.unique_space)
+    }
+
+    pub fn from_decoder<D: Decoder>(input: &mut D) -> Result<Self, DeserialiseError> {
+        let id = input.open_element_with_id(&ELEM_SPACES)?;
+
+        let mut spaces = vec![Arc::new(AddressSpace::constant("const", 0))];
+        let mut default_space = 0;
+        let mut register_space = 0;
+        let mut unique_space = 0;
+
+        let default_name = input.read_string_with_id(&ATTRIB_DEFAULTSPACE)?;
+
+        while input.peek_element()? != 0 {
+            let mut space = AddressSpace::from_decoder(input)?;
+            let index = spaces.len();
+
+            if space.index() != index {
+                return Err(DeserialiseError::Invariant("space index mismatch"));
+            }
+
+            if space.name() == default_name {
+                default_space = index;
+                space.kind = AddressSpaceKind::Default;
+            }
+
+            if space.name() == "register" {
+                register_space = index;
+                space.kind = AddressSpaceKind::Register;
+            }
+
+            if space.name() == "unique" {
+                unique_space = index;
+            }
+
+            spaces.push(Arc::new(space));
+        }
+
+        input.close_element(id)?;
+
+        if default_space == 0 {
+            return Err(DeserialiseError::Invariant(
+                "non-constant default space not defined",
+            ));
+        }
+
+        if register_space == 0 {
+            return Err(DeserialiseError::Invariant("register space not defined"));
+        }
+
+        if unique_space == 0 {
+            return Err(DeserialiseError::Invariant("unique space not defined"));
+        }
+
+        Ok(Self {
+            spaces,
+            constant_space: 0,
+            default_space,
+            register_space,
+            unique_space,
+        })
     }
 
     pub fn from_xml(input: xml::Node) -> Result<Self, DeserialiseError> {

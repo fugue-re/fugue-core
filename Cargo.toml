@@ -6,6 +6,7 @@ members = [
   "fugue-bytes",
   "fugue-bv",
   "fugue-fp",
+  "fugue-ghidra-marshal",
   "fugue-lifter",
   "fugue-lifter-aarch64",
   "fugue-lifter-arm",

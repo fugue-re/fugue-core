@@ -6,6 +6,8 @@ use std::sync::Arc;
 use ahash::AHashMap as Map;
 use fugue_arch::{ArchDefParseError, ArchitectureDef};
 use fugue_bytes::Endian;
+use fugue_ghidra_marshal::sla::*;
+use fugue_ghidra_marshal::Decoder;
 use itertools::Itertools;
 use thiserror::Error;
 use ustr::Ustr;
@@ -249,8 +251,122 @@ impl Language {
         Ok(())
     }
 
-    pub fn from_xml<PC: AsRef<str>>(
-        program_counter: PC,
+    pub fn from_decoder<D: Decoder>(
+        program_counter: impl AsRef<str>,
+        architecture: &ArchitectureDef,
+        compiler_specs: &Map<String, CompilerSpec>,
+        input: &mut D,
+    ) -> Result<Self, DeserialiseError> {
+        #[cfg(feature = "tracing")]
+        tracing::trace!("decoding sleigh language definition");
+
+        let sleigh = input.open_element_with_id(&ELEM_SLEIGH)?;
+
+        let alignment = input.read_signed_integer_with_id(&ATTRIB_ALIGN)? as usize;
+        let big_endian = input.read_bool_with_id(&ATTRIB_BIGENDIAN)?;
+        let unique_base = input.read_unsigned_integer_with_id(&ATTRIB_UNIQBASE)?;
+        let _version = input
+            .try_read_signed_integer_with_id(&ATTRIB_VERSION)?
+            .unwrap_or(4);
+
+        let maximum_delay = input
+            .try_read_signed_integer_with_id(&ATTRIB_MAXDELAY)?
+            .unwrap_or(0) as usize;
+        let unique_mask = input
+            .try_read_unsigned_integer_with_id(&ATTRIB_UNIQMASK)?
+            .unwrap_or(0);
+        let section_count = input
+            .try_read_signed_integer_with_id(&ATTRIB_NUMSECTIONS)?
+            .unwrap_or(0) as usize;
+
+        let mut source_files = Map::new();
+        {
+            #[cfg(feature = "tracing")]
+            tracing::trace!("decoding sleigh language definition source files");
+
+            let id = input.open_element_with_id(&ELEM_SOURCEFILES)?;
+
+            while input.peek_element()? == ELEM_SOURCEFILE.id() {
+                let id = input.open_element()?;
+
+                let name = input.read_string_with_id(&ATTRIB_NAME)?;
+                let index = input.read_signed_integer_with_id(&ATTRIB_INDEX)? as usize;
+
+                source_files.insert(name, index);
+
+                input.close_element(id)?;
+            }
+
+            input.close_element(id)?;
+        }
+
+        // NOTE: this seems to be missing now?
+        let mut float_formats = Map::new();
+        {
+            float_formats.insert(16, Arc::new(FloatFormat::float2()));
+            float_formats.insert(32, Arc::new(FloatFormat::float4()));
+            float_formats.insert(64, Arc::new(FloatFormat::float8()));
+            float_formats.insert(80, Arc::new(FloatFormat::float10()));
+            float_formats.insert(128, Arc::new(FloatFormat::float16()));
+        }
+
+        #[cfg(feature = "tracing")]
+        tracing::trace!("decoding address space definitions");
+        let spaces = AddressSpaces::from_decoder(input)?;
+
+        #[cfg(feature = "tracing")]
+        tracing::trace!("decoding symbol table");
+        let symbol_table = SymbolTable::from_decoder(&spaces, input)?;
+
+        input.close_element(sleigh)?;
+
+        let register_space = spaces.register_space();
+        let program_counter_vnd = VarnodeData::new(&*register_space, 0, 0);
+
+        let global_scope = Arc::new(
+            symbol_table
+                .global_scope()
+                .ok_or_else(|| DeserialiseError::Invariant("global scope not defined"))?
+                .to_owned(),
+        );
+
+        let root = Arc::new(
+            symbol_table
+                .global_scope()
+                .ok_or_else(|| DeserialiseError::Invariant("global scope not defined"))?
+                .find("instruction", &symbol_table)
+                .ok_or_else(|| DeserialiseError::Invariant("instruction root symbol not defined"))?
+                .to_owned(),
+        );
+
+        let mut slf = Self {
+            alignment,
+            big_endian,
+            unique_base,
+            unique_mask,
+            maximum_delay,
+            section_count,
+            float_formats,
+            spaces,
+            symbol_table,
+            root,
+            global_scope,
+            registers: Arc::new(RegisterNames::new(register_space)),
+            registers_size: 0,
+            program_counter: program_counter_vnd,
+            user_ops: Vec::new(),
+            architecture: architecture.clone(),
+            compiler_conventions: Map::default(),
+            source_files,
+        };
+
+        slf.build_xrefs(program_counter, compiler_specs)?;
+
+        Ok(slf)
+    }
+
+    pub fn from_xml(
+        program_counter: impl AsRef<str>,
         architecture: &ArchitectureDef,
         compiler_specs: &Map<String, CompilerSpec>,
         input: xml::Node,
@@ -757,5 +873,38 @@ impl LanguageDB {
                     Err(e) => Err(e),
                 }
             })
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use std::fs::File;
+
+    use fugue_arch::ArchitectureDef;
+    use fugue_ghidra_marshal::sla::FormatDecoder;
+    use fugue_ghidra_marshal::Decoder;
+    use tracing_subscriber::prelude::*;
+
+    use super::{Language, Map};
+
+    #[test]
+    fn test_packed_sla() -> Result<(), Box<dyn std::error::Error>> {
+        tracing_subscriber::registry()
+            .with(tracing_subscriber::fmt::layer())
+            .with(tracing_subscriber::filter::EnvFilter::from_default_env())
+            .init();
+
+        let mut decoder = FormatDecoder::new();
+
+        decoder.ingest_stream(File::open("/Users/slt/Downloads/ghidra_11.2.1_PUBLIC/Ghidra/Processors/x86/data/languages/x86.sla")?)?;
+
+        let _ = Language::from_decoder(
+            "EIP",
+            &"x86:LE:32:default".parse::<ArchitectureDef>()?,
+            &Map::new(),
+            &mut decoder,
+        )?;
+
+        Ok(())
     }
 }

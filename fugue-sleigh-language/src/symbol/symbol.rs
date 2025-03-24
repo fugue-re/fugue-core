@@ -1,9 +1,12 @@
+use fugue_ghidra_marshal::sla::*;
+use fugue_ghidra_marshal::{AddressSpaceRef, Decoder};
+
 use ustr::Ustr;
 
 use crate::deserialise::{DeserialiseError, XmlExt};
 use crate::pattern::PatternExpression;
-use crate::symbol::{Constructor, DecisionNode, SymbolTable};
 use crate::spaces::{AddressSpaceId, AddressSpaces};
+use crate::symbol::{Constructor, DecisionNode, SymbolTable};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 pub enum SymbolKind {
@@ -260,6 +263,353 @@ impl Default for SymbolBuilder {
 }
 
 impl SymbolBuilder {
+    pub fn build_from_decoder<'a, D: Decoder>(
+        self,
+        spaces: &'a AddressSpaces,
+        input: &mut D,
+        symbol_id: u32,
+    ) -> Result<Symbol, DeserialiseError> {
+        // NOTE: we assume we're inside the element
+        #[cfg(feature = "tracing")]
+        tracing::trace!("decoding {:?} symbol definition", self.kind);
+
+        Ok(match self.kind {
+            SymbolKind::UserOp => {
+                if symbol_id != ELEM_USEROP_ID {
+                    return Err(DeserialiseError::ElementUnexpected(symbol_id));
+                }
+                Symbol::UserOp {
+                    id: self.id,
+                    scope: self.scope,
+                    name: self.name,
+                    index: input.read_signed_integer_with_id(&ATTRIB_INDEX)? as usize,
+                }
+            }
+            SymbolKind::Epsilon => {
+                if symbol_id != ELEM_EPSILON_SYM_ID {
+                    return Err(DeserialiseError::ElementUnexpected(symbol_id));
+                }
+                Symbol::Epsilon {
+                    id: self.id,
+                    scope: self.scope,
+                    name: self.name,
+                }
+            }
+            SymbolKind::Value => {
+                if symbol_id != ELEM_VALUE_SYM_ID {
+                    return Err(DeserialiseError::ElementUnexpected(symbol_id));
+                }
+                let pattern_value = PatternExpression::from_decoder(input)?;
+
+                Symbol::Value {
+                    id: self.id,
+                    scope: self.scope,
+                    name: self.name,
+                    pattern_value,
+                }
+            }
+            SymbolKind::ValueMap => {
+                if symbol_id != ELEM_VALUEMAP_SYM_ID {
+                    return Err(DeserialiseError::ElementUnexpected(symbol_id));
+                }
+
+                let pattern_value = PatternExpression::from_decoder(input)?;
+                let mut value_table = Vec::new();
+
+                while input.peek_element()? != 0 {
+                    let id = input.open_element()?;
+
+                    let val = input.read_signed_integer_with_id(&ATTRIB_VAL)?;
+                    value_table.push(val);
+
+                    input.close_element(id)?;
+                }
+
+                let min = pattern_value
+                    .min_value()
+                    .ok_or_else(|| DeserialiseError::Invariant("invalid pattern"))?;
+                let max = pattern_value
+                    .max_value()
+                    .ok_or_else(|| DeserialiseError::Invariant("invalid pattern"))?;
+
+                let table_is_filled = min >= 0
+                    && (max as i64) < value_table.len() as i64
+                    && !value_table.iter().any(|v| *v == 0xbadbeef);
+
+                Symbol::ValueMap {
+                    id: self.id,
+                    scope: self.scope,
+                    name: self.name,
+                    pattern_value,
+                    value_table,
+                    table_is_filled,
+                }
+            }
+            SymbolKind::Name => {
+                if symbol_id != ELEM_NAME_SYM_ID {
+                    return Err(DeserialiseError::ElementUnexpected(symbol_id));
+                }
+
+                let pattern_value = PatternExpression::from_decoder(input)?;
+                let mut name_table = Vec::new();
+
+                while input.peek_element()? != 0 {
+                    let id = input.open_element()?;
+
+                    let mut name = input
+                        .try_read_string_with_id(&ATTRIB_NAME)?
+                        .unwrap_or_else(|| String::from("\t"));
+
+                    if name == "_" {
+                        name = String::from("\t");
+                    }
+                    name_table.push(name);
+
+                    input.close_element(id)?;
+                }
+
+                let min = pattern_value
+                    .min_value()
+                    .ok_or_else(|| DeserialiseError::Invariant("invalid pattern"))?;
+                let max = pattern_value
+                    .max_value()
+                    .ok_or_else(|| DeserialiseError::Invariant("invalid pattern"))?;
+
+                let table_is_filled = min >= 0
+                    && (max as i64) < name_table.len() as i64
+                    && !name_table.iter().any(|v| v == "\t");
+
+                Symbol::Name {
+                    id: self.id,
+                    scope: self.scope,
+                    name: self.name,
+                    pattern_value,
+                    name_table,
+                    table_is_filled,
+                }
+            }
+            SymbolKind::Varnode => {
+                if symbol_id != ELEM_VARNODE_SYM_ID {
+                    return Err(DeserialiseError::ElementUnexpected(symbol_id));
+                }
+
+                let AddressSpaceRef::Other(space_id) = input.read_space_with_id(&ATTRIB_SPACE)? else {
+                    return Err(DeserialiseError::Invariant("varnode space not supported"));
+                };
+
+                let space = spaces
+                    .get(space_id as usize)
+                    .ok_or_else(|| DeserialiseError::Invariant("varnode space not defined"))?;
+
+                let offset = input.read_unsigned_integer_with_id(&ATTRIB_OFF)?;
+                let size = input.read_signed_integer_with_id(&ATTRIB_SIZE)? as usize;
+
+                Symbol::Varnode {
+                    id: self.id,
+                    scope: self.scope,
+                    name: self.name,
+                    space: space.id(),
+                    offset,
+                    size,
+                }
+            }
+            SymbolKind::Context => {
+                if symbol_id != ELEM_CONTEXT_SYM_ID {
+                    return Err(DeserialiseError::ElementUnexpected(symbol_id));
+                }
+
+                let varnode_id = input.read_unsigned_integer_with_id(&ATTRIB_VARNODE)? as usize;
+                let high = input.read_signed_integer_with_id(&ATTRIB_HIGH)? as usize;
+                let low = input.read_signed_integer_with_id(&ATTRIB_LOW)? as usize;
+                let flow = input.read_bool_with_id(&ATTRIB_FLOW)?;
+
+                let pattern_value = PatternExpression::from_decoder(input)?;
+
+                Symbol::Context {
+                    id: self.id,
+                    scope: self.scope,
+                    name: self.name,
+                    pattern_value,
+                    varnode_id,
+                    high,
+                    low,
+                    flow,
+                }
+            }
+            SymbolKind::VarnodeList => {
+                if symbol_id != ELEM_VARLIST_SYM_ID {
+                    return Err(DeserialiseError::ElementUnexpected(symbol_id));
+                }
+
+                let pattern_value = PatternExpression::from_decoder(input)?;
+                let mut varnode_table = Vec::new();
+
+                while input.peek_element()? != 0 {
+                    let id = input.open_element()?;
+
+                    let vnd_id = if id == ELEM_VAR_ID {
+                        Some(input.read_unsigned_integer_with_id(&ATTRIB_ID)? as usize)
+                    } else {
+                        None
+                    };
+
+                    varnode_table.push(vnd_id);
+
+                    input.close_element(id)?;
+                }
+
+                let min = pattern_value
+                    .min_value()
+                    .ok_or_else(|| DeserialiseError::Invariant("invalid pattern"))?;
+                let max = pattern_value
+                    .max_value()
+                    .ok_or_else(|| DeserialiseError::Invariant("invalid pattern"))?;
+
+                let table_is_filled = min >= 0
+                    && (max as i64) < varnode_table.len() as i64
+                    && !varnode_table.iter().any(Option::is_none);
+
+                Symbol::VarnodeList {
+                    id: self.id,
+                    scope: self.scope,
+                    name: self.name,
+                    pattern_value,
+                    varnode_table,
+                    table_is_filled,
+                }
+            }
+            SymbolKind::Operand => {
+                if symbol_id != ELEM_OPERAND_SYM_ID {
+                    return Err(DeserialiseError::ElementUnexpected(symbol_id));
+                }
+
+                let handle_index = input.read_signed_integer_with_id(&ATTRIB_INDEX)? as usize;
+                let offset = input.read_signed_integer_with_id(&ATTRIB_OFF)? as usize;
+                let base = input.read_signed_integer_with_id(&ATTRIB_BASE).map(|v| {
+                    if v < 0 {
+                        None
+                    } else {
+                        Some(v as usize)
+                    }
+                })?;
+
+                let min_length = input.read_signed_integer_with_id(&ATTRIB_MINLEN)? as usize;
+
+                let subsym_id = input
+                    .try_read_unsigned_integer_with_id(&ATTRIB_SUBSYM)?
+                    .map(|id| id as usize);
+
+                let is_code = input.try_read_bool_with_id(&ATTRIB_CODE)?.unwrap_or(false);
+
+                let local_expr = PatternExpression::from_decoder(input)?;
+
+                let def_expr = if input.peek_element()? != 0 {
+                    Some(PatternExpression::from_decoder(input)?)
+                } else {
+                    None
+                };
+
+                Symbol::Operand {
+                    id: self.id,
+                    scope: self.scope,
+                    name: self.name,
+                    handle_index,
+                    offset,
+                    base,
+                    min_length,
+                    subsym_id,
+                    is_code,
+                    local_expr,
+                    def_expr,
+                }
+            }
+            SymbolKind::Start => {
+                if symbol_id != ELEM_START_SYM_ID {
+                    return Err(DeserialiseError::ElementUnexpected(symbol_id));
+                }
+
+                Symbol::Start {
+                    id: self.id,
+                    scope: self.scope,
+                    name: self.name,
+                    pattern_value: PatternExpression::StartInstruction,
+                }
+            }
+            SymbolKind::End => {
+                if symbol_id != ELEM_END_SYM_ID {
+                    return Err(DeserialiseError::ElementUnexpected(symbol_id));
+                }
+
+                Symbol::End {
+                    id: self.id,
+                    scope: self.scope,
+                    name: self.name,
+                    pattern_value: PatternExpression::EndInstruction,
+                }
+            }
+            SymbolKind::Next2 => {
+                if symbol_id != ELEM_NEXT2_SYM_ID {
+                    return Err(DeserialiseError::ElementUnexpected(symbol_id));
+                }
+
+                Symbol::Next2 {
+                    id: self.id,
+                    scope: self.scope,
+                    name: self.name,
+                    pattern_value: PatternExpression::Next2Instruction,
+                }
+            }
+            SymbolKind::Subtable => {
+                if symbol_id != ELEM_SUBTABLE_SYM_ID {
+                    return Err(DeserialiseError::ElementUnexpected(symbol_id));
+                }
+
+                let mut constructors = Vec::new();
+                let mut decision_root = None;
+                let mut id = 0;
+
+                while input.peek_element()? != 0 {
+                    let dtree_id = input.open_element()?;
+
+                    match dtree_id {
+                        ELEM_CONSTRUCTOR_ID => {
+                            constructors.push(Constructor::from_decoder(spaces, input, (self.id, id))?);
+                        }
+                        ELEM_DECISION_ID => {
+                            if decision_root.is_none() {
+                                decision_root = Some(DecisionNode::from_decoder(input)?);
+                            } else {
+                                return Err(DeserialiseError::Invariant(
+                                    "redefintion of root decision tree node",
+                                ));
+                            }
+                        }
+                        _ => (),
+                    }
+
+                    id += 1;
+
+                    input.close_element(dtree_id)?;
+                }
+
+                Symbol::Subtable {
+                    id: self.id,
+                    scope: self.scope,
+                    name: self.name,
+                    constructors,
+                    decision_tree: decision_root.ok_or_else(|| {
+                        DeserialiseError::Invariant("missing decision tree for subtable")
+                    })?,
+                }
+            }
+            _ => {
+                return Err(DeserialiseError::Invariant(
+                    "flowdest/flowref are not supported symbol kinds",
+                ));
+            }
+        })
+    }
+
     pub fn build_from_xml<'a>(
         self,
         spaces: &'a AddressSpaces,

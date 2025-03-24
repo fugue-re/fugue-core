@@ -3,6 +3,9 @@ use std::ops::{Deref, DerefMut};
 
 use bitflags::bitflags;
 
+use fugue_ghidra_marshal::sla::*;
+use fugue_ghidra_marshal::Decoder;
+
 use crate::deserialise::{DeserialiseError, XmlExt};
 use crate::util::calculate_mask;
 
@@ -398,6 +401,64 @@ impl AddressSpace {
         self.address_size = size;
         self.highest = calculate_mask(self.address_size) * (self.word_size as u64)
             + (self.word_size as u64 - 1);
+    }
+
+    pub fn from_decoder<D: Decoder>(input: &mut D) -> Result<Self, DeserialiseError> {
+        #[cfg(feature = "tracing")]
+        tracing::trace!("decoding address space");
+
+        let id = input.open_element()?;
+
+        let name = input.read_string_with_id(&ATTRIB_NAME)?;
+        let index = input.read_signed_integer_with_id(&ATTRIB_INDEX)? as usize;
+        let address_size = input.read_signed_integer_with_id(&ATTRIB_SIZE)? as usize;
+        let delay = input.read_signed_integer_with_id(&ATTRIB_DELAY)? as usize;
+        let word_size = input
+            .try_read_unsigned_integer_with_id(&ATTRIB_WORDSIZE)?
+            .unwrap_or(1) as usize;
+        let deadcode_delay = delay;
+
+        let mut properties = AddressSpaceProperty::Heritaged | AddressSpaceProperty::DoesDeadcode;
+
+        if input.read_bool_with_id(&ATTRIB_BIGENDIAN)? {
+            properties |= AddressSpaceProperty::BigEndian;
+        }
+
+        if input.read_bool_with_id(&ATTRIB_PHYSICAL)? {
+            properties |= AddressSpaceProperty::HasPhysical;
+        }
+
+        let highest = calculate_mask(address_size) * (word_size as u64) + (word_size as u64 - 1);
+
+        input.close_element(id)?;
+
+        if id == ELEM_SPACE_UNIQUE.id() {
+            Ok(Self::Unique(AddressSpaceDef {
+                kind: AddressSpaceKind::Internal,
+                properties,
+                name,
+                highest,
+                address_size,
+                word_size,
+                index,
+                delay,
+                deadcode_delay,
+            }))
+        } else if id == ELEM_SPACE_OTHER.id() || id == ELEM_SPACE.id() {
+            Ok(Self::Space(AddressSpaceDef {
+                kind: AddressSpaceKind::Processor,
+                properties,
+                name,
+                highest,
+                address_size,
+                word_size,
+                index,
+                delay,
+                deadcode_delay,
+            }))
+        } else {
+            Err(DeserialiseError::ElementUnexpected(id))
+        }
     }
 
     pub fn from_xml(input: xml::Node) -> Result<Self, DeserialiseError> {

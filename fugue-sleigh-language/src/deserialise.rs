@@ -3,17 +3,22 @@ use std::path::PathBuf;
 use std::str::ParseBoolError;
 
 use fugue_bytes::Endian;
+use fugue_ghidra_marshal::MarshalError;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum DeserialiseError {
     #[error("attribute `{0}` expected")]
     AttributeExpected(&'static str),
+    #[error(transparent)]
+    Decoder(#[from] MarshalError),
     #[error("cannot deserialise dependency `{}`: {}", path.display(), error)]
     DeserialiseDepends {
         path: PathBuf,
         error: Box<crate::language::LanguageError>,
     },
+    #[error("unexpected element `{0}`")]
+    ElementUnexpected(u32),
     #[error("invariant not satisfied: {0}")]
     Invariant(&'static str),
     #[error("could not parse boolean: {0}")]

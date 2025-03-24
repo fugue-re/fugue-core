@@ -1,3 +1,6 @@
+use fugue_ghidra_marshal::sla::*;
+use fugue_ghidra_marshal::Decoder;
+
 use crate::deserialise::{DeserialiseError, XmlExt};
 use crate::util;
 
@@ -69,6 +72,89 @@ impl PatternExpression {
             Self::Constant { value, .. } => Some(*value),
             _ => None,
         }
+    }
+
+    pub fn from_decoder<D: Decoder>(input: &mut D) -> Result<Self, DeserialiseError> {
+        let id = input.open_element()?;
+
+        #[cfg(feature = "tracing")]
+        tracing::trace!("decoding pattern expression ({id})");
+
+        let pexpr = match id {
+            ELEM_TOKENFIELD_ID => Self::TokenField {
+                big_endian: input.read_bool_with_id(&ATTRIB_BIGENDIAN)?,
+                sign_bit: input.read_bool_with_id(&ATTRIB_SIGNBIT)?,
+                bit_start: input.read_signed_integer_with_id(&ATTRIB_STARTBIT)? as usize,
+                bit_end: input.read_signed_integer_with_id(&ATTRIB_ENDBIT)? as usize,
+                byte_start: input.read_signed_integer_with_id(&ATTRIB_STARTBYTE)? as usize,
+                byte_end: input.read_signed_integer_with_id(&ATTRIB_ENDBYTE)? as usize,
+                shift: input.read_signed_integer_with_id(&ATTRIB_SHIFT)? as u32,
+            },
+            ELEM_CONTEXTFIELD_ID => Self::ContextField {
+                sign_bit: input.read_bool_with_id(&ATTRIB_SIGNBIT)?,
+                bit_start: input.read_signed_integer_with_id(&ATTRIB_STARTBIT)? as usize,
+                bit_end: input.read_signed_integer_with_id(&ATTRIB_ENDBIT)? as usize,
+                byte_start: input.read_signed_integer_with_id(&ATTRIB_STARTBYTE)? as usize,
+                byte_end: input.read_signed_integer_with_id(&ATTRIB_ENDBYTE)? as usize,
+                shift: input.read_signed_integer_with_id(&ATTRIB_SHIFT)? as u32,
+            },
+            ELEM_INTB_ID => Self::Constant {
+                value: input.read_signed_integer_with_id(&ATTRIB_VAL)?,
+            },
+            ELEM_OPERAND_EXP_ID => Self::Operand {
+                index: input.read_signed_integer_with_id(&ATTRIB_INDEX)? as usize,
+                table_id: input.read_unsigned_integer_with_id(&ATTRIB_TABLE)? as usize,
+                constructor_id: input.read_unsigned_integer_with_id(&ATTRIB_CT)? as usize,
+            },
+            ELEM_START_EXP_ID => Self::StartInstruction,
+            ELEM_END_EXP_ID => Self::EndInstruction,
+            ELEM_NEXT2_EXP_ID => Self::Next2Instruction,
+            ELEM_PLUS_EXP_ID => Self::Plus(
+                Box::new(Self::from_decoder(input)?),
+                Box::new(Self::from_decoder(input)?),
+            ),
+            ELEM_SUB_EXP_ID => Self::Sub(
+                Box::new(Self::from_decoder(input)?),
+                Box::new(Self::from_decoder(input)?),
+            ),
+            ELEM_MULT_EXP_ID => Self::Mult(
+                Box::new(Self::from_decoder(input)?),
+                Box::new(Self::from_decoder(input)?),
+            ),
+            ELEM_LSHIFT_EXP_ID => Self::LeftShift(
+                Box::new(Self::from_decoder(input)?),
+                Box::new(Self::from_decoder(input)?),
+            ),
+            ELEM_RSHIFT_EXP_ID => Self::RightShift(
+                Box::new(Self::from_decoder(input)?),
+                Box::new(Self::from_decoder(input)?),
+            ),
+            ELEM_AND_EXP_ID => Self::And(
+                Box::new(Self::from_decoder(input)?),
+                Box::new(Self::from_decoder(input)?),
+            ),
+            ELEM_OR_EXP_ID => Self::Or(
+                Box::new(Self::from_decoder(input)?),
+                Box::new(Self::from_decoder(input)?),
+            ),
+            ELEM_XOR_EXP_ID => Self::Xor(
+                Box::new(Self::from_decoder(input)?),
+                Box::new(Self::from_decoder(input)?),
+            ),
+            ELEM_DIV_EXP_ID => Self::Div(
+                Box::new(Self::from_decoder(input)?),
+                Box::new(Self::from_decoder(input)?),
+            ),
+            ELEM_MINUS_EXP_ID => Self::Minus(Box::new(Self::from_decoder(input)?)),
+            ELEM_NOT_EXP_ID => Self::Not(Box::new(Self::from_decoder(input)?)),
+            _ => {
+                return Err(DeserialiseError::ElementUnexpected(id));
+            }
+        };
+
+        input.close_element(id)?;
+
+        Ok(pexpr)
     }
 
     pub fn from_xml(input: xml::Node) -> Result<Self, DeserialiseError> {
