@@ -134,7 +134,7 @@ mod test {
             ],
         )?;
 
-        let regions = shellcode.regions().collect::<Vec<_>>();
+        let regions = shellcode.segments().collect::<Vec<_>>();
         assert_eq!(regions.len(), 1);
 
         let region = &regions[0];

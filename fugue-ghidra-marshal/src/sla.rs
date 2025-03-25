@@ -384,6 +384,15 @@ impl FormatDecoder {
             in_buffer: vec![0u8; IN_BUFFER_SIZE],
         }
     }
+
+    pub fn new_with<R: Read>(mut stream: R) -> Result<Self, MarshalError> {
+        let mut slf = Self {
+            inner: PackedDecoder::new(),
+            in_buffer: vec![0u8; IN_BUFFER_SIZE],
+        };
+        slf.ingest_stream(&mut stream)?;
+        Ok(slf)
+    }
 }
 
 impl Decoder for FormatDecoder {

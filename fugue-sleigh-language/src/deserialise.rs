@@ -1,6 +1,6 @@
 use std::num::ParseIntError;
 use std::path::PathBuf;
-use std::str::ParseBoolError;
+use std::str::{ParseBoolError, Utf8Error};
 
 use fugue_bytes::Endian;
 use fugue_ghidra_marshal::MarshalError;
@@ -29,6 +29,8 @@ pub enum DeserialiseError {
     ParseEndian,
     #[error("unexpected tag `{0}`")]
     TagUnexpected(String),
+    #[error("expected UTF-8 encoded input: {0}")]
+    Utf8Expected(#[from] Utf8Error),
     #[error(transparent)]
     Xml(#[from] xml::Error),
 }

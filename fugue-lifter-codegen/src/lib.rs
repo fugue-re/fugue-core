@@ -72,7 +72,6 @@ pub fn build_with(
                 .join(sla_file.file_name().expect("sla file name"));
             let spec = sla_file.with_extension("");
             let slac = SleighCompiler::new()?
-                .xml_mode(true)
                 .build_with(spec, slaf)?
                 .expect("compiled sla file name");
             language.build_with_sla(slac)

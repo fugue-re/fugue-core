@@ -1,6 +1,7 @@
 use std::fs::{self, File};
-use std::io::{self, Read};
+use std::io::{self, Cursor, Read};
 use std::path::{Path, PathBuf};
+use std::str;
 use std::sync::Arc;
 
 use ahash::AHashMap as Map;
@@ -142,31 +143,48 @@ impl Language {
         &self.source_files
     }
 
-    pub fn from_file<PC: AsRef<str>, P: AsRef<Path>>(
-        program_counter: PC,
+    pub fn from_file(
+        program_counter: impl AsRef<str>,
         architecture: &ArchitectureDef,
         compiler_specs: &Map<String, CompilerSpec>,
-        path: P,
+        path: impl AsRef<Path>,
     ) -> Result<Self, LanguageError> {
         let path = path.as_ref();
-        let input = fs::read_to_string(path).map_err(|error| LanguageError::ParseFile {
+        let input = fs::read(path).map_err(|error| LanguageError::ParseFile {
             path: path.to_owned(),
             error,
         })?;
 
-        Self::from_str(program_counter, architecture, compiler_specs, &input).map_err(|error| {
-            LanguageError::DeserialiseFile {
-                path: path.to_owned(),
-                error,
-            }
+        if matches!(is_sla_format(&mut Cursor::new(&input)), Ok(true)) {
+            Self::from_bytes(program_counter, architecture, compiler_specs, input)
+        } else {
+            str::from_utf8(&input)
+                .map_err(DeserialiseError::from)
+                .and_then(|input| {
+                    Self::from_str(program_counter, architecture, compiler_specs, input)
+                })
+        }
+        .map_err(|error| LanguageError::DeserialiseFile {
+            path: path.to_owned(),
+            error,
         })
     }
 
-    pub fn from_str<PC: AsRef<str>, S: AsRef<str>>(
-        program_counter: PC,
+    pub fn from_bytes(
+        program_counter: impl AsRef<str>,
         architecture: &ArchitectureDef,
         compiler_specs: &Map<String, CompilerSpec>,
-        input: S,
+        input: impl AsRef<[u8]>,
+    ) -> Result<Self, DeserialiseError> {
+        let mut decoder = FormatDecoder::new_with(input.as_ref())?;
+        Self::from_decoder(program_counter, architecture, compiler_specs, &mut decoder)
+    }
+
+    pub fn from_str(
+        program_counter: impl AsRef<str>,
+        architecture: &ArchitectureDef,
+        compiler_specs: &Map<String, CompilerSpec>,
+        input: impl AsRef<str>,
     ) -> Result<Self, DeserialiseError> {
         let document = xml::Document::parse(input.as_ref()).map_err(DeserialiseError::Xml)?;
 
@@ -178,9 +196,9 @@ impl Language {
         )
     }
 
-    fn build_xrefs<PC: AsRef<str>>(
+    fn build_xrefs(
         &mut self,
-        program_counter: PC,
+        program_counter: impl AsRef<str>,
         compiler_specs: &Map<String, CompilerSpec>,
     ) -> Result<(), DeserialiseError> {
         let registers = Arc::<RegisterNames>::get_mut(&mut self.registers)
