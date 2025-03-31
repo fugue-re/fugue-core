@@ -238,62 +238,58 @@ where
             segms_split: None,
         }
     }
-}
 
-impl<'data, 'file, Elf, R> Iterator for ElfLoadableSegments<'data, 'file, Elf, R>
-where
-    Elf: FileHeader,
-    R: ReadRef<'data>,
-    'file: 'data,
-{
-    type Item = LoadableSegment<'data>;
+    pub(crate) fn next_linked_split(&mut self) -> Option<LoadableSegment<'data>> {
+        let (covered, segm) = self.segms_split.as_mut()?;
+        while let Some(range) = covered.next() {
+            let data = segm.data().unwrap_or_default();
 
-    fn next(&mut self) -> Option<Self::Item> {
-        if let Some((covered, segm)) = &mut self.segms_split {
-            while let Some(range) = covered.next() {
-                // TODO: logging!
+            let rvsize = (*range.end() - *range.start() + 1) as usize;
+            let rvstart = (*range.start() - segm.address()) as usize;
+            let rvend = rvsize + rvstart;
 
-                let data = segm.data().unwrap_or_default();
+            let bytes = if data.len() < rvend {
+                let mut bytes = Vec::with_capacity(rvsize);
 
-                let rvsize = (*range.end() - *range.start() + 1) as usize;
-                let rvstart = (*range.start() - segm.address()) as usize;
-                let rvend = rvsize + rvstart;
+                if rvstart < data.len() {
+                    bytes.extend_from_slice(&data[rvstart..]);
+                }
 
-                let bytes = if data.len() < rvend {
-                    let mut bytes = Vec::with_capacity(rvsize);
+                bytes.resize(rvsize, 0u8);
 
-                    if rvstart < data.len() {
-                        bytes.extend_from_slice(&data[rvstart..]);
-                    }
+                Cow::Owned(bytes)
+            } else {
+                Cow::Borrowed(&data[rvstart..rvend])
+            };
 
-                    bytes.resize(rvsize, 0u8);
+            let address = Address::from(*range.start());
+            let last_address = address + bytes.len();
 
-                    Cow::Owned(bytes)
-                } else {
-                    Cow::Borrowed(&data[rvstart..rvend])
-                };
+            tracing::trace!("loading segment {address}-{last_address}");
 
-                // TODO: relocations!
+            // TODO: relocations!
 
-                let lsegm = LoadableSegment {
-                    name: segm
-                        .name()
-                        .ok()
-                        .flatten()
-                        .map_or_else(|| Cow::Borrowed("LOAD"), |name| Cow::Owned(name.to_owned())),
-                    address: Address::from(*range.start()),
-                    properties: elf_segment_properties(&*segm),
-                    bytes,
-                };
+            let lsegm = LoadableSegment {
+                name: segm
+                    .name()
+                    .ok()
+                    .flatten()
+                    .map_or_else(|| Cow::Borrowed("LOAD"), |name| Cow::Owned(name.to_owned())),
+                address,
+                properties: elf_segment_properties(&*segm),
+                bytes,
+            };
 
-                self.covered.ranges_insert(range);
+            self.covered.ranges_insert(range);
 
-                return Some(lsegm);
-            }
+            return Some(lsegm);
         }
 
         self.segms_split = None;
+        None
+    }
 
+    pub(crate) fn next_linked_section(&mut self) -> Option<LoadableSegment<'data>> {
         while let Some(sect) = self.sects.next() {
             let SectionFlags::Elf { sh_flags } = sect.flags() else {
                 continue;
@@ -307,8 +303,6 @@ where
 
             let address = Address::from(sect.address());
             let last_address = Address::from(sect.address() + size - 1);
-
-            // TODO: sanity!
 
             tracing::trace!("processing section {address}-{last_address}");
 
@@ -349,6 +343,10 @@ where
             });
         }
 
+        None
+    }
+
+    pub(crate) fn next_linked_segment(&mut self) -> Option<LoadableSegment<'data>> {
         while let Some(segm) = self.segms.next() {
             let size = segm.size();
 
@@ -359,8 +357,7 @@ where
             let address = Address::from(segm.address());
             let last_address = Address::from(segm.address() + size - 1);
 
-            // TODO: sanity!
-            // TODO: logging!
+            tracing::trace!("processing segment {address}-{last_address}");
 
             let data = segm.data().unwrap_or_default();
 
@@ -369,10 +366,17 @@ where
             let covered = RangeSetBlaze::from_iter([vrange.clone()]) - &self.covered;
 
             if covered.is_empty() {
+                tracing::trace!("segment range {address}-{last_address} already covered");
                 continue;
             }
 
             let should_split = covered.len() > 1;
+
+            if should_split {
+                tracing::trace!(
+                    "segment range {address}-{last_address} spans multiple unmapped ranges; splitting"
+                );
+            }
 
             let mut ranges = covered.into_ranges();
             let range = ranges.next().expect("not empty");
@@ -395,7 +399,12 @@ where
                 Cow::Borrowed(&data[rvstart..rvend])
             };
 
+            let address = Address::from(*range.start());
+            let last_address = address + bytes.len();
+
             // TODO: relocations!
+
+            tracing::trace!("loading segment {address}-{last_address}");
 
             let lsegm = LoadableSegment {
                 name: segm
@@ -403,7 +412,7 @@ where
                     .ok()
                     .flatten()
                     .map_or_else(|| Cow::Borrowed("LOAD"), |name| Cow::Owned(name.to_owned())),
-                address: Address::from(*range.start()),
+                address,
                 properties: elf_segment_properties(&segm),
                 bytes,
             };
@@ -420,8 +429,34 @@ where
         None
     }
 
+    pub(crate) fn next_linked(&mut self) -> Option<LoadableSegment<'data>> {
+        self.next_linked_split()
+            .or_else(|| self.next_linked_section())
+            .or_else(|| self.next_linked_segment())
+    }
+}
+
+impl<'data, 'file, Elf, R> Iterator for ElfLoadableSegments<'data, 'file, Elf, R>
+where
+    Elf: FileHeader,
+    R: ReadRef<'data>,
+    'file: 'data,
+{
+    type Item = LoadableSegment<'data>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.next_linked()
+    }
+
     fn size_hint(&self) -> (usize, Option<usize>) {
-        todo!()
+        let sects_bound = self.sects.size_hint().0;
+        let segms_bound = self.segms.size_hint().0;
+        let splits = self
+            .segms_split
+            .as_ref()
+            .map(|(it, _)| it.size_hint().0)
+            .unwrap_or(0);
+        (sects_bound + segms_bound + splits, None)
     }
 }
 
@@ -462,14 +497,17 @@ impl Loadable for Elf<'_> {
 
 #[cfg(test)]
 mod test {
+    use crate::loader::Loadable;
     use crate::types::BytesOrMapping;
 
     use super::Elf;
 
     #[test]
-    #[ignore]
     fn test_elf() -> Result<(), Box<dyn std::error::Error>> {
-        let _elf = Elf::new(BytesOrMapping::from_file("tests/ls.elf")?)?;
+        let elf = Elf::new(BytesOrMapping::from_file("tests/ls.elf")?)?;
+        for segm in elf.segments() {
+            println!("{}-{}", segm.address(), segm.last_address());
+        }
         Ok(())
     }
 }
