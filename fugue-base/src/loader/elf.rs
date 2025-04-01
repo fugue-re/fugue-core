@@ -7,7 +7,8 @@ use object::read::elf::{
     self, ElfFile, ElfSectionIterator, ElfSegment, ElfSegmentIterator, FileHeader,
 };
 use object::{
-    Endianness, FileKind, Object, ObjectSection, ObjectSegment, ReadRef, SectionFlags, SegmentFlags,
+    Endianness, FileKind, Object, ObjectKind, ObjectSection, ObjectSegment, ReadRef, SectionFlags,
+    SegmentFlags,
 };
 use range_set_blaze::{IntoRangesIter, RangeSetBlaze};
 
@@ -15,6 +16,9 @@ use crate::lifter::{Language, Lifter};
 use crate::loader::object::object_lifter;
 use crate::loader::{Loadable, LoadableSegment, LoadableSegmentProperties, LoaderError};
 use crate::types::{Address, AttributeMap, BytesOrMapping};
+
+pub mod relocations;
+pub mod symbols;
 
 #[ouroboros::self_referencing]
 struct ElfInner<'a> {
@@ -220,8 +224,14 @@ where
 {
     segms: ElfSegmentIterator<'data, 'file, Elf, R>,
     sects: ElfSectionIterator<'data, 'file, Elf, R>,
+    // this represents the ranges already covered
     covered: RangeSetBlaze<u64>,
+    // this is used to split segments that span multiple unmapped ranges
     segms_split: Option<(IntoRangesIter<u64>, ElfSegment<'data, 'file, Elf, R>)>,
+    // this is used to track the current base address
+    current_base: Address,
+    // this is used to track if we're working with an object file or not
+    is_object: bool,
 }
 
 impl<'data, 'file, Elf, R> ElfLoadableSegments<'data, 'file, Elf, R>
@@ -236,7 +246,75 @@ where
             segms: elf.segments(),
             covered: RangeSetBlaze::new(),
             segms_split: None,
+            current_base: Address::zero(),
+            is_object: elf.kind() == ObjectKind::Relocatable,
         }
+    }
+
+    pub(crate) fn next_unlinked(&mut self) -> Option<LoadableSegment<'data>> {
+        while let Some(sect) = self.sects.next() {
+            let SectionFlags::Elf { sh_flags } = sect.flags() else {
+                continue;
+            };
+
+            let size = sect.size();
+
+            if size == 0 || (sh_flags as u32 & SHF_ALLOC) != SHF_ALLOC {
+                continue;
+            }
+
+            let alignment_mask = sect.align().wrapping_sub(1);
+            let address = Address::from(
+                self.current_base.offset().wrapping_add(alignment_mask) & !alignment_mask,
+            );
+            let last_address = address + size - 1usize;
+
+            if last_address < address {
+                tracing::debug!("section bounds {address}-{last_address} overflow; skipping");
+                continue;
+            }
+
+            tracing::trace!("processing section {address}-{last_address}");
+
+            let data = sect.data().unwrap_or_default();
+
+            let vrange = address.offset()..=last_address.offset();
+            if !self
+                .covered
+                .is_disjoint(&RangeSetBlaze::from_iter([vrange.clone()]))
+            {
+                tracing::debug!("overlapping section {address}-{last_address}; skipping");
+                continue;
+            }
+
+            tracing::trace!("loading section {address}-{last_address}");
+
+            self.current_base = last_address + 1usize;
+            self.covered.ranges_insert(vrange);
+
+            let bytes = if data.len() as u64 != sect.size() {
+                let mut data = data.to_owned();
+                data.resize(sect.size() as _, 0);
+
+                Cow::Owned(data)
+            } else {
+                Cow::Borrowed(data)
+            };
+
+            // TODO: relocations!
+
+            return Some(LoadableSegment {
+                name: sect
+                    .name()
+                    .ok()
+                    .map_or_else(|| Cow::Borrowed("LOAD"), |name| Cow::Borrowed(name)),
+                address,
+                properties: elf_section_properties(&sect),
+                bytes,
+            });
+        }
+
+        None
     }
 
     pub(crate) fn next_linked_split(&mut self) -> Option<LoadableSegment<'data>> {
@@ -304,6 +382,11 @@ where
             let address = Address::from(sect.address());
             let last_address = Address::from(sect.address() + size - 1);
 
+            if last_address < address {
+                tracing::debug!("section bounds {address}-{last_address} overflow; skipping");
+                continue;
+            }
+
             tracing::trace!("processing section {address}-{last_address}");
 
             let data = sect.data().unwrap_or_default();
@@ -356,6 +439,11 @@ where
 
             let address = Address::from(segm.address());
             let last_address = Address::from(segm.address() + size - 1);
+
+            if last_address < address {
+                tracing::debug!("segment bounds {address}-{last_address} overflow; skipping");
+                continue;
+            }
 
             tracing::trace!("processing segment {address}-{last_address}");
 
@@ -445,7 +533,11 @@ where
     type Item = LoadableSegment<'data>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.next_linked()
+        if self.is_object {
+            self.next_unlinked()
+        } else {
+            self.next_linked()
+        }
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {

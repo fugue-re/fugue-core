@@ -5,7 +5,7 @@ use bitflags::bitflags;
 use thiserror::Error;
 
 use crate::lifter::{Language, Lifter, LifterBuilderError};
-use crate::types::{AttributeMap, Address};
+use crate::types::{Address, AttributeMap};
 
 pub mod elf;
 // pub mod macho
@@ -80,6 +80,28 @@ pub struct LoadableSegment<'a> {
     address: Address,
     properties: LoadableSegmentProperties,
     bytes: Cow<'a, [u8]>,
+}
+
+impl LoadableSegment<'_> {
+    pub fn address(&self) -> Address {
+        self.address
+    }
+
+    pub fn last_address(&self) -> Address {
+        self.address + self.bytes.len() - 1usize
+    }
+
+    pub fn name(&self) -> &str {
+        self.name.as_ref()
+    }
+
+    pub fn properties(&self) -> LoadableSegmentProperties {
+        self.properties
+    }
+
+    pub fn bytes(&self) -> &[u8] {
+        &self.bytes
+    }
 }
 
 pub trait Loadable {
