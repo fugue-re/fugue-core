@@ -2,6 +2,10 @@ use std::borrow::Cow;
 use std::fmt::{Debug, Display};
 
 use bitflags::bitflags;
+
+use fugue_bytes::traits::ByteCast;
+use fugue_bytes::{BE, LE};
+
 use thiserror::Error;
 
 use crate::lifter::{Language, Lifter, LifterBuilderError};
@@ -49,6 +53,7 @@ bitflags! {
         const PERM_ALL      = Self::PERM_READ.bits() | Self::PERM_WRITE.bits() | Self::PERM_EXECUTE.bits();
 
         const UNINITIALISED = 0b0001_0000;
+        const LITTLE_ENDIAN = 0b0010_0000;
     }
 }
 
@@ -71,6 +76,10 @@ impl LoadableSegmentProperties {
 
     pub fn is_uninitialised(&self) -> bool {
         self.contains(Self::UNINITIALISED)
+    }
+
+    pub fn is_little_endian(&self) -> bool {
+        self.contains(Self::LITTLE_ENDIAN)
     }
 }
 
@@ -101,6 +110,77 @@ impl LoadableSegment<'_> {
 
     pub fn bytes(&self) -> &[u8] {
         &self.bytes
+    }
+
+    pub fn len(&self) -> usize {
+        self.bytes.len()
+    }
+
+    pub fn read_value<T: ByteCast>(&self, offset: usize) -> Option<T> {
+        let range = self.view_bytes(offset, T::SIZEOF)?;
+        Some(if self.properties.is_little_endian() {
+            T::from_bytes::<LE>(range)
+        } else {
+            T::from_bytes::<BE>(range)
+        })
+    }
+
+    pub fn update_value<T: ByteCast, F: FnOnce(T) -> T>(
+        &mut self,
+        offset: usize,
+        f: F,
+    ) -> Option<()> {
+        let is_le = self.properties.is_little_endian();
+        let range = self.view_bytes_mut(offset, T::SIZEOF)?;
+        Some(if is_le {
+            f(T::from_bytes::<LE>(range)).into_bytes::<LE>(range)
+        } else {
+            f(T::from_bytes::<BE>(range)).into_bytes::<BE>(range)
+        })
+    }
+
+    pub fn write_value<T: ByteCast>(&mut self, offset: usize, value: T) -> Option<()> {
+        let is_le = self.properties.is_little_endian();
+        let range = self.view_bytes_mut(offset, T::SIZEOF)?;
+        Some(if is_le {
+            value.into_bytes::<LE>(range)
+        } else {
+            value.into_bytes::<BE>(range)
+        })
+    }
+
+    pub fn view_bytes(&self, offset: usize, count: usize) -> Option<&[u8]> {
+        let len = self.bytes.len();
+        if offset >= len {
+            return None;
+        }
+
+        if let Some(last_offset) = offset.checked_add(count) {
+            if last_offset > len {
+                None
+            } else {
+                Some(&self.bytes[offset..last_offset])
+            }
+        } else {
+            None
+        }
+    }
+
+    pub fn view_bytes_mut(&mut self, offset: usize, count: usize) -> Option<&mut [u8]> {
+        let len = self.bytes.len();
+        if offset >= len {
+            return None;
+        }
+
+        if let Some(last_offset) = offset.checked_add(count) {
+            if last_offset > len {
+                None
+            } else {
+                Some(&mut self.bytes.to_mut()[offset..last_offset])
+            }
+        } else {
+            None
+        }
     }
 }
 

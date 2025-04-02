@@ -4,11 +4,11 @@ use object::elf::{
     FileHeader32, FileHeader64, PF_R, PF_W, PF_X, SHF_ALLOC, SHF_EXECINSTR, SHF_WRITE,
 };
 use object::read::elf::{
-    self, ElfFile, ElfSectionIterator, ElfSegment, ElfSegmentIterator, FileHeader,
+    self, ElfFile, ElfSection, ElfSectionIterator, ElfSegment, ElfSegmentIterator, FileHeader,
 };
 use object::{
-    Endianness, FileKind, Object, ObjectKind, ObjectSection, ObjectSegment, ReadRef, SectionFlags,
-    SegmentFlags,
+    Architecture, Endianness, FileKind, Object, ObjectKind, ObjectSection, ObjectSegment, ReadRef,
+    Relocation, RelocationFlags, RelocationKind, SectionFlags, SegmentFlags,
 };
 use range_set_blaze::{IntoRangesIter, RangeSetBlaze};
 
@@ -222,6 +222,7 @@ where
     R: ReadRef<'data>,
     'file: 'data,
 {
+    elf: &'file ElfFile<'data, Elf, R>,
     segms: ElfSegmentIterator<'data, 'file, Elf, R>,
     sects: ElfSectionIterator<'data, 'file, Elf, R>,
     // this represents the ranges already covered
@@ -242,6 +243,7 @@ where
 {
     pub(crate) fn new(elf: &'file ElfFile<'data, Elf, R>) -> Self {
         Self {
+            elf,
             sects: elf.sections(),
             segms: elf.segments(),
             covered: RangeSetBlaze::new(),
@@ -290,7 +292,6 @@ where
             tracing::trace!("loading section {address}-{last_address}");
 
             self.current_base = last_address + 1usize;
-            self.covered.ranges_insert(vrange);
 
             let bytes = if data.len() as u64 != sect.size() {
                 let mut data = data.to_owned();
@@ -301,9 +302,7 @@ where
                 Cow::Borrowed(data)
             };
 
-            // TODO: relocations!
-
-            return Some(LoadableSegment {
+            let mut lsegm = LoadableSegment {
                 name: sect
                     .name()
                     .ok()
@@ -311,7 +310,14 @@ where
                 address,
                 properties: elf_section_properties(&sect),
                 bytes,
-            });
+            };
+
+            self.covered.ranges_insert(vrange);
+
+            self.apply_relocations(&mut lsegm, &sect);
+            self.apply_dynamic_relocations(&mut lsegm);
+
+            return Some(lsegm);
         }
 
         None
@@ -345,9 +351,7 @@ where
 
             tracing::trace!("loading segment {address}-{last_address}");
 
-            // TODO: relocations!
-
-            let lsegm = LoadableSegment {
+            let mut lsegm = LoadableSegment {
                 name: segm
                     .name()
                     .ok()
@@ -359,6 +363,7 @@ where
             };
 
             self.covered.ranges_insert(range);
+            self.apply_dynamic_relocations(&mut lsegm);
 
             return Some(lsegm);
         }
@@ -402,8 +407,6 @@ where
 
             tracing::trace!("loading section {address}-{last_address}");
 
-            self.covered.ranges_insert(vrange);
-
             let bytes = if data.len() as u64 != sect.size() {
                 let mut data = data.to_owned();
                 data.resize(sect.size() as _, 0);
@@ -413,9 +416,7 @@ where
                 Cow::Borrowed(data)
             };
 
-            // TODO: relocations!
-
-            return Some(LoadableSegment {
+            let mut lsegm = LoadableSegment {
                 name: sect
                     .name()
                     .ok()
@@ -423,7 +424,13 @@ where
                 address,
                 properties: elf_section_properties(&sect),
                 bytes,
-            });
+            };
+
+            self.covered.ranges_insert(vrange);
+            self.apply_relocations(&mut lsegm, &sect);
+            self.apply_dynamic_relocations(&mut lsegm);
+
+            return Some(lsegm);
         }
 
         None
@@ -490,11 +497,9 @@ where
             let address = Address::from(*range.start());
             let last_address = address + bytes.len();
 
-            // TODO: relocations!
-
             tracing::trace!("loading segment {address}-{last_address}");
 
-            let lsegm = LoadableSegment {
+            let mut lsegm = LoadableSegment {
                 name: segm
                     .name()
                     .ok()
@@ -505,11 +510,12 @@ where
                 bytes,
             };
 
-            self.covered.ranges_insert(range);
-
             if should_split {
                 self.segms_split = Some((ranges, segm));
             }
+
+            self.covered.ranges_insert(range);
+            self.apply_dynamic_relocations(&mut lsegm);
 
             return Some(lsegm);
         }
@@ -521,6 +527,119 @@ where
         self.next_linked_split()
             .or_else(|| self.next_linked_section())
             .or_else(|| self.next_linked_segment())
+    }
+
+    pub(crate) fn apply_relocations(
+        &self,
+        lsegm: &mut LoadableSegment<'data>,
+        sect: &ElfSection<'data, 'file, Elf, R>,
+    ) -> Result<(), LoaderError> {
+        /*
+        let relocations = self
+            .elf
+            .relocations()
+            .filter(|rel| rel.address() >= lsegm.address().offset())
+            .filter(|rel| rel.address() <= lsegm.last_address().offset());
+
+        for reloc in relocations {
+            let offset = reloc.address() - lsegm.address().offset();
+            let size = reloc.size() as usize;
+
+            if size > lsegm.bytes.len() {
+                return Err(LoaderError::format_with(
+                    "relocation size is larger than segment size",
+                ));
+            }
+
+            let bytes = &mut lsegm.bytes[offset..offset + size];
+            bytes.copy_from_slice(reloc.data());
+        }
+        */
+
+        for (off, rel) in sect.relocations() {
+            tracing::trace!(
+                "applying relocation {}+{off:#x} {:?}",
+                lsegm.address(),
+                rel.kind()
+            );
+        }
+
+        Ok(())
+    }
+
+    pub(crate) fn apply_dynamic_relocations(
+        &self,
+        lsegm: &mut LoadableSegment<'data>,
+    ) -> Result<(), LoaderError> {
+        let Some(drels) = self.elf.dynamic_relocations() else {
+            return Ok(());
+        };
+
+        let offset = lsegm.address().offset();
+        let last_offset = lsegm.last_address().offset();
+
+        // TODO: add base address to dynamic relocations offset
+        for (off, rel) in drels.filter(|(off, _)| *off >= offset && *off <= last_offset) {
+            tracing::trace!("applying dynamic relocation at {}", Address::from(off));
+
+            match rel.kind() {
+                RelocationKind::Unknown => {
+                    let RelocationFlags::Elf { r_type } = rel.flags() else {
+                        // NOTE: we could probably panic here
+                        continue;
+                    };
+
+                    match self.elf.architecture() {
+                        Architecture::X86_64 => {
+                            self.apply_x86_64_relocation(lsegm, off, &rel, r_type);
+                        }
+                        arch => {
+                            tracing::warn!(
+                                "unsupported architecture {arch:?} for relocation {:?}",
+                                rel.kind()
+                            );
+                        }
+                    }
+                }
+                _ => {
+                    tracing::warn!("unsupported relocation kind {:?}", rel.kind());
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    pub(crate) fn apply_x86_64_relocation(
+        &self,
+        lsegm: &mut LoadableSegment<'data>,
+        offset: u64,
+        reloc: &Relocation,
+        reloc_type: u32,
+    ) {
+        use object::elf::{R_X86_64_GLOB_DAT, R_X86_64_JUMP_SLOT, R_X86_64_RELATIVE};
+
+        // TODO: allow configurable base address
+        let base = 0u64;
+
+        match reloc_type {
+            R_X86_64_RELATIVE => {
+                let offset = offset as usize;
+                let value = base.wrapping_add_signed(reloc.addend());
+
+                tracing::trace!("applying relocation {reloc_type:#x} at {offset:#x}: {value:#x}",);
+
+                lsegm.write_value(offset, value);
+            }
+            R_X86_64_GLOB_DAT | R_X86_64_JUMP_SLOT => {
+                let offset = offset as usize;
+
+                tracing::trace!("applying relocation {reloc_type:#x} at {offset:#x}: <TODO>",);
+            }
+            _ => {
+                tracing::warn!("unsupported relocation type {reloc:?}");
+            }
+        }
     }
 }
 
@@ -596,10 +715,38 @@ mod test {
 
     #[test]
     fn test_elf() -> Result<(), Box<dyn std::error::Error>> {
-        let elf = Elf::new(BytesOrMapping::from_file("tests/ls.elf")?)?;
-        for segm in elf.segments() {
-            println!("{}-{}", segm.address(), segm.last_address());
-        }
-        Ok(())
+        let subscriber = tracing_subscriber::fmt()
+            .with_env_filter(tracing_subscriber::filter::EnvFilter::from_default_env())
+            .with_line_number(true)
+            .with_file(true)
+            .with_span_events(tracing_subscriber::fmt::format::FmtSpan::CLOSE)
+            .finish();
+
+        tracing::subscriber::with_default(subscriber, || {
+            let elf = Elf::new(BytesOrMapping::from_file("tests/ls.elf")?)?;
+            for segm in elf.segments() {
+                tracing::info!("{}-{}", segm.address(), segm.last_address());
+            }
+            Ok(())
+        })
+    }
+
+    #[test]
+    #[ignore]
+    fn test_elf_rel() -> Result<(), Box<dyn std::error::Error>> {
+        let subscriber = tracing_subscriber::fmt()
+            .with_env_filter(tracing_subscriber::filter::EnvFilter::from_default_env())
+            .with_line_number(true)
+            .with_file(true)
+            .with_span_events(tracing_subscriber::fmt::format::FmtSpan::CLOSE)
+            .finish();
+
+        tracing::subscriber::with_default(subscriber, || {
+            let elf = Elf::new(BytesOrMapping::from_file("tests/liblzma_la-crc64-fast.o")?)?;
+            for segm in elf.segments() {
+                tracing::info!("{}-{}", segm.address(), segm.address() + segm.len());
+            }
+            Ok(())
+        })
     }
 }

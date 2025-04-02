@@ -28,3 +28,6 @@ static_init = "1"
 thiserror = "2"
 tracing = "0.1"
 uuid = { version = "1", features = ["serde", "v7"] }
+
+[dev-dependencies]
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
