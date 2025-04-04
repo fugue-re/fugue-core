@@ -12,6 +12,7 @@ use crate::lifter::{Language, Lifter, LifterBuilderError};
 use crate::types::{Address, AttributeMap};
 
 pub mod elf;
+pub mod externs;
 // pub mod macho
 pub mod object;
 // pub mod pe;
@@ -54,6 +55,8 @@ bitflags! {
 
         const UNINITIALISED = 0b0001_0000;
         const LITTLE_ENDIAN = 0b0010_0000;
+
+        const EXTERNAL      = 0b0100_0000;
     }
 }
 
@@ -80,6 +83,10 @@ impl LoadableSegmentProperties {
 
     pub fn is_little_endian(&self) -> bool {
         self.contains(Self::LITTLE_ENDIAN)
+    }
+
+    pub fn is_external(&self) -> bool {
+        self.contains(Self::EXTERNAL)
     }
 }
 
