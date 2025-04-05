@@ -1,6 +1,8 @@
 use std::borrow::Cow;
 use std::str::FromStr;
 
+use fallible_iterator::FallibleIterator;
+
 use object::{File, Object as ObjectT, ObjectSegment};
 
 use crate::lifter::{Language, Lifter, LifterBuilder};
@@ -40,7 +42,9 @@ pub fn object_lifter<'a>(object: &impl ObjectT<'a>) -> Result<Lifter, LoaderErro
         _ => return Err(LoaderError::UnsupportedArch),
     };
 
-    LifterBuilder::from_str(triple)?.build().map_err(LoaderError::Lifter)
+    LifterBuilder::from_str(triple)?
+        .build()
+        .map_err(LoaderError::Lifter)
 }
 
 impl<'a> Object<'a> {
@@ -52,7 +56,6 @@ impl<'a> Object<'a> {
         data: impl Into<BytesOrMapping<'a>>,
         attributes: impl Into<AttributeMap>,
     ) -> Result<Self, LoaderError> {
-
         let object = ObjectInner::try_new(data.into(), |data| {
             File::parse(data).map_err(LoaderError::format)
         })?;
@@ -89,13 +92,15 @@ impl Loadable for Object<'_> {
         self.lifter.clone()
     }
 
-    fn segments<'a>(&'a self) -> impl Iterator<Item = LoadableSegment<'a>> + 'a {
+    fn segments<'a>(
+        &'a self,
+    ) -> impl FallibleIterator<Item = LoadableSegment<'a>, Error = LoaderError> + 'a {
         let view = self.object.borrow_view();
 
         // NOTE: we need to apply relocations
         // NOTE: we need to make a mapping of externs
 
-        view.segments().into_iter().filter_map(|segm| {
+        fallible_iterator::convert(view.segments().into_iter().filter_map(|segm| {
             if segm.size() == 0 {
                 return None;
             }
@@ -114,7 +119,7 @@ impl Loadable for Object<'_> {
                 Cow::Borrowed(data)
             };
 
-            Some(LoadableSegment {
+            Some(Ok(LoadableSegment {
                 name: segm
                     .name()
                     .ok()
@@ -123,7 +128,7 @@ impl Loadable for Object<'_> {
                 address,
                 properties: LoadableSegmentProperties::all(),
                 bytes,
-            })
-        })
+            }))
+        }))
     }
 }

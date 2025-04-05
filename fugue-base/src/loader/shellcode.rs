@@ -2,6 +2,8 @@ use std::borrow::Cow;
 use std::fmt;
 use std::str::FromStr;
 
+use fallible_iterator::FallibleIterator;
+
 use thiserror::Error;
 
 use crate::lifter::{Language, Lifter, LifterBuilder};
@@ -87,8 +89,10 @@ impl Loadable for Shellcode<'_> {
         Some(self.address())
     }
 
-    fn segments<'a>(&'a self) -> impl Iterator<Item = LoadableSegment<'a>> + 'a {
-        std::iter::once(LoadableSegment {
+    fn segments<'a>(
+        &'a self,
+    ) -> impl FallibleIterator<Item = LoadableSegment<'a>, Error = LoaderError> + 'a {
+        fallible_iterator::once(LoadableSegment {
             name: Cow::Borrowed("LOAD"),
             address: self.address,
             properties: LoadableSegmentProperties::PERM_ALL,
@@ -115,6 +119,8 @@ impl Loadable for Shellcode<'_> {
 
 #[cfg(test)]
 mod test {
+    use fallible_iterator::FallibleIterator;
+
     use crate::attributes;
     use crate::loader::shellcode::Shellcode;
     use crate::loader::Loadable;
@@ -134,7 +140,7 @@ mod test {
             ],
         )?;
 
-        let regions = shellcode.segments().collect::<Vec<_>>();
+        let regions = shellcode.segments().collect::<Vec<_>>()?;
         assert_eq!(regions.len(), 1);
 
         let region = &regions[0];

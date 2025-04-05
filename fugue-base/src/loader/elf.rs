@@ -1,5 +1,7 @@
 use std::borrow::Cow;
 
+use fallible_iterator::FallibleIterator;
+
 use object::elf::{
     FileHeader32, FileHeader64, PF_R, PF_W, PF_X, SHF_ALLOC, SHF_EXECINSTR, SHF_WRITE, STB_GLOBAL,
     STB_WEAK, STT_NOTYPE,
@@ -12,6 +14,7 @@ use object::{
     ObjectSymbol, ReadRef, Relocation, RelocationFlags, RelocationKind, SectionFlags, SegmentFlags,
     SymbolFlags,
 };
+
 use range_set_blaze::{IntoRangesIter, RangeSetBlaze};
 
 use crate::lifter::{Language, Lifter};
@@ -331,8 +334,10 @@ where
         }
     }
 
-    pub(crate) fn extern_segment(&mut self) -> Option<LoadableSegment<'data>> {
-        let externs = self.externs.take().filter(|e| e.len() > 0)?;
+    pub(crate) fn extern_segment(&mut self) -> Result<Option<LoadableSegment<'data>>, LoaderError> {
+        let Some(externs) = self.externs.take().filter(|e| e.len() > 0) else {
+            return Ok(None);
+        };
         let extern_size = externs.size() as usize;
 
         let address = externs.base();
@@ -356,10 +361,10 @@ where
             bytes: Cow::Owned(bytes),
         };
 
-        Some(lsegm)
+        Ok(Some(lsegm))
     }
 
-    pub(crate) fn next_unlinked(&mut self) -> Option<LoadableSegment<'data>> {
+    pub(crate) fn next_unlinked(&mut self) -> Result<Option<LoadableSegment<'data>>, LoaderError> {
         while let Some(sect) = self.sects.next() {
             let SectionFlags::Elf { sh_flags } = sect.flags() else {
                 continue;
@@ -420,17 +425,21 @@ where
 
             self.covered.ranges_insert(vrange);
 
-            self.apply_relocations(&mut lsegm, &sect);
-            self.apply_dynamic_relocations(&mut lsegm);
+            self.apply_relocations(&mut lsegm, &sect)?;
+            self.apply_dynamic_relocations(&mut lsegm)?;
 
-            return Some(lsegm);
+            return Ok(Some(lsegm));
         }
 
         self.extern_segment()
     }
 
-    pub(crate) fn next_linked_split(&mut self) -> Option<LoadableSegment<'data>> {
-        let (covered, segm) = self.segms_split.as_mut()?;
+    pub(crate) fn next_linked_split(
+        &mut self,
+    ) -> Result<Option<LoadableSegment<'data>>, LoaderError> {
+        let Some((covered, segm)) = self.segms_split.as_mut() else {
+            return Ok(None);
+        };
         while let Some(range) = covered.next() {
             let data = segm.data().unwrap_or_default();
 
@@ -469,16 +478,19 @@ where
             };
 
             self.covered.ranges_insert(range);
-            self.apply_dynamic_relocations(&mut lsegm);
+            self.apply_dynamic_relocations(&mut lsegm)?;
 
-            return Some(lsegm);
+            return Ok(Some(lsegm));
         }
 
         self.segms_split = None;
-        None
+
+        Ok(None)
     }
 
-    pub(crate) fn next_linked_section(&mut self) -> Option<LoadableSegment<'data>> {
+    pub(crate) fn next_linked_section(
+        &mut self,
+    ) -> Result<Option<LoadableSegment<'data>>, LoaderError> {
         while let Some(sect) = self.sects.next() {
             let SectionFlags::Elf { sh_flags } = sect.flags() else {
                 continue;
@@ -533,16 +545,18 @@ where
             };
 
             self.covered.ranges_insert(vrange);
-            self.apply_relocations(&mut lsegm, &sect);
-            self.apply_dynamic_relocations(&mut lsegm);
+            self.apply_relocations(&mut lsegm, &sect)?;
+            self.apply_dynamic_relocations(&mut lsegm)?;
 
-            return Some(lsegm);
+            return Ok(Some(lsegm));
         }
 
-        None
+        Ok(None)
     }
 
-    pub(crate) fn next_linked_segment(&mut self) -> Option<LoadableSegment<'data>> {
+    pub(crate) fn next_linked_segment(
+        &mut self,
+    ) -> Result<Option<LoadableSegment<'data>>, LoaderError> {
         while let Some(segm) = self.segms.next() {
             let size = segm.size();
 
@@ -571,7 +585,7 @@ where
                 continue;
             }
 
-            let should_split = covered.len() > 1;
+            let should_split = covered.ranges_len() > 1;
 
             if should_split {
                 tracing::trace!(
@@ -621,19 +635,28 @@ where
             }
 
             self.covered.ranges_insert(range);
-            self.apply_dynamic_relocations(&mut lsegm);
+            self.apply_dynamic_relocations(&mut lsegm)?;
 
-            return Some(lsegm);
+            return Ok(Some(lsegm));
         }
 
-        None
+        Ok(None)
     }
 
-    pub(crate) fn next_linked(&mut self) -> Option<LoadableSegment<'data>> {
-        self.next_linked_split()
-            .or_else(|| self.next_linked_section())
-            .or_else(|| self.next_linked_segment())
-            .or_else(|| self.extern_segment())
+    pub(crate) fn next_linked(&mut self) -> Result<Option<LoadableSegment<'data>>, LoaderError> {
+        if let Some(v) = self.next_linked_split()? {
+            return Ok(Some(v));
+        }
+
+        if let Some(v) = self.next_linked_section()? {
+            return Ok(Some(v));
+        }
+
+        if let Some(v) = self.next_linked_segment()? {
+            return Ok(Some(v));
+        }
+
+        self.extern_segment()
     }
 
     pub(crate) fn apply_relocations(
@@ -750,15 +773,16 @@ where
     }
 }
 
-impl<'data, 'file, Elf, R> Iterator for ElfLoadableSegments<'data, 'file, Elf, R>
+impl<'data, 'file, Elf, R> FallibleIterator for ElfLoadableSegments<'data, 'file, Elf, R>
 where
     Elf: FileHeader,
     R: ReadRef<'data>,
     'file: 'data,
 {
     type Item = LoadableSegment<'data>;
+    type Error = LoaderError;
 
-    fn next(&mut self) -> Option<Self::Item> {
+    fn next(&mut self) -> Result<Option<Self::Item>, Self::Error> {
         if self.is_object {
             self.next_unlinked()
         } else {
@@ -802,19 +826,23 @@ impl Loadable for Elf<'_> {
         self.lifter.clone()
     }
 
-    fn segments<'a>(&'a self) -> impl Iterator<Item = LoadableSegment<'a>> + 'a {
+    fn segments<'a>(
+        &'a self,
+    ) -> impl FallibleIterator<Item = LoadableSegment<'a>, Error = LoaderError> + 'a {
         let view = self.object.borrow_view();
 
         with_elf!(
             view,
             elf | Box::new(ElfLoadableSegments::new(elf, &self.externs))
-                as Box<dyn Iterator<Item = LoadableSegment>>
+                as Box<dyn FallibleIterator<Item = LoadableSegment, Error = LoaderError>>
         )
     }
 }
 
 #[cfg(test)]
 mod test {
+    use fallible_iterator::FallibleIterator;
+
     use crate::loader::Loadable;
     use crate::types::BytesOrMapping;
 
@@ -831,7 +859,8 @@ mod test {
 
         tracing::subscriber::with_default(subscriber, || {
             let elf = Elf::new(BytesOrMapping::from_file("tests/ls.elf")?)?;
-            for segm in elf.segments() {
+            let mut segments = elf.segments();
+            while let Some(segm) = segments.next()? {
                 tracing::info!(
                     "{}-{} ({:?})",
                     segm.address(),
@@ -855,7 +884,8 @@ mod test {
 
         tracing::subscriber::with_default(subscriber, || {
             let elf = Elf::new(BytesOrMapping::from_file("tests/liblzma_la-crc64-fast.o")?)?;
-            for segm in elf.segments() {
+            let mut segments = elf.segments();
+            while let Some(segm) = segments.next()? {
                 tracing::info!(
                     "{}-{} ({:?})",
                     segm.address(),

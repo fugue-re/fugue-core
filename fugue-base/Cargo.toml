@@ -7,6 +7,7 @@ edition = "2021"
 [dependencies]
 anyhow = "1"
 bitflags = "2"
+fallible-iterator = "0.3"
 fugue-arch = { version = "0.3", path = "../fugue-arch" }
 fugue-bv = { version = "0.3", path = "../fugue-bv" }
 fugue-bytes = { version = "0.3", path = "../fugue-bytes" }
