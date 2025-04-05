@@ -3,6 +3,8 @@ use std::fmt::{Debug, Display};
 
 use bitflags::bitflags;
 
+use fallible_iterator::FallibleIterator;
+
 use fugue_bytes::traits::ByteCast;
 use fugue_bytes::{BE, LE};
 
@@ -132,10 +134,10 @@ impl LoadableSegment<'_> {
         })
     }
 
-    pub fn update_value<T: ByteCast, F: FnOnce(T) -> T>(
+    pub fn update_value<T: ByteCast>(
         &mut self,
         offset: usize,
-        f: F,
+        f: impl FnOnce(T) -> T,
     ) -> Option<()> {
         let is_le = self.properties.is_little_endian();
         let range = self.view_bytes_mut(offset, T::SIZEOF)?;
@@ -200,5 +202,7 @@ pub trait Loadable {
     fn language(&self) -> &'static Language;
     fn lifter(&self) -> Lifter;
 
-    fn segments<'a>(&'a self) -> impl Iterator<Item = LoadableSegment<'a>> + 'a;
+    fn segments<'a>(
+        &'a self,
+    ) -> impl FallibleIterator<Item = LoadableSegment<'a>, Error = LoaderError> + 'a;
 }

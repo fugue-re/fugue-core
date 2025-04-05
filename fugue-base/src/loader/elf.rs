@@ -11,8 +11,8 @@ use object::read::elf::{
 };
 use object::{
     Architecture, Endianness, FileKind, Object, ObjectKind, ObjectSection, ObjectSegment,
-    ObjectSymbol, ReadRef, Relocation, RelocationFlags, RelocationKind, SectionFlags, SegmentFlags,
-    SymbolFlags,
+    ObjectSymbol, ObjectSymbolTable, ReadRef, Relocation, RelocationFlags, RelocationKind,
+    RelocationTarget, SectionFlags, SegmentFlags, SymbolFlags,
 };
 
 use range_set_blaze::{IntoRangesIter, RangeSetBlaze};
@@ -752,6 +752,25 @@ where
         // TODO: allow configurable base address
         let base = 0u64;
 
+        let val_or_extern = |rel: &Relocation| {
+            let RelocationTarget::Symbol(index) = rel.target() else {
+                tracing::warn!("unsupported relocation target {rel:?}");
+                return None;
+            };
+
+            if let Some(target) = self.externs.as_ref().and_then(|e| e.get_address(index.0)) {
+                return Some(target.offset());
+            }
+
+            let symbol = self
+                .elf
+                .dynamic_symbol_table()?
+                .symbol_by_index(index)
+                .ok()?;
+
+            Some(symbol.address())
+        };
+
         match reloc_type {
             R_X86_64_RELATIVE => {
                 let offset = offset as usize;
@@ -764,7 +783,14 @@ where
             R_X86_64_GLOB_DAT | R_X86_64_JUMP_SLOT => {
                 let offset = offset as usize;
 
-                tracing::trace!("applying relocation {reloc_type:#x} at {offset:#x}: <TODO>",);
+                let Some(value) = val_or_extern(reloc) else {
+                    tracing::warn!("failed to resolve relocation {reloc_type:#x} at {offset:#x}");
+                    return;
+                };
+
+                tracing::trace!("applying relocation {reloc_type:#x} at {offset:#x}: {value:#x}");
+
+                lsegm.write_value(offset, value);
             }
             _ => {
                 tracing::warn!("unsupported relocation type {reloc:?}");
