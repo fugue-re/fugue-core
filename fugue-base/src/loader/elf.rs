@@ -4,7 +4,7 @@ use fallible_iterator::FallibleIterator;
 
 use object::elf::{
     FileHeader32, FileHeader64, PF_R, PF_W, PF_X, SHF_ALLOC, SHF_EXECINSTR, SHF_WRITE, STB_GLOBAL,
-    STB_WEAK, STT_NOTYPE,
+    STB_WEAK, STT_FUNC, STT_NOTYPE,
 };
 use object::read::elf::{
     self, ElfFile, ElfSection, ElfSectionIterator, ElfSegment, ElfSegmentIterator, FileHeader,
@@ -152,8 +152,12 @@ pub fn elf_externs<'a>(elf: &'a impl Object<'a>, lifter: &Lifter) -> ExternSymbo
             let st_type = st_info & 0x0f;
 
             let is_import = (st_bind == STB_GLOBAL || st_bind == STB_WEAK) && sym.address() == 0;
+            let is_function = st_type == STT_FUNC;
 
-            (is_import && !is_object) || (is_object && is_import && st_type == STT_NOTYPE)
+            (is_import && !is_object)
+                || (is_object && is_import && st_type == STT_NOTYPE)
+                // NOTE: this case should be mapped internally to a different segment (I think?)
+                || (is_object && is_function && sym.address() == 0)
         })
         .enumerate()
         .map(|(idx, (oidx, sym))| (oidx, base + (idx * template_size) as u64, sym))
@@ -688,10 +692,34 @@ where
 
         for (off, rel) in sect.relocations() {
             tracing::trace!(
-                "applying relocation {}+{off:#x} {:?}",
+                "applying relocation {}+{off:#x} {:?} {rel:?}",
                 lsegm.address(),
                 rel.kind()
             );
+
+            match rel.kind() {
+                RelocationKind::Unknown => {
+                    let RelocationFlags::Elf { r_type } = rel.flags() else {
+                        // NOTE: we could probably panic here
+                        continue;
+                    };
+
+                    match self.elf.architecture() {
+                        Architecture::X86_64 => {
+                            self.apply_x86_64_relocation(lsegm, off, &rel, r_type, false);
+                        }
+                        arch => {
+                            tracing::warn!(
+                                "unsupported architecture {arch:?} for relocation {:?}",
+                                rel.kind()
+                            );
+                        }
+                    }
+                }
+                kind => {
+                    self.apply_generic_relocation(lsegm, off, &rel, kind, false);
+                }
+            }
         }
 
         Ok(())
@@ -721,7 +749,7 @@ where
 
                     match self.elf.architecture() {
                         Architecture::X86_64 => {
-                            self.apply_x86_64_relocation(lsegm, off, &rel, r_type);
+                            self.apply_x86_64_relocation(lsegm, off, &rel, r_type, true);
                         }
                         arch => {
                             tracing::warn!(
@@ -731,13 +759,105 @@ where
                         }
                     }
                 }
-                _ => {
-                    tracing::warn!("unsupported relocation kind {:?}", rel.kind());
+                kind => {
+                    self.apply_generic_relocation(lsegm, off, &rel, kind, true);
                 }
             }
         }
 
         Ok(())
+    }
+
+    pub(crate) fn resolve_relocation_symbol(
+        &self,
+        _lsegm: &LoadableSegment<'data>,
+        reloc: &Relocation,
+        is_dynamic: bool,
+    ) -> Option<u64> {
+        let RelocationTarget::Symbol(index) = reloc.target() else {
+            tracing::warn!("unsupported relocation target {reloc:?}");
+            return None;
+        };
+
+        if let Some(target) = self.externs.as_ref().and_then(|e| e.get_address(index.0)) {
+            tracing::trace!("found external symbol {index:?} at {target:#x}");
+            return Some(target.offset());
+        }
+
+        // NOTE: in this case, we need to compute the address + our base
+        // for object files, this base address will be the beginning of the
+        // loaded segment containing it?
+
+        // let base = if self.is_object {
+        //    lsegm.address().offset()
+        // } else {
+        //    self.current_base.offset()
+        // };
+
+        let table = if is_dynamic {
+            self.elf.dynamic_symbol_table()?
+        } else {
+            self.elf.symbol_table()?
+        };
+
+        let symbol = table.symbol_by_index(index).ok()?;
+
+        // Some(base.wrapping_add(symbol.address()))
+        Some(symbol.address())
+    }
+
+    pub(crate) fn apply_generic_relocation(
+        &self,
+        lsegm: &mut LoadableSegment<'data>,
+        offset: u64,
+        reloc: &Relocation,
+        reloc_type: RelocationKind,
+        is_dynamic: bool,
+    ) {
+        let offset = offset as usize;
+
+        match reloc_type {
+            RelocationKind::Absolute => {
+                let Some(value) = self.resolve_relocation_symbol(lsegm, reloc, is_dynamic) else {
+                    tracing::warn!("failed to resolve relocation {reloc_type:?} at {offset:#x}");
+                    return;
+                };
+
+                let value = value.wrapping_add_signed(reloc.addend());
+
+                tracing::trace!("applying relocation {reloc_type:?} at {offset:#x}: {value:#x}");
+
+                if reloc.size() == 32 {
+                    lsegm.write_value(offset, value as u32);
+                } else {
+                    lsegm.write_value(offset, value);
+                }
+            }
+            RelocationKind::Relative
+            | RelocationKind::GotRelative
+            | RelocationKind::PltRelative => {
+                let Some(value) = self.resolve_relocation_symbol(lsegm, reloc, is_dynamic) else {
+                    tracing::warn!("failed to resolve relocation {reloc_type:?} at {offset:#x}");
+                    return;
+                };
+
+                let value = value
+                    .wrapping_add_signed(reloc.addend())
+                    .wrapping_sub(lsegm.address().offset().wrapping_add(offset as u64));
+
+                tracing::trace!("applying relocation {reloc_type:?} at {offset:#x}: {value:#x}");
+
+                if reloc.size() == 32 {
+                    lsegm.write_value(offset, value as u32);
+                } else {
+                    lsegm.write_value(offset, value);
+                }
+            }
+            _ => {
+                tracing::warn!("unsupported relocation kind {reloc_type:?}");
+                return;
+            }
+        }
     }
 
     pub(crate) fn apply_x86_64_relocation(
@@ -746,33 +866,19 @@ where
         offset: u64,
         reloc: &Relocation,
         reloc_type: u32,
+        is_dynamic: bool,
     ) {
-        use object::elf::{R_X86_64_GLOB_DAT, R_X86_64_JUMP_SLOT, R_X86_64_RELATIVE};
-
-        // TODO: allow configurable base address
-        let base = 0u64;
-
-        let val_or_extern = |rel: &Relocation| {
-            let RelocationTarget::Symbol(index) = rel.target() else {
-                tracing::warn!("unsupported relocation target {rel:?}");
-                return None;
-            };
-
-            if let Some(target) = self.externs.as_ref().and_then(|e| e.get_address(index.0)) {
-                return Some(target.offset());
-            }
-
-            let symbol = self
-                .elf
-                .dynamic_symbol_table()?
-                .symbol_by_index(index)
-                .ok()?;
-
-            Some(symbol.address())
+        use object::elf::{
+            R_X86_64_32, R_X86_64_32S, R_X86_64_64, R_X86_64_GLOB_DAT, R_X86_64_GOT64,
+            R_X86_64_GOTPCREL, R_X86_64_GOTPCRELX, R_X86_64_JUMP_SLOT, R_X86_64_PC32,
+            R_X86_64_PLT32, R_X86_64_RELATIVE, R_X86_64_RELATIVE64, R_X86_64_REX_GOTPCRELX,
         };
 
+        // TODO: allow base address to be configurable
+        let base = 0u64;
+
         match reloc_type {
-            R_X86_64_RELATIVE => {
+            R_X86_64_RELATIVE | R_X86_64_RELATIVE64 => {
                 let offset = offset as usize;
                 let value = base.wrapping_add_signed(reloc.addend());
 
@@ -783,10 +889,82 @@ where
             R_X86_64_GLOB_DAT | R_X86_64_JUMP_SLOT => {
                 let offset = offset as usize;
 
-                let Some(value) = val_or_extern(reloc) else {
+                let Some(value) = self.resolve_relocation_symbol(lsegm, reloc, is_dynamic) else {
                     tracing::warn!("failed to resolve relocation {reloc_type:#x} at {offset:#x}");
                     return;
                 };
+
+                tracing::trace!("applying relocation {reloc_type:#x} at {offset:#x}: {value:#x}");
+
+                lsegm.write_value(offset, value);
+            }
+            R_X86_64_64 | R_X86_64_GOT64 => {
+                let offset = offset as usize;
+
+                let Some(value) = self.resolve_relocation_symbol(lsegm, reloc, is_dynamic) else {
+                    tracing::warn!("failed to resolve relocation {reloc_type:#x} at {offset:#x}");
+                    return;
+                };
+
+                let value = value.wrapping_add_signed(reloc.addend());
+
+                tracing::trace!("applying relocation {reloc_type:#x} at {offset:#x}: {value:#x}");
+
+                lsegm.write_value(offset, value);
+            }
+            R_X86_64_32 => {
+                let offset = offset as usize;
+
+                let Some(value) = self.resolve_relocation_symbol(lsegm, reloc, is_dynamic) else {
+                    tracing::warn!("failed to resolve relocation {reloc_type:#x} at {offset:#x}");
+                    return;
+                };
+
+                let value = value.wrapping_add_signed(reloc.addend());
+
+                if value > u32::MAX as u64 {
+                    tracing::warn!("relocation {reloc_type:#x} at {offset:#x} overflow");
+                    return;
+                }
+
+                tracing::trace!("applying relocation {reloc_type:#x} at {offset:#x}: {value:#x}");
+
+                lsegm.write_value(offset, value as u32);
+            }
+            R_X86_64_32S => {
+                let offset = offset as usize;
+
+                let Some(value) = self.resolve_relocation_symbol(lsegm, reloc, is_dynamic) else {
+                    tracing::warn!("failed to resolve relocation {reloc_type:#x} at {offset:#x}");
+                    return;
+                };
+
+                let value = value.wrapping_add_signed(reloc.addend());
+
+                if value > i32::MAX as u64 {
+                    tracing::warn!("relocation {reloc_type:#x} at {offset:#x} overflow");
+                    return;
+                }
+
+                tracing::trace!("applying relocation {reloc_type:#x} at {offset:#x}: {value:#x}");
+
+                lsegm.write_value(offset, value as i32);
+            }
+            R_X86_64_PLT32
+            | R_X86_64_PC32
+            | R_X86_64_GOTPCREL
+            | R_X86_64_GOTPCRELX
+            | R_X86_64_REX_GOTPCRELX => {
+                let offset = offset as usize;
+                let target = lsegm.address().offset() + offset as u64;
+
+                let Some(value) = self.resolve_relocation_symbol(lsegm, reloc, is_dynamic) else {
+                    tracing::warn!("failed to resolve relocation {reloc_type:#x} at {offset:#x}");
+                    return;
+                };
+
+                let value =
+                    (value.wrapping_add_signed(reloc.addend()) as u32).wrapping_sub(target as u32);
 
                 tracing::trace!("applying relocation {reloc_type:#x} at {offset:#x}: {value:#x}");
 
@@ -875,7 +1053,7 @@ mod test {
     use super::Elf;
 
     #[test]
-    fn test_elf() -> Result<(), Box<dyn std::error::Error>> {
+    fn test_elf_exe() -> Result<(), Box<dyn std::error::Error>> {
         let subscriber = tracing_subscriber::fmt()
             .with_env_filter(tracing_subscriber::filter::EnvFilter::from_default_env())
             .with_line_number(true)
@@ -899,7 +1077,6 @@ mod test {
     }
 
     #[test]
-    #[ignore]
     fn test_elf_rel() -> Result<(), Box<dyn std::error::Error>> {
         let subscriber = tracing_subscriber::fmt()
             .with_env_filter(tracing_subscriber::filter::EnvFilter::from_default_env())
