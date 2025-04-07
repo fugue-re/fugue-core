@@ -14,11 +14,11 @@ use crate::lifter::{Language, Lifter, LifterBuilderError};
 use crate::types::{Address, AttributeMap};
 
 pub mod elf;
-pub mod externs;
 // pub mod macho
 pub mod object;
 // pub mod pe;
 pub mod shellcode;
+pub mod symbols;
 
 #[derive(Debug, Error)]
 pub enum LoaderError {
