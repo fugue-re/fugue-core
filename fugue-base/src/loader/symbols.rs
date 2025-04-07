@@ -1,8 +1,50 @@
 use std::collections::BTreeMap;
 
+use smallvec::SmallVec;
 use ustr::{Ustr, UstrMap};
 
+use crate::lifter::ContextUpdates;
 use crate::types::Address;
+
+#[derive(Debug, Clone)]
+pub struct FunctionThunkTemplate {
+    bytes: SmallVec<[u8; 16]>,
+    context: ContextUpdates,
+}
+
+impl<T> From<T> for FunctionThunkTemplate
+where
+    T: AsRef<[u8]>,
+{
+    fn from(value: T) -> Self {
+        Self::new(value)
+    }
+}
+
+impl FunctionThunkTemplate {
+    pub fn new(bytes: impl AsRef<[u8]>) -> Self {
+        Self::new_with(bytes, ContextUpdates::default())
+    }
+
+    pub fn new_with(bytes: impl AsRef<[u8]>, context: ContextUpdates) -> Self {
+        Self {
+            bytes: SmallVec::from_slice(bytes.as_ref()),
+            context,
+        }
+    }
+
+    pub fn bytes(&self) -> &[u8] {
+        &self.bytes
+    }
+
+    pub fn context(&self) -> &ContextUpdates {
+        &self.context
+    }
+
+    pub fn len(&self) -> usize {
+        self.bytes.len()
+    }
+}
 
 pub struct LocalSymbols {
     indices: BTreeMap<usize, Address>,
@@ -29,10 +71,17 @@ impl LocalSymbols {
         let sym = symbol.into();
 
         self.indices.insert(index, addr);
-        if let Some(sym) = sym {
-            self.sym_to_addr.insert(sym, addr);
-            self.addr_to_sym.insert(addr, sym);
+
+        let Some(sym) = sym else {
+            return;
+        };
+
+        if sym.is_empty() {
+            return;
         }
+
+        self.sym_to_addr.insert(sym, addr);
+        self.addr_to_sym.insert(addr, sym);
     }
 
     pub fn symbol(&self, addr: impl Into<Address>) -> Option<Ustr> {
@@ -79,11 +128,11 @@ pub struct ExternSymbols {
     indices: BTreeMap<usize, Address>,
     sym_to_addr: UstrMap<Address>,
     addr_to_sym: BTreeMap<Address, Ustr>,
-    template: &'static [u8],
+    template: FunctionThunkTemplate,
 }
 
 impl ExternSymbols {
-    pub fn new(base: impl Into<Address>, template: &'static [u8]) -> Self {
+    pub fn new(base: impl Into<Address>, template: FunctionThunkTemplate) -> Self {
         Self {
             base: base.into(),
             indices: BTreeMap::new(),
@@ -103,10 +152,17 @@ impl ExternSymbols {
         let sym = symbol.into();
 
         self.indices.insert(index, addr);
-        if let Some(sym) = sym {
-            self.sym_to_addr.insert(sym, addr);
-            self.addr_to_sym.insert(addr, sym);
+
+        let Some(sym) = sym else {
+            return;
+        };
+
+        if sym.is_empty() {
+            return;
         }
+
+        self.sym_to_addr.insert(sym, addr);
+        self.addr_to_sym.insert(addr, sym);
     }
 
     pub fn base(&self) -> Address {
@@ -147,8 +203,8 @@ impl ExternSymbols {
         self.addr_to_sym.iter().map(|(addr, sym)| (*addr, *sym))
     }
 
-    pub fn template(&self) -> &'static [u8] {
-        self.template
+    pub fn template(&self) -> &FunctionThunkTemplate {
+        &self.template
     }
 
     pub fn size(&self) -> usize {

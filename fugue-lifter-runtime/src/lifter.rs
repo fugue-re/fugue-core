@@ -285,6 +285,14 @@ impl Lifter {
         self.language
     }
 
+    pub fn context(&self) -> &LiftingContext {
+        &self.context
+    }
+
+    pub fn context_mut(&mut self) -> &mut LiftingContext {
+        &mut self.context
+    }
+
     pub fn address_alignment(&self) -> usize {
         self.language.address_alignment
     }

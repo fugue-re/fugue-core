@@ -19,7 +19,7 @@ use range_set_blaze::{IntoRangesIter, RangeSetBlaze};
 
 use crate::lifter::{Language, Lifter};
 use crate::loader::object::object_lifter;
-use crate::loader::symbols::{ExternSymbols, LocalSymbols};
+use crate::loader::symbols::{ExternSymbols, FunctionThunkTemplate, LocalSymbols};
 use crate::loader::{Loadable, LoadableSegment, LoadableSegmentProperties, LoaderError};
 use crate::types::{Address, AttributeMap, BytesOrMapping};
 
@@ -181,7 +181,7 @@ pub fn elf_symbols<'a>(elf: &'a impl Object<'a>, lifter: &Lifter) -> (LocalSymbo
         elf.dynamic_symbols()
     };
 
-    let mut externs = ExternSymbols::new(base, &[0u8; 16][..]);
+    let mut externs = ExternSymbols::new(base, FunctionThunkTemplate::new([0u8; 16]));
     let template_size = externs.template().len();
 
     for (index, addr, sym) in syms
@@ -396,7 +396,7 @@ where
         let mut bytes = Vec::with_capacity(extern_size);
 
         for _ in 0..externs.len() {
-            bytes.extend_from_slice(externs.template());
+            bytes.extend_from_slice(externs.template().bytes());
         }
 
         self.covered

@@ -6,7 +6,7 @@ use itertools::{Itertools, Position};
 
 use crate::calculate_mask;
 use crate::constructor::{Constructor, ConstructorResolver};
-use crate::context::ContextDatabase;
+use crate::context::{ContextBitRange, ContextDatabase, TrackedSet};
 use crate::input::{FixedHandle, ParserInput, ParserInputs, INVALID_HANDLE};
 use crate::lifter::{Language, LanguageFormatter};
 
@@ -44,6 +44,7 @@ pub struct LiftingContext {
 }
 
 impl LiftingContext {
+    #[doc(hidden)]
     pub fn new(ninputs: usize, context: ContextDatabase, unique_mask: u64) -> Self {
         Self {
             inputs: vec![ParserInput::empty(); ninputs],
@@ -52,6 +53,7 @@ impl LiftingContext {
         }
     }
 
+    #[doc(hidden)]
     pub fn state_for<'a>(
         &'a mut self,
         address: u64,
@@ -59,6 +61,117 @@ impl LiftingContext {
         issued: &'a mut Vec<PCodeOp>,
     ) -> Option<LiftingContextState<'a>> {
         LiftingContextState::new(address, bytes, self, issued)
+    }
+
+    pub fn tracked_set(&self, address: u64) -> &TrackedSet {
+        self.parsing_context.tracked_set(address)
+    }
+
+    pub fn tracked_default(&self) -> &TrackedSet {
+        self.parsing_context.tracked_default()
+    }
+
+    pub fn tracked_default_mut(&mut self) -> &mut TrackedSet {
+        self.parsing_context.tracked_default_mut()
+    }
+
+    pub fn variable(&self, name: impl AsRef<str>) -> Option<&ContextBitRange> {
+        self.parsing_context.variable(name.as_ref())
+    }
+
+    pub fn variable_mut(&mut self, name: impl AsRef<str>) -> Option<&mut ContextBitRange> {
+        self.parsing_context.variable_mut(name.as_ref())
+    }
+
+    pub fn get_variable(&self, name: impl AsRef<str>, address: u64) -> Option<u32> {
+        self.parsing_context.get_variable(name.as_ref(), address)
+    }
+
+    pub fn get_variable_by_bits(&self, bits: impl AsRef<ContextBitRange>, address: u64) -> u32 {
+        self.parsing_context.get_variable_by_bits(bits.as_ref(), address)
+    }
+
+    pub fn set_variable(&mut self, name: impl AsRef<str>, address: u64, value: u32) -> Option<()> {
+        self.parsing_context.set_variable(name.as_ref(), address, value)
+    }
+
+    pub fn set_variable_by_bits(
+        &mut self,
+        bits: impl AsRef<ContextBitRange>,
+        address: u64,
+        value: u32,
+    ) {
+        self.parsing_context
+            .set_variable_by_bits(bits.as_ref(), address, value);
+    }
+
+    pub fn set_variable_default(&mut self, name: impl AsRef<str>, value: u32) -> Option<()> {
+        self.parsing_context.set_variable_default(name.as_ref(), value)
+    }
+
+    pub fn set_variable_default_by_bits(&mut self, bits: impl AsRef<ContextBitRange>, value: u32) {
+        self.parsing_context
+            .set_variable_default_by_bits(bits.as_ref(), value);
+    }
+
+    pub fn register_variable(
+        &mut self,
+        name: impl Into<String>,
+        start_bit: usize,
+        end_bit: usize,
+    ) -> Option<()> {
+        self.parsing_context.register_variable(name, start_bit, end_bit)
+    }
+
+    pub fn get_context(&self, address: u64) -> &[u32] {
+        self.parsing_context.get_context(address)
+    }
+
+    pub fn get_context_bounds(&self, address: u64) -> (&[u32], u64, u64) {
+        self.parsing_context.get_context_bounds(address)
+    }
+
+    pub fn set_context_change_point(
+        &mut self,
+        address: u64,
+        num: usize,
+        mask: u32,
+        value: u32,
+    ) {
+        self.parsing_context.set_context_change_point(address, num, mask, value);
+    }
+
+    pub fn set_context_region(
+        &mut self,
+        addr1: u64,
+        addr2: Option<u64>,
+        num: usize,
+        mask: u32,
+        value: u32,
+    ) {
+        self.parsing_context.set_context_region(addr1, addr2, num, mask, value);
+    }
+
+    pub fn set_variable_region(
+        &mut self,
+        name: impl AsRef<str>,
+        addr1: u64,
+        addr2: Option<u64>,
+        value: u32,
+    ) -> Option<()> {
+        self.parsing_context
+            .set_variable_region(name.as_ref(), addr1, addr2, value)
+    }
+
+    pub fn set_variable_region_by_bits(
+        &mut self,
+        bits: impl AsRef<ContextBitRange>,
+        addr1: u64,
+        addr2: Option<u64>,
+        value: u32,
+    ) {
+        self.parsing_context
+            .set_variable_region_by_bits(bits.as_ref(), addr1, addr2, value);
     }
 }
 
