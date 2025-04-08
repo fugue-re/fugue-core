@@ -683,7 +683,13 @@ impl<'a> ToTokens for LifterGenerator<'a> {
             register_ranges.push(range_to_name);
         }
 
+        let language_id = self.language.architecture().to_string();
+        let little_endian = self.language.architecture().endian().is_little();
+        let variant = self.language.architecture().variant();
+
         tokens.append_all(quote! {
+            pub const LANGUAGE_ID: &'static str = #language_id;
+
             pub const ADDRESS_ALIGNMENT: usize = #alignment;
             pub const ADDRESS_BITS: u32 = #address_bits;
             pub const ADDRESS_SIZE: usize = #address_size;
@@ -1042,6 +1048,11 @@ impl<'a> ToTokens for LifterGenerator<'a> {
 
             struct L;
             impl fugue_lifter_runtime::lifter::LanguageImpl for L {
+                const ID: &'static str = LANGUAGE_ID;
+
+                const LITTLE_ENDIAN: bool = #little_endian;
+                const VARIANT: &'static str = #variant;
+
                 const ADDRESS_ALIGNMENT: usize = ADDRESS_ALIGNMENT;
                 const ADDRESS_BITS: u32 = ADDRESS_BITS;
                 const ADDRESS_SIZE: usize = ADDRESS_SIZE;

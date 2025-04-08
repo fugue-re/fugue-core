@@ -23,9 +23,6 @@ use crate::loader::symbols::{ExternSymbols, FunctionThunkTemplate, LocalSymbols}
 use crate::loader::{Loadable, LoadableSegment, LoadableSegmentProperties, LoaderError};
 use crate::types::{Address, AttributeMap, BytesOrMapping};
 
-pub mod relocations;
-pub mod symbols;
-
 #[ouroboros::self_referencing]
 struct ElfInner<'a> {
     data: BytesOrMapping<'a>,
@@ -595,6 +592,7 @@ where
             };
 
             self.covered.ranges_insert(vrange);
+
             self.apply_relocations(&mut lsegm, &sect)?;
             self.apply_dynamic_relocations(&mut lsegm)?;
 
@@ -794,7 +792,6 @@ where
 
     pub(crate) fn resolve_relocation_symbol(
         &self,
-        _lsegm: &LoadableSegment<'data>,
         reloc: &Relocation,
         is_dynamic: bool,
     ) -> Option<u64> {
@@ -841,7 +838,7 @@ where
 
         match reloc_type {
             RelocationKind::Absolute => {
-                let Some(value) = self.resolve_relocation_symbol(lsegm, reloc, is_dynamic) else {
+                let Some(value) = self.resolve_relocation_symbol(reloc, is_dynamic) else {
                     tracing::warn!("failed to resolve relocation {reloc_type:?} at {offset:#x}");
                     return;
                 };
@@ -859,7 +856,7 @@ where
             RelocationKind::Relative
             | RelocationKind::GotRelative
             | RelocationKind::PltRelative => {
-                let Some(value) = self.resolve_relocation_symbol(lsegm, reloc, is_dynamic) else {
+                let Some(value) = self.resolve_relocation_symbol(reloc, is_dynamic) else {
                     tracing::warn!("failed to resolve relocation {reloc_type:?} at {offset:#x}");
                     return;
                 };
@@ -912,7 +909,7 @@ where
             R_X86_64_GLOB_DAT | R_X86_64_JUMP_SLOT => {
                 let offset = offset as usize;
 
-                let Some(value) = self.resolve_relocation_symbol(lsegm, reloc, is_dynamic) else {
+                let Some(value) = self.resolve_relocation_symbol(reloc, is_dynamic) else {
                     tracing::warn!("failed to resolve relocation {reloc_type:#x} at {offset:#x}");
                     return;
                 };
@@ -924,7 +921,7 @@ where
             R_X86_64_64 | R_X86_64_GOT64 => {
                 let offset = offset as usize;
 
-                let Some(value) = self.resolve_relocation_symbol(lsegm, reloc, is_dynamic) else {
+                let Some(value) = self.resolve_relocation_symbol(reloc, is_dynamic) else {
                     tracing::warn!("failed to resolve relocation {reloc_type:#x} at {offset:#x}");
                     return;
                 };
@@ -938,7 +935,7 @@ where
             R_X86_64_32 => {
                 let offset = offset as usize;
 
-                let Some(value) = self.resolve_relocation_symbol(lsegm, reloc, is_dynamic) else {
+                let Some(value) = self.resolve_relocation_symbol(reloc, is_dynamic) else {
                     tracing::warn!("failed to resolve relocation {reloc_type:#x} at {offset:#x}");
                     return;
                 };
@@ -957,7 +954,7 @@ where
             R_X86_64_32S => {
                 let offset = offset as usize;
 
-                let Some(value) = self.resolve_relocation_symbol(lsegm, reloc, is_dynamic) else {
+                let Some(value) = self.resolve_relocation_symbol(reloc, is_dynamic) else {
                     tracing::warn!("failed to resolve relocation {reloc_type:#x} at {offset:#x}");
                     return;
                 };
@@ -981,7 +978,7 @@ where
                 let offset = offset as usize;
                 let target = lsegm.address().offset() + offset as u64;
 
-                let Some(value) = self.resolve_relocation_symbol(lsegm, reloc, is_dynamic) else {
+                let Some(value) = self.resolve_relocation_symbol(reloc, is_dynamic) else {
                     tracing::warn!("failed to resolve relocation {reloc_type:#x} at {offset:#x}");
                     return;
                 };

@@ -1,8 +1,16 @@
+use std::fmt::{Debug, Display};
+use std::hash::Hash;
+
 use crate::context::ContextBitRange;
 use crate::pcode::{LiftingContext, PCodeBuilderContext, PCodeOp, Varnode};
 use crate::wrap_offset;
 
 pub trait LanguageImpl {
+    const ID: &'static str;
+
+    const LITTLE_ENDIAN: bool;
+    const VARIANT: &'static str;
+
     const ADDRESS_ALIGNMENT: usize;
     const ADDRESS_BITS: u32;
     const ADDRESS_SIZE: usize;
@@ -38,6 +46,11 @@ pub trait LanguageImpl {
 
 #[derive(Clone)]
 pub struct Language {
+    id: &'static str,
+
+    little_endian: bool,
+    variant: &'static str,
+
     address_alignment: usize,
     address_bits: u32,
     address_size: usize,
@@ -71,6 +84,48 @@ pub struct Language {
     lift: fn(u64, &[u8], &mut LiftingContext, &mut Vec<PCodeOp>) -> Option<usize>,
 }
 
+impl Debug for Language {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Language")
+            .field("id", &self.id)
+            .field("address_alignment", &self.address_alignment)
+            .field("address_bits", &self.address_bits)
+            .finish_non_exhaustive()
+    }
+}
+
+impl Display for Language {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.id)
+    }
+}
+
+impl PartialEq for Language {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+    }
+}
+
+impl Eq for Language {}
+
+impl Ord for Language {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.id.cmp(other.id)
+    }
+}
+
+impl PartialOrd for Language {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Hash for Language {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.id.hash(state);
+    }
+}
+
 pub struct LanguageFormatter<'a, T> {
     pub(crate) language: &'static Language,
     pub(crate) value: &'a T,
@@ -92,6 +147,11 @@ impl<'a, T> LanguageFormatter<'a, T> {
 impl Language {
     pub const fn new<L: LanguageImpl>() -> Self {
         Self {
+            id: L::ID,
+
+            little_endian: L::LITTLE_ENDIAN,
+            variant: L::VARIANT,
+
             address_alignment: L::ADDRESS_ALIGNMENT,
             address_bits: L::ADDRESS_BITS,
             address_size: L::ADDRESS_SIZE,
@@ -124,6 +184,22 @@ impl Language {
             disassemble: L::DISASSEMBLE,
             lift: L::LIFT,
         }
+    }
+
+    pub fn id(&self) -> &'static str {
+        self.id
+    }
+
+    pub fn is_big_endian(&self) -> bool {
+        !self.little_endian
+    }
+
+    pub fn is_little_endian(&self) -> bool {
+        self.little_endian
+    }
+
+    pub fn variant(&self) -> &'static str {
+        self.variant
     }
 
     pub fn address_alignment(&self) -> usize {
@@ -208,7 +284,8 @@ impl Language {
     }
 
     pub fn wrap_offset_in_default_space(&self, offset: u64) -> u64 {
-        self.wrap_offset(self.default_space(), offset).expect("default space exists")
+        self.wrap_offset(self.default_space(), offset)
+            .expect("default space exists")
     }
 
     pub fn context_variable_by_name(&self, name: impl AsRef<str>) -> Option<ContextBitRange> {
