@@ -17,9 +17,10 @@ use object::{
 
 use range_set_blaze::{IntoRangesIter, RangeSetBlaze};
 
+use crate::arch::Arch;
 use crate::lifter::{Language, Lifter};
 use crate::loader::object::object_lifter;
-use crate::loader::symbols::{ExternSymbols, FunctionThunkTemplate, LocalSymbols};
+use crate::loader::symbols::{ExternSymbols, LocalSymbols};
 use crate::loader::{Loadable, LoadableSegment, LoadableSegmentProperties, LoaderError};
 use crate::types::{Address, AttributeMap, BytesOrMapping};
 
@@ -64,6 +65,7 @@ impl<'this, 'data> ElfFileRepr<'this, 'data> {
 
 pub struct Elf<'a> {
     object: ElfInner<'a>,
+    architecture: Arch,
     lifter: Lifter,
     locals: LocalSymbols,
     externs: ExternSymbols,
@@ -83,10 +85,13 @@ impl<'a> Elf<'a> {
 
         let view = object.borrow_view();
         let lifter = with_elf!(view, elf | object_lifter(elf))?;
-        let (locals, externs) = with_elf!(view, elf | elf_symbols(elf, &lifter));
+        let architecture = Arch::new(lifter.language());
+
+        let (locals, externs) = with_elf!(view, elf | elf_symbols(elf, &architecture, &lifter));
 
         Ok(Self {
             object,
+            architecture,
             lifter,
             locals,
             externs,
@@ -103,7 +108,7 @@ impl<'a> Elf<'a> {
     }
 }
 
-pub fn elf_symbols<'a>(elf: &'a impl Object<'a>, lifter: &Lifter) -> (LocalSymbols, ExternSymbols) {
+pub fn elf_symbols<'a>(elf: &'a impl Object<'a>, arch: &Arch, lifter: &Lifter) -> (LocalSymbols, ExternSymbols) {
     // TODO:
     // - base address should be configurable.
     // - template should be obtained from the lifter based on the architecture.
@@ -186,7 +191,10 @@ pub fn elf_symbols<'a>(elf: &'a impl Object<'a>, lifter: &Lifter) -> (LocalSymbo
         elf.dynamic_symbols()
     };
 
-    let mut externs = ExternSymbols::new(base, FunctionThunkTemplate::new([0u8; 16]));
+    // NOTE: this template is used to create a stub for the external symbols, such that
+    // if we were to consider the external address as a function, and call to it, we would
+    // hit valid code, and return.
+    let mut externs = ExternSymbols::new(base, arch.external_thunk_template());
     let template_size = externs.template().len();
 
     for (index, addr, sym) in syms
@@ -1051,6 +1059,10 @@ impl Loadable for Elf<'_> {
 
     fn attributes_mut(&mut self) -> &mut AttributeMap {
         &mut self.attributes
+    }
+
+    fn architecture(&self) -> Arch {
+        self.architecture.clone()
     }
 
     fn language(&self) -> &'static Language {

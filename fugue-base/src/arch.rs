@@ -154,52 +154,6 @@ pub trait ArchImpl: Send + Sync + 'static {
 #[repr(transparent)]
 pub struct Arch(Box<dyn ArchImpl>);
 
-impl ArchImpl for Arch {
-    fn external_thunk_template(&self) -> FunctionThunkTemplate {
-        self.0.external_thunk_template()
-    }
-
-    fn flags(&self) -> &[Flag] {
-        self.0.flags()
-    }
-
-    fn frame_pointer(&self) -> Option<Varnode> {
-        self.0.frame_pointer()
-    }
-
-    fn gprs(&self) -> &[Varnode] {
-        self.0.gprs()
-    }
-
-    fn is_halt_intrinsic(&self, op: u16, args: &[Varnode]) -> bool {
-        self.0.is_halt_intrinsic(op, args)
-    }
-
-    fn is_mapping_symbol(&self, symbol: &str) -> bool {
-        self.0.is_mapping_symbol(symbol)
-    }
-
-    fn is_nonsense_pattern(&self, bytes: &[u8]) -> bool {
-        self.0.is_nonsense_pattern(bytes)
-    }
-
-    fn is_service_call(&self, op: u16, args: &[Varnode]) -> bool {
-        self.0.is_service_call(op, args)
-    }
-
-    fn is_skip_intrinsic(&self, op: u16, args: &[Varnode]) -> bool {
-        self.0.is_skip_intrinsic(op, args)
-    }
-
-    fn is_trap_intrinsic(&self, op: u16, args: &[Varnode]) -> bool {
-        self.0.is_trap_intrinsic(op, args)
-    }
-
-    fn language(&self) -> &'static Language {
-        self.0.language()
-    }
-}
-
 impl Debug for Arch {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Arch")
@@ -263,5 +217,49 @@ impl Arch {
                 panic!("unsupported language: {}", language.id())
             }
         }
+    }
+
+    pub fn external_thunk_template(&self) -> FunctionThunkTemplate {
+        self.0.external_thunk_template()
+    }
+
+    pub fn flags(&self) -> &[Flag] {
+        self.0.flags()
+    }
+
+    pub fn frame_pointer(&self) -> Option<Varnode> {
+        self.0.frame_pointer()
+    }
+
+    pub fn gprs(&self) -> &[Varnode] {
+        self.0.gprs()
+    }
+
+    pub fn is_halt_intrinsic(&self, op: u16, args: &[Varnode]) -> bool {
+        self.0.is_halt_intrinsic(op, args)
+    }
+
+    pub fn is_mapping_symbol(&self, symbol: &str) -> bool {
+        self.0.is_mapping_symbol(symbol)
+    }
+
+    pub fn is_nonsense_pattern(&self, bytes: &[u8]) -> bool {
+        self.0.is_nonsense_pattern(bytes)
+    }
+
+    pub fn is_service_call(&self, op: u16, args: &[Varnode]) -> bool {
+        self.0.is_service_call(op, args)
+    }
+
+    pub fn is_skip_intrinsic(&self, op: u16, args: &[Varnode]) -> bool {
+        self.0.is_skip_intrinsic(op, args)
+    }
+
+    pub fn is_trap_intrinsic(&self, op: u16, args: &[Varnode]) -> bool {
+        self.0.is_trap_intrinsic(op, args)
+    }
+
+    pub fn language(&self) -> &'static Language {
+        self.0.language()
     }
 }
