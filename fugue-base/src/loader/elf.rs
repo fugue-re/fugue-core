@@ -93,6 +93,14 @@ impl<'a> Elf<'a> {
             attributes: attributes.into(),
         })
     }
+
+    pub fn local_symbols(&self) -> &LocalSymbols {
+        &self.locals
+    }
+
+    pub fn extern_symbols(&self) -> &ExternSymbols {
+        &self.externs
+    }
 }
 
 pub fn elf_symbols<'a>(elf: &'a impl Object<'a>, lifter: &Lifter) -> (LocalSymbols, ExternSymbols) {
@@ -1121,6 +1129,15 @@ mod test {
                 );
             }
             tracing::info!("architecture: {}", elf.architecture());
+
+            for (addr, sym) in elf.local_symbols().iter() {
+                tracing::info!("local symbol {sym} at {addr}");
+            }
+
+            for (addr, sym) in elf.extern_symbols().iter() {
+                tracing::info!("external symbol {sym} at {addr}");
+            }
+
             Ok(())
         })
     }
