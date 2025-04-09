@@ -1,6 +1,10 @@
 use std::borrow::Borrow;
+use std::cmp::Ordering;
+use std::fmt::{Debug, Display};
+use std::hash::{Hash, Hasher};
 
 use bitflags::bitflags;
+use clone_dyn::clone_dyn;
 use fugue_lifter::{Language, Varnode};
 
 use crate::loader::symbols::FunctionThunkTemplate;
@@ -89,7 +93,8 @@ impl Flag {
     }
 }
 
-pub trait Arch: Send + Sync + 'static {
+#[clone_dyn]
+pub trait ArchImpl: Send + Sync + 'static {
     fn endian(&self) -> Endian {
         if self.language().is_little_endian() {
             Endian::Little
@@ -100,23 +105,20 @@ pub trait Arch: Send + Sync + 'static {
 
     fn external_thunk_template(&self) -> FunctionThunkTemplate;
 
-    #[allow(unused)]
-    fn flags(&self) -> Vec<Flag> {
-        Vec::with_capacity(0)
+    fn flags(&self) -> &[Flag] {
+        &[]
     }
 
-    #[allow(unused)]
     fn frame_pointer(&self) -> Option<Varnode> {
         None
     }
 
-    #[allow(unused)]
-    fn gprs(&self) -> Vec<Varnode> {
-        Vec::with_capacity(0)
+    fn gprs(&self) -> &[Varnode] {
+        &[]
     }
 
     #[allow(unused)]
-    fn is_halt_intrinsic(&self, op: u16, _args: &[Varnode]) -> bool {
+    fn is_halt_intrinsic(&self, op: u16, args: &[Varnode]) -> bool {
         false
     }
 
@@ -146,4 +148,120 @@ pub trait Arch: Send + Sync + 'static {
     }
 
     fn language(&self) -> &'static Language;
+}
+
+#[derive(Clone)]
+#[repr(transparent)]
+pub struct Arch(Box<dyn ArchImpl>);
+
+impl ArchImpl for Arch {
+    fn external_thunk_template(&self) -> FunctionThunkTemplate {
+        self.0.external_thunk_template()
+    }
+
+    fn flags(&self) -> &[Flag] {
+        self.0.flags()
+    }
+
+    fn frame_pointer(&self) -> Option<Varnode> {
+        self.0.frame_pointer()
+    }
+
+    fn gprs(&self) -> &[Varnode] {
+        self.0.gprs()
+    }
+
+    fn is_halt_intrinsic(&self, op: u16, args: &[Varnode]) -> bool {
+        self.0.is_halt_intrinsic(op, args)
+    }
+
+    fn is_mapping_symbol(&self, symbol: &str) -> bool {
+        self.0.is_mapping_symbol(symbol)
+    }
+
+    fn is_nonsense_pattern(&self, bytes: &[u8]) -> bool {
+        self.0.is_nonsense_pattern(bytes)
+    }
+
+    fn is_service_call(&self, op: u16, args: &[Varnode]) -> bool {
+        self.0.is_service_call(op, args)
+    }
+
+    fn is_skip_intrinsic(&self, op: u16, args: &[Varnode]) -> bool {
+        self.0.is_skip_intrinsic(op, args)
+    }
+
+    fn is_trap_intrinsic(&self, op: u16, args: &[Varnode]) -> bool {
+        self.0.is_trap_intrinsic(op, args)
+    }
+
+    fn language(&self) -> &'static Language {
+        self.0.language()
+    }
+}
+
+impl Debug for Arch {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Arch")
+            .field("language", self.0.language())
+            .finish_non_exhaustive()
+    }
+}
+
+impl Display for Arch {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.0.language().id())
+    }
+}
+
+impl PartialEq for Arch {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.language().id() == other.0.language().id()
+    }
+}
+
+impl Eq for Arch {}
+
+impl PartialOrd for Arch {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Arch {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.0.language().id().cmp(other.0.language().id())
+    }
+}
+
+impl Hash for Arch {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.0.language().id().hash(state);
+    }
+}
+
+impl From<Box<dyn ArchImpl>> for Arch {
+    fn from(arch: Box<dyn ArchImpl>) -> Self {
+        Self(arch)
+    }
+}
+
+impl Arch {
+    pub fn new(language: &'static Language) -> Self {
+        match language.processor() {
+            "ARM" => arm::Arm::new(language),
+            "AARCH64" => aarch64::AArch64::new(language),
+            "X86" => {
+                if language.address_bits() == 32 {
+                    x86::X86::new(language)
+                } else {
+                    x86_64::X86_64::new(language)
+                }
+            }
+            _ => {
+                // NOTE: should be unreachable
+                panic!("unsupported language: {}", language.id())
+            }
+        }
+    }
 }

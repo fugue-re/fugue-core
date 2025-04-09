@@ -10,6 +10,7 @@ use fugue_bytes::{BE, LE};
 
 use thiserror::Error;
 
+use crate::arch::Arch;
 use crate::lifter::{Language, Lifter, LifterBuilderError};
 use crate::types::{Address, AttributeMap};
 
@@ -199,6 +200,9 @@ pub trait Loadable {
 
     fn entry_address(&self) -> Option<Address>;
 
+    fn architecture(&self) -> Arch {
+        Arch::new(self.language())
+    }
     fn language(&self) -> &'static Language;
     fn lifter(&self) -> Lifter;
 

@@ -8,6 +8,7 @@ use crate::wrap_offset;
 pub trait LanguageImpl {
     const ID: &'static str;
 
+    const PROCESSOR: &'static str;
     const LITTLE_ENDIAN: bool;
     const VARIANT: &'static str;
 
@@ -48,6 +49,7 @@ pub trait LanguageImpl {
 pub struct Language {
     id: &'static str,
 
+    processor: &'static str,
     little_endian: bool,
     variant: &'static str,
 
@@ -149,6 +151,7 @@ impl Language {
         Self {
             id: L::ID,
 
+            processor: L::PROCESSOR,
             little_endian: L::LITTLE_ENDIAN,
             variant: L::VARIANT,
 
@@ -188,6 +191,10 @@ impl Language {
 
     pub fn id(&self) -> &'static str {
         self.id
+    }
+
+    pub fn processor(&self) -> &'static str {
+        self.processor
     }
 
     pub fn is_big_endian(&self) -> bool {

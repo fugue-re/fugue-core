@@ -8,6 +8,7 @@ edition = "2021"
 anyhow = "1"
 arrayvec = "0.7"
 bitflags = "2"
+clone_dyn = "0.30"
 fallible-iterator = "0.3"
 fugue-arch = { version = "0.3", path = "../fugue-arch" }
 fugue-bv = { version = "0.3", path = "../fugue-bv" }

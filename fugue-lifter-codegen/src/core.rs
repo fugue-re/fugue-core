@@ -684,6 +684,7 @@ impl<'a> ToTokens for LifterGenerator<'a> {
         }
 
         let language_id = self.language.architecture().to_string();
+        let processor = self.language.architecture().processor();
         let little_endian = self.language.architecture().endian().is_little();
         let variant = self.language.architecture().variant();
 
@@ -1050,6 +1051,7 @@ impl<'a> ToTokens for LifterGenerator<'a> {
             impl fugue_lifter_runtime::lifter::LanguageImpl for L {
                 const ID: &'static str = LANGUAGE_ID;
 
+                const PROCESSOR: &'static str = #processor;
                 const LITTLE_ENDIAN: bool = #little_endian;
                 const VARIANT: &'static str = #variant;
 
