@@ -251,7 +251,7 @@ impl Arch {
         match language.processor() {
             "ARM" => arm::Arm::new(language),
             "AARCH64" => aarch64::AArch64::new(language),
-            "X86" => {
+            "x86" => {
                 if language.address_bits() == 32 {
                     x86::X86::new(language)
                 } else {

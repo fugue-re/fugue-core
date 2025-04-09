@@ -340,20 +340,23 @@ where
     R: ReadRef<'data>,
     'file: 'data,
 {
+    // reference to the ELF
     elf: &'file ElfFile<'data, Elf, R>,
+    // segments iterator
     segms: ElfSegmentIterator<'data, 'file, Elf, R>,
+    // sections iterator
     sects: ElfSectionIterator<'data, 'file, Elf, R>,
-    // this represents the ranges already covered
+    // ranges already covered
     covered: RangeSetBlaze<u64>,
-    // this is used to split segments that span multiple unmapped ranges
+    // split segments that span multiple unmapped ranges
     segms_split: Option<(IntoRangesIter<u64>, ElfSegment<'data, 'file, Elf, R>)>,
-    // this is used to track the current base address
+    // current base address
     current_base: Address,
-    // this represents the mapping of local symbols
+    // mapping of local symbols
     locals: &'file LocalSymbols,
-    // this represents the virtual segment containing external symbols and their mapping
+    // virtual segment containing external symbols and their mapping
     externs: Option<&'file ExternSymbols>,
-    // this is used to track if we're working with an object file or not
+    // if we're working with an object file or not
     is_object: bool,
 }
 
@@ -810,7 +813,7 @@ where
             return Some(target.offset());
         }
 
-        // NOTE: in this case, we need to compute the address + our base
+        // FIXME: in this case, we need to compute the address + our base
         // for object files, this base address will be the beginning of the
         // loaded segment containing it, probably we should save the section
         // map computed in `elf_symbols`?
@@ -1092,6 +1095,7 @@ mod test {
                     segm.name()
                 );
             }
+            tracing::info!("architecture: {}", elf.architecture());
             Ok(())
         })
     }
@@ -1116,6 +1120,7 @@ mod test {
                     segm.name()
                 );
             }
+            tracing::info!("architecture: {}", elf.architecture());
             Ok(())
         })
     }
