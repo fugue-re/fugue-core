@@ -169,6 +169,14 @@ impl ExternSymbols {
         self.base
     }
 
+    pub fn last_address(&self) -> Address {
+        if self.is_empty() {
+            self.base()
+        } else {
+            self.base() + self.size() - 1usize
+        }
+    }
+
     pub fn symbol(&self, addr: impl Into<Address>) -> Option<Ustr> {
         self.addr_to_sym.get(&addr.into()).copied()
     }
@@ -209,6 +217,10 @@ impl ExternSymbols {
 
     pub fn size(&self) -> usize {
         self.indices.len() * self.template.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.indices.is_empty()
     }
 
     pub fn len(&self) -> usize {

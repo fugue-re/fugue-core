@@ -100,6 +100,10 @@ impl Loadable for Shellcode<'_> {
         })
     }
 
+    fn segment_range(&self) -> (Address, Address) {
+        (self.address, self.address + self.bytes.len() - 1usize)
+    }
+
     fn language(&self) -> &'static Language {
         self.lifter.language()
     }

@@ -106,9 +106,20 @@ impl<'a> Elf<'a> {
     pub fn extern_symbols(&self) -> &ExternSymbols {
         &self.externs
     }
+
+    pub fn is_object(&self) -> bool {
+        with_elf!(
+            self.object.borrow_view(),
+            elf | elf.kind() == ObjectKind::Relocatable
+        )
+    }
 }
 
-pub fn elf_symbols<'a>(elf: &'a impl Object<'a>, arch: &Arch, lifter: &Lifter) -> (LocalSymbols, ExternSymbols) {
+pub fn elf_symbols<'a>(
+    elf: &'a impl Object<'a>,
+    arch: &Arch,
+    lifter: &Lifter,
+) -> (LocalSymbols, ExternSymbols) {
     // TODO:
     // - base address should be configurable.
     // - template should be obtained from the lifter based on the architecture.
@@ -1083,6 +1094,25 @@ impl Loadable for Elf<'_> {
             elf | Box::new(ElfLoadableSegments::new(elf, &self.locals, &self.externs))
                 as Box<dyn FallibleIterator<Item = LoadableSegment, Error = LoaderError>>
         )
+    }
+
+    fn segment_range(&self) -> (Address, Address) {
+        let end = self.externs.last_address();
+        if self.is_object() {
+            // NOTE: this should be the base address
+            (Address::zero(), end)
+        } else {
+            // minimum segment address
+            let start = with_elf!(
+                self.object.borrow_view(),
+                elf | elf
+                    .segments()
+                    .filter_map(|segm| (segm.size() != 0).then(|| Address::from(segm.address())))
+                    .min()
+                    .unwrap_or_default()
+            );
+            (start, end)
+        }
     }
 }
 

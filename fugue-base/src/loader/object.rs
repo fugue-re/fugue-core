@@ -131,4 +131,23 @@ impl Loadable for Object<'_> {
             }))
         }))
     }
+
+    fn segment_range(&self) -> (Address, Address) {
+        let mut start = None::<Address>;
+        let mut end = None::<Address>;
+
+        for segm in self.object.borrow_view().segments() {
+            if segm.size() == 0 {
+                continue;
+            }
+
+            let nstart = Address::from(segm.address());
+            let nend = nstart + segm.size() - 1usize;
+
+            start = Some(start.map_or(nstart, |start| start.min(nstart)));
+            end = Some(end.map_or(nend, |end| end.max(nend)));
+        }
+
+        (start.unwrap_or_default(), end.unwrap_or_default())
+    }
 }

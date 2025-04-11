@@ -209,4 +209,5 @@ pub trait Loadable {
     fn segments<'a>(
         &'a self,
     ) -> impl FallibleIterator<Item = LoadableSegment<'a>, Error = LoaderError> + 'a;
+    fn segment_range(&self) -> (Address, Address);
 }
