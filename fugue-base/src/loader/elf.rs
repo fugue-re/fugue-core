@@ -4,7 +4,7 @@ use fallible_iterator::FallibleIterator;
 
 use object::elf::{
     FileHeader32, FileHeader64, PF_R, PF_W, PF_X, SHF_ALLOC, SHF_EXECINSTR, SHF_WRITE, STB_GLOBAL,
-    STB_WEAK, STT_NOTYPE,
+    STB_WEAK, STT_COMMON, STT_FUNC, STT_NOTYPE, STT_OBJECT, STT_TLS,
 };
 use object::read::elf::{
     self, ElfFile, ElfSection, ElfSectionIterator, ElfSegment, ElfSegmentIterator, FileHeader,
@@ -20,7 +20,7 @@ use range_set_blaze::{IntoRangesIter, RangeSetBlaze};
 use crate::arch::Arch;
 use crate::lifter::{Language, Lifter};
 use crate::loader::object::object_lifter;
-use crate::loader::symbols::{ExternSymbols, LocalSymbols};
+use crate::loader::symbols::{ExternSymbols, LocalSymbols, SymbolProperties};
 use crate::loader::{Loadable, LoadableSegment, LoadableSegmentProperties, LoaderError};
 use crate::types::{Address, AttributeMap, BytesOrMapping};
 
@@ -122,7 +122,6 @@ pub fn elf_symbols<'a>(
 ) -> (LocalSymbols, ExternSymbols) {
     // TODO:
     // - base address should be configurable.
-    // - template should be obtained from the lifter based on the architecture.
 
     let is_object = elf.kind() == ObjectKind::Relocatable;
     let addr_size = lifter.address_size();
@@ -189,10 +188,24 @@ pub fn elf_symbols<'a>(
             address
         );
 
-        locals.add_symbol(
+        let SymbolFlags::Elf { st_info, .. } = symbol.flags() else {
+            continue;
+        };
+
+        let st_type = st_info & 0x0f;
+
+        locals.add_symbol_with(
             symbol.index().0,
             Address::from(address),
             symbol.name().ok().map(ustr::ustr),
+            if st_type == STT_FUNC {
+                SymbolProperties::FUNCTION
+            } else if [STT_COMMON, STT_OBJECT, STT_TLS].contains(&st_type) {
+                SymbolProperties::DATA
+            } else {
+                tracing::debug!("symbol {address:#x} is not a function or data: {st_type:x}");
+                SymbolProperties::NONE
+            },
         );
     }
 
@@ -208,11 +221,11 @@ pub fn elf_symbols<'a>(
     let mut externs = ExternSymbols::new(base, arch.external_thunk_template());
     let template_size = externs.template().len();
 
-    for (index, addr, sym) in syms
+    for (index, addr, sym, kind) in syms
         .enumerate()
-        .filter(|(_, sym)| {
+        .filter_map(|(oidx, sym)| {
             let SymbolFlags::Elf { st_info, .. } = sym.flags() else {
-                return false;
+                return None;
             };
 
             let st_bind = st_info >> 4;
@@ -220,13 +233,25 @@ pub fn elf_symbols<'a>(
 
             let is_import = (st_bind == STB_GLOBAL || st_bind == STB_WEAK) && sym.address() == 0;
 
-            (is_import && !is_object) || (is_object && is_import && st_type == STT_NOTYPE)
+            if (is_import && !is_object) || (is_object && is_import && st_type == STT_NOTYPE) {
+                let kind = if st_type == STT_FUNC {
+                    SymbolProperties::FUNCTION
+                } else if [STT_COMMON, STT_OBJECT, STT_TLS].contains(&st_type) {
+                    SymbolProperties::DATA
+                } else {
+                    SymbolProperties::NONE
+                };
+
+                Some((oidx, sym, kind))
+            } else {
+                None
+            }
         })
         .enumerate()
-        .map(|(idx, (oidx, sym))| (oidx, base + (idx * template_size) as u64, sym))
+        .map(|(idx, (oidx, sym, kind))| (oidx, base + (idx * template_size) as u64, sym, kind))
     {
         let sym = sym.name().ok().map(ustr::ustr);
-        externs.add_symbol(index, addr, sym);
+        externs.add_symbol_with(index, addr, sym, kind);
     }
 
     (locals, externs)
@@ -738,7 +763,7 @@ where
     }
 
     pub(crate) fn apply_relocations(
-        &self,
+        &mut self,
         lsegm: &mut LoadableSegment<'data>,
         sect: &ElfSection<'data, 'file, Elf, R>,
     ) -> Result<(), LoaderError> {
@@ -778,7 +803,7 @@ where
     }
 
     pub(crate) fn apply_dynamic_relocations(
-        &self,
+        &mut self,
         lsegm: &mut LoadableSegment<'data>,
     ) -> Result<(), LoaderError> {
         let Some(drels) = self.elf.dynamic_relocations() else {
@@ -856,6 +881,21 @@ where
         Some(symbol.address())
     }
 
+    pub(crate) fn mark_function_symbol(&self, address: Address) {
+        if self
+            .locals
+            .update_symbol_properties(address, |props| props | SymbolProperties::FUNCTION)
+        {
+            return;
+        }
+
+        let Some(externs) = self.externs.as_ref() else {
+            return;
+        };
+
+        externs.update_symbol_properties(address, |props| props | SymbolProperties::FUNCTION);
+    }
+
     pub(crate) fn apply_generic_relocation(
         &self,
         lsegm: &mut LoadableSegment<'data>,
@@ -896,6 +936,11 @@ where
                     .wrapping_sub(lsegm.address().offset().wrapping_add(offset as u64));
 
                 tracing::trace!("applying relocation {reloc_type:?} at {offset:#x}: {value:#x}");
+
+                if [RelocationKind::GotRelative, RelocationKind::PltRelative].contains(&reloc_type)
+                {
+                    self.mark_function_symbol(lsegm.address() + offset);
+                }
 
                 if reloc.size() == 32 {
                     lsegm.write_value(offset, value as u32);
@@ -944,6 +989,10 @@ where
                     return;
                 };
 
+                if reloc_type == R_X86_64_JUMP_SLOT {
+                    self.mark_function_symbol(lsegm.address() + offset);
+                }
+
                 tracing::trace!("applying relocation {reloc_type:#x} at {offset:#x}: {value:#x}");
 
                 lsegm.write_value(offset, value);
@@ -957,6 +1006,10 @@ where
                 };
 
                 let value = value.wrapping_add_signed(reloc.addend());
+
+                if reloc_type == R_X86_64_GOT64 {
+                    self.mark_function_symbol(lsegm.address() + offset);
+                }
 
                 tracing::trace!("applying relocation {reloc_type:#x} at {offset:#x}: {value:#x}");
 
@@ -1015,6 +1068,8 @@ where
 
                 let value =
                     (value.wrapping_add_signed(reloc.addend()) as u32).wrapping_sub(target as u32);
+
+                self.mark_function_symbol(lsegm.address() + offset);
 
                 tracing::trace!("applying relocation {reloc_type:#x} at {offset:#x}: {value:#x}");
 
@@ -1084,6 +1139,14 @@ impl Loadable for Elf<'_> {
         self.lifter.clone()
     }
 
+    fn local_symbols(&self) -> Option<&LocalSymbols> {
+        Some(&self.locals)
+    }
+
+    fn extern_symbols(&self) -> Option<&ExternSymbols> {
+        Some(&self.externs)
+    }
+
     fn segments<'a>(
         &'a self,
     ) -> impl FallibleIterator<Item = LoadableSegment<'a>, Error = LoaderError> + 'a {
@@ -1146,6 +1209,15 @@ mod test {
                 );
             }
             tracing::info!("architecture: {}", elf.architecture());
+
+            for (addr, sym, props) in elf.local_symbols().iter() {
+                tracing::info!("local symbol {sym:?} at {addr}: {props:?}");
+            }
+
+            for (addr, sym, props) in elf.extern_symbols().iter() {
+                tracing::info!("external symbol {sym:?} at {addr}: {props:?}");
+            }
+
             Ok(())
         })
     }
@@ -1172,12 +1244,12 @@ mod test {
             }
             tracing::info!("architecture: {}", elf.architecture());
 
-            for (addr, sym) in elf.local_symbols().iter() {
-                tracing::info!("local symbol {sym} at {addr}");
+            for (addr, sym, props) in elf.local_symbols().iter() {
+                tracing::info!("local symbol {sym:?} at {addr}: {props:?}");
             }
 
-            for (addr, sym) in elf.extern_symbols().iter() {
-                tracing::info!("external symbol {sym} at {addr}");
+            for (addr, sym, props) in elf.extern_symbols().iter() {
+                tracing::info!("external symbol {sym:?} at {addr}: {props:?}");
             }
 
             Ok(())

@@ -15,11 +15,19 @@ use crate::lifter::{Language, Lifter, LifterBuilderError};
 use crate::types::{Address, AttributeMap};
 
 pub mod elf;
+pub use elf::Elf;
+
 // pub mod macho
+
 pub mod object;
+
 // pub mod pe;
+
 pub mod shellcode;
+pub use shellcode::Shellcode;
+
 pub mod symbols;
+pub use symbols::{ExternSymbols, LocalSymbols};
 
 #[derive(Debug, Error)]
 pub enum LoaderError {
@@ -196,6 +204,7 @@ impl LoadableSegment<'_> {
 
 pub trait Loadable {
     fn attributes(&self) -> &AttributeMap;
+
     fn attributes_mut(&mut self) -> &mut AttributeMap;
 
     fn entry_address(&self) -> Option<Address>;
@@ -203,11 +212,22 @@ pub trait Loadable {
     fn architecture(&self) -> Arch {
         Arch::new(self.language())
     }
+
     fn language(&self) -> &'static Language;
+
     fn lifter(&self) -> Lifter;
+
+    fn local_symbols(&self) -> Option<&LocalSymbols> {
+        None
+    }
+
+    fn extern_symbols(&self) -> Option<&ExternSymbols> {
+        None
+    }
 
     fn segments<'a>(
         &'a self,
     ) -> impl FallibleIterator<Item = LoadableSegment<'a>, Error = LoaderError> + 'a;
+
     fn segment_range(&self) -> (Address, Address);
 }

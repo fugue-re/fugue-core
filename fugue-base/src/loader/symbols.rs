@@ -1,3 +1,4 @@
+use std::cell::Cell;
 use std::collections::BTreeMap;
 
 use smallvec::SmallVec;
@@ -46,10 +47,21 @@ impl FunctionThunkTemplate {
     }
 }
 
+bitflags::bitflags! {
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+    pub struct SymbolProperties: u8 {
+        const NONE     = 0b0000_0000;
+        const EXTERN   = 0b0000_0001;
+        const LOCAL    = 0b0000_0010;
+        const FUNCTION = 0b0000_0100;
+        const DATA     = 0b0000_1000;
+    }
+}
+
 pub struct LocalSymbols {
     indices: BTreeMap<usize, Address>,
     sym_to_addr: UstrMap<Address>,
-    addr_to_sym: BTreeMap<Address, Ustr>,
+    addr_to_sym: BTreeMap<Address, (Option<Ustr>, Cell<SymbolProperties>)>,
 }
 
 impl LocalSymbols {
@@ -67,25 +79,56 @@ impl LocalSymbols {
         addr: impl Into<Address>,
         symbol: impl Into<Option<Ustr>>,
     ) {
+        Self::add_symbol_with(self, index, addr, symbol, SymbolProperties::LOCAL)
+    }
+
+    pub fn add_symbol_with(
+        &mut self,
+        index: usize,
+        addr: impl Into<Address>,
+        symbol: impl Into<Option<Ustr>>,
+        props: SymbolProperties,
+    ) {
         let addr = addr.into();
         let sym = symbol.into();
 
+        let sym = sym.and_then(|sym| sym.is_empty().then(|| None).unwrap_or(Some(sym)));
+
         self.indices.insert(index, addr);
+
+        self.addr_to_sym
+            .insert(addr, (sym, Cell::new(props | SymbolProperties::LOCAL)));
 
         let Some(sym) = sym else {
             return;
         };
 
-        if sym.is_empty() {
-            return;
-        }
-
         self.sym_to_addr.insert(sym, addr);
-        self.addr_to_sym.insert(addr, sym);
     }
 
-    pub fn symbol(&self, addr: impl Into<Address>) -> Option<Ustr> {
-        self.addr_to_sym.get(&addr.into()).copied()
+    pub fn symbol(&self, addr: impl Into<Address>) -> Option<(Option<Ustr>, SymbolProperties)> {
+        self.addr_to_sym
+            .get(&addr.into())
+            .map(|(sym, props)| (*sym, props.get()))
+    }
+
+    pub fn symbol_properties(&self, addr: impl Into<Address>) -> Option<SymbolProperties> {
+        self.addr_to_sym
+            .get(&addr.into())
+            .map(|(_, props)| props.get())
+    }
+
+    pub fn update_symbol_properties(
+        &self,
+        addr: impl Into<Address>,
+        f: impl FnOnce(SymbolProperties) -> SymbolProperties,
+    ) -> bool {
+        let Some((_, curr_props)) = self.addr_to_sym.get(&addr.into()) else {
+            return false;
+        };
+
+        curr_props.set(f(curr_props.get()));
+        true
     }
 
     pub fn address(&self, sym: impl AsRef<str>) -> Option<Address> {
@@ -93,14 +136,38 @@ impl LocalSymbols {
         self.sym_to_addr.get(&sym).copied()
     }
 
-    pub fn get_address(&self, index: usize) -> Option<Address> {
-        self.indices.get(&index).copied()
+    pub fn properties(&self, sym: impl AsRef<str>) -> Option<SymbolProperties> {
+        let sym = Ustr::from_existing(sym.as_ref())?;
+        self.sym_to_addr
+            .get(&sym)
+            .and_then(|addr| self.addr_to_sym.get(addr).map(|(_, props)| props.get()))
     }
 
     pub fn get_symbol(&self, index: usize) -> Option<Ustr> {
         self.indices
             .get(&index)
-            .and_then(|&addr| self.addr_to_sym.get(&addr).copied())
+            .and_then(|&addr| self.addr_to_sym.get(&addr).and_then(|(sym, _)| *sym))
+    }
+
+    pub fn get_address(&self, index: usize) -> Option<Address> {
+        self.indices.get(&index).copied()
+    }
+
+    pub fn get_properties(&self, index: usize) -> Option<SymbolProperties> {
+        self.indices
+            .get(&index)
+            .and_then(|&addr| self.addr_to_sym.get(&addr).map(|(_, props)| props.get()))
+    }
+
+    pub fn get_symbol_with_properties(
+        &self,
+        index: usize,
+    ) -> Option<(Option<Ustr>, SymbolProperties)> {
+        self.indices.get(&index).and_then(|&addr| {
+            self.addr_to_sym
+                .get(&addr)
+                .map(|(sym, props)| (*sym, props.get()))
+        })
     }
 
     pub fn contains_address(&self, addr: impl Into<Address>) -> bool {
@@ -114,8 +181,16 @@ impl LocalSymbols {
         self.sym_to_addr.contains_key(&sym)
     }
 
-    pub fn iter<'a>(&'a self) -> impl Iterator<Item = (Address, Ustr)> + 'a {
-        self.addr_to_sym.iter().map(|(addr, sym)| (*addr, *sym))
+    pub fn iter<'a>(
+        &'a self,
+    ) -> impl Iterator<Item = (Address, Option<Ustr>, SymbolProperties)> + 'a {
+        self.addr_to_sym
+            .iter()
+            .map(|(&addr, (sym, props))| (addr, *sym, props.get()))
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.indices.is_empty()
     }
 
     pub fn len(&self) -> usize {
@@ -127,7 +202,7 @@ pub struct ExternSymbols {
     base: Address,
     indices: BTreeMap<usize, Address>,
     sym_to_addr: UstrMap<Address>,
-    addr_to_sym: BTreeMap<Address, Ustr>,
+    addr_to_sym: BTreeMap<Address, (Option<Ustr>, Cell<SymbolProperties>)>,
     template: FunctionThunkTemplate,
 }
 
@@ -148,21 +223,31 @@ impl ExternSymbols {
         addr: impl Into<Address>,
         symbol: impl Into<Option<Ustr>>,
     ) {
+        Self::add_symbol_with(self, index, addr, symbol, SymbolProperties::LOCAL)
+    }
+
+    pub fn add_symbol_with(
+        &mut self,
+        index: usize,
+        addr: impl Into<Address>,
+        symbol: impl Into<Option<Ustr>>,
+        props: SymbolProperties,
+    ) {
         let addr = addr.into();
         let sym = symbol.into();
 
+        let sym = sym.and_then(|sym| sym.is_empty().then(|| None).unwrap_or(Some(sym)));
+
         self.indices.insert(index, addr);
+
+        self.addr_to_sym
+            .insert(addr, (sym, Cell::new(props | SymbolProperties::EXTERN)));
 
         let Some(sym) = sym else {
             return;
         };
 
-        if sym.is_empty() {
-            return;
-        }
-
         self.sym_to_addr.insert(sym, addr);
-        self.addr_to_sym.insert(addr, sym);
     }
 
     pub fn base(&self) -> Address {
@@ -177,8 +262,29 @@ impl ExternSymbols {
         }
     }
 
-    pub fn symbol(&self, addr: impl Into<Address>) -> Option<Ustr> {
-        self.addr_to_sym.get(&addr.into()).copied()
+    pub fn symbol(&self, addr: impl Into<Address>) -> Option<(Option<Ustr>, SymbolProperties)> {
+        self.addr_to_sym
+            .get(&addr.into())
+            .map(|(sym, props)| (*sym, props.get()))
+    }
+
+    pub fn symbol_properties(&self, addr: impl Into<Address>) -> Option<SymbolProperties> {
+        self.addr_to_sym
+            .get(&addr.into())
+            .map(|(_, props)| props.get())
+    }
+
+    pub fn update_symbol_properties(
+        &self,
+        addr: impl Into<Address>,
+        f: impl FnOnce(SymbolProperties) -> SymbolProperties,
+    ) -> bool {
+        let Some((_, curr_props)) = self.addr_to_sym.get(&addr.into()) else {
+            return false;
+        };
+
+        curr_props.set(f(curr_props.get()));
+        true
     }
 
     pub fn address(&self, sym: impl AsRef<str>) -> Option<Address> {
@@ -186,14 +292,38 @@ impl ExternSymbols {
         self.sym_to_addr.get(&sym).copied()
     }
 
-    pub fn get_address(&self, index: usize) -> Option<Address> {
-        self.indices.get(&index).copied()
+    pub fn properties(&self, sym: impl AsRef<str>) -> Option<SymbolProperties> {
+        let sym = Ustr::from_existing(sym.as_ref())?;
+        self.sym_to_addr
+            .get(&sym)
+            .and_then(|addr| self.addr_to_sym.get(addr).map(|(_, props)| props.get()))
     }
 
     pub fn get_symbol(&self, index: usize) -> Option<Ustr> {
         self.indices
             .get(&index)
-            .and_then(|&addr| self.addr_to_sym.get(&addr).copied())
+            .and_then(|&addr| self.addr_to_sym.get(&addr).and_then(|(sym, _)| *sym))
+    }
+
+    pub fn get_address(&self, index: usize) -> Option<Address> {
+        self.indices.get(&index).copied()
+    }
+
+    pub fn get_properties(&self, index: usize) -> Option<SymbolProperties> {
+        self.indices
+            .get(&index)
+            .and_then(|&addr| self.addr_to_sym.get(&addr).map(|(_, props)| props.get()))
+    }
+
+    pub fn get_symbol_with_properties(
+        &self,
+        index: usize,
+    ) -> Option<(Option<Ustr>, SymbolProperties)> {
+        self.indices.get(&index).and_then(|&addr| {
+            self.addr_to_sym
+                .get(&addr)
+                .map(|(sym, props)| (*sym, props.get()))
+        })
     }
 
     pub fn contains_address(&self, addr: impl Into<Address>) -> bool {
@@ -207,8 +337,12 @@ impl ExternSymbols {
         self.sym_to_addr.contains_key(&sym)
     }
 
-    pub fn iter<'a>(&'a self) -> impl Iterator<Item = (Address, Ustr)> + 'a {
-        self.addr_to_sym.iter().map(|(addr, sym)| (*addr, *sym))
+    pub fn iter<'a>(
+        &'a self,
+    ) -> impl Iterator<Item = (Address, Option<Ustr>, SymbolProperties)> + 'a {
+        self.addr_to_sym
+            .iter()
+            .map(|(&addr, (sym, props))| (addr, *sym, props.get()))
     }
 
     pub fn template(&self) -> &FunctionThunkTemplate {
