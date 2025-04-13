@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::path::Path;
 use std::str::FromStr;
 
 use fallible_iterator::FallibleIterator;
@@ -68,6 +69,18 @@ impl<'a> Object<'a> {
             lifter,
             attributes: attributes.into(),
         })
+    }
+
+    pub fn from_file(path: impl AsRef<Path>) -> Result<Self, LoaderError> {
+        Self::from_file_with(path, AttributeMap::new())
+    }
+
+    pub fn from_file_with(
+        path: impl AsRef<Path>,
+        attributes: impl Into<AttributeMap>,
+    ) -> Result<Self, LoaderError> {
+        let data = BytesOrMapping::from_file(path)?;
+        Self::new_with(data, attributes)
     }
 }
 

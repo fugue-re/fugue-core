@@ -12,7 +12,7 @@ use thiserror::Error;
 
 use crate::arch::Arch;
 use crate::lifter::{Language, Lifter, LifterBuilderError};
-use crate::types::{Address, AttributeMap};
+use crate::types::{Address, AttributeMap, BytesOrMapping};
 
 pub mod elf;
 pub use elf::Elf;
@@ -33,6 +33,8 @@ pub use symbols::{ExternSymbols, LocalSymbols};
 pub enum LoaderError {
     #[error("cannot load object: {0}")]
     Format(anyhow::Error),
+    #[error("cannot read object: {0}")]
+    Io(#[from] std::io::Error),
     #[error(transparent)]
     Lifter(#[from] LifterBuilderError),
     #[error("cannot load object; unsupported architecture")]
@@ -230,4 +232,125 @@ pub trait Loadable {
     ) -> impl FallibleIterator<Item = LoadableSegment<'a>, Error = LoaderError> + 'a;
 
     fn segment_range(&self) -> (Address, Address);
+}
+
+pub enum Loader<'a> {
+    Elf(elf::Elf<'a>),
+    Object(object::Object<'a>),
+}
+
+impl<'a> Loader<'a> {
+    pub fn new(data: impl Into<BytesOrMapping<'a>>) -> Result<Self, LoaderError> {
+        Self::new_with(data, AttributeMap::new())
+    }
+
+    pub fn new_with(
+        data: impl Into<BytesOrMapping<'a>>,
+        attributes: impl Into<AttributeMap>,
+    ) -> Result<Self, LoaderError> {
+        use ::object::FileKind;
+
+        let data = data.into();
+        let loaded = match FileKind::parse(data.as_ref()).map_err(LoaderError::format)? {
+            FileKind::Elf32 | FileKind::Elf64 => {
+                let elf = Elf::new_with(data, attributes)?;
+                Self::Elf(elf)
+            }
+            _ => {
+                let object = object::Object::new_with(data, attributes)?;
+                Self::Object(object)
+            }
+        };
+        Ok(loaded)
+    }
+
+    pub fn from_file_with(
+        path: impl AsRef<std::path::Path>,
+        attributes: impl Into<AttributeMap>,
+    ) -> Result<Self, LoaderError> {
+        let data = BytesOrMapping::from_file(path)?;
+        Self::new_with(data, attributes)
+    }
+
+    pub fn from_file(path: impl AsRef<std::path::Path>) -> Result<Self, LoaderError> {
+        Self::from_file_with(path, AttributeMap::new())
+    }
+}
+
+impl Loadable for Loader<'_> {
+    fn entry_address(&self) -> Option<Address> {
+        match self {
+            Self::Elf(elf) => elf.entry_address(),
+            Self::Object(object) => object.entry_address(),
+        }
+    }
+
+    fn architecture(&self) -> Arch {
+        match self {
+            Self::Elf(elf) => elf.architecture(),
+            Self::Object(object) => object.architecture(),
+        }
+    }
+
+    fn language(&self) -> &'static Language {
+        match self {
+            Self::Elf(elf) => elf.language(),
+            Self::Object(object) => object.language(),
+        }
+    }
+
+    fn lifter(&self) -> Lifter {
+        match self {
+            Self::Elf(elf) => elf.lifter(),
+            Self::Object(object) => object.lifter(),
+        }
+    }
+
+    fn local_symbols(&self) -> Option<&LocalSymbols> {
+        match self {
+            Self::Elf(elf) => elf.local_symbols(),
+            Self::Object(object) => object.local_symbols(),
+        }
+    }
+
+    fn extern_symbols(&self) -> Option<&ExternSymbols> {
+        match self {
+            Self::Elf(elf) => elf.extern_symbols(),
+            Self::Object(object) => object.extern_symbols(),
+        }
+    }
+
+    fn attributes(&self) -> &AttributeMap {
+        match self {
+            Self::Elf(elf) => elf.attributes(),
+            Self::Object(object) => object.attributes(),
+        }
+    }
+
+    fn attributes_mut(&mut self) -> &mut AttributeMap {
+        match self {
+            Self::Elf(elf) => elf.attributes_mut(),
+            Self::Object(object) => object.attributes_mut(),
+        }
+    }
+
+    fn segments<'a>(
+        &'a self,
+    ) -> impl FallibleIterator<Item = LoadableSegment<'a>, Error = LoaderError> + 'a {
+        match self {
+            Self::Elf(elf) => {
+                Box::new(elf.segments()) as Box<dyn FallibleIterator<Item = _, Error = _>>
+            }
+            Self::Object(object) => {
+                Box::new(object.segments()) as Box<dyn FallibleIterator<Item = _, Error = _>>
+            }
+        }
+    }
+
+    fn segment_range(&self) -> (Address, Address) {
+        match self {
+            Self::Elf(elf) => elf.segment_range(),
+            Self::Object(object) => object.segment_range(),
+        }
+    }
 }

@@ -99,11 +99,11 @@ impl<'a> Elf<'a> {
         })
     }
 
-    pub fn local_symbols(&self) -> &LocalSymbols {
+    pub fn locals(&self) -> &LocalSymbols {
         &self.locals
     }
 
-    pub fn extern_symbols(&self) -> &ExternSymbols {
+    pub fn externs(&self) -> &ExternSymbols {
         &self.externs
     }
 
@@ -1212,11 +1212,11 @@ mod test {
             }
             tracing::info!("architecture: {}", elf.architecture());
 
-            for (addr, sym, props) in elf.local_symbols().iter() {
+            for (addr, sym, props) in elf.locals().iter() {
                 tracing::info!("local symbol {sym:?} at {addr}: {props:?}");
             }
 
-            for (addr, sym, props) in elf.extern_symbols().iter() {
+            for (addr, sym, props) in elf.externs().iter() {
                 tracing::info!("external symbol {sym:?} at {addr}: {props:?}");
             }
 
@@ -1246,11 +1246,11 @@ mod test {
             }
             tracing::info!("architecture: {}", elf.architecture());
 
-            for (addr, sym, props) in elf.local_symbols().iter() {
+            for (addr, sym, props) in elf.locals().iter() {
                 tracing::info!("local symbol {sym:?} at {addr}: {props:?}");
             }
 
-            for (addr, sym, props) in elf.extern_symbols().iter() {
+            for (addr, sym, props) in elf.externs().iter() {
                 tracing::info!("external symbol {sym:?} at {addr}: {props:?}");
             }
 
