@@ -881,7 +881,9 @@ where
         Some(symbol.address())
     }
 
-    pub(crate) fn mark_function_symbol(&self, address: Address) {
+    pub(crate) fn mark_function_symbol(&self, address: impl Into<Address>) {
+        let address = address.into();
+
         if self
             .locals
             .update_symbol_properties(address, |props| props | SymbolProperties::FUNCTION)
@@ -931,16 +933,16 @@ where
                     return;
                 };
 
+                if [RelocationKind::GotRelative, RelocationKind::PltRelative].contains(&reloc_type)
+                {
+                    self.mark_function_symbol(value);
+                }
+
                 let value = value
                     .wrapping_add_signed(reloc.addend())
                     .wrapping_sub(lsegm.address().offset().wrapping_add(offset as u64));
 
                 tracing::trace!("applying relocation {reloc_type:?} at {offset:#x}: {value:#x}");
-
-                if [RelocationKind::GotRelative, RelocationKind::PltRelative].contains(&reloc_type)
-                {
-                    self.mark_function_symbol(lsegm.address() + offset);
-                }
 
                 if reloc.size() == 32 {
                     lsegm.write_value(offset, value as u32);
@@ -990,7 +992,7 @@ where
                 };
 
                 if reloc_type == R_X86_64_JUMP_SLOT {
-                    self.mark_function_symbol(lsegm.address() + offset);
+                    self.mark_function_symbol(value);
                 }
 
                 tracing::trace!("applying relocation {reloc_type:#x} at {offset:#x}: {value:#x}");
@@ -1005,11 +1007,11 @@ where
                     return;
                 };
 
-                let value = value.wrapping_add_signed(reloc.addend());
-
                 if reloc_type == R_X86_64_GOT64 {
-                    self.mark_function_symbol(lsegm.address() + offset);
+                    self.mark_function_symbol(value);
                 }
+
+                let value = value.wrapping_add_signed(reloc.addend());
 
                 tracing::trace!("applying relocation {reloc_type:#x} at {offset:#x}: {value:#x}");
 
@@ -1066,10 +1068,10 @@ where
                     return;
                 };
 
+                self.mark_function_symbol(value);
+
                 let value =
                     (value.wrapping_add_signed(reloc.addend()) as u32).wrapping_sub(target as u32);
-
-                self.mark_function_symbol(lsegm.address() + offset);
 
                 tracing::trace!("applying relocation {reloc_type:#x} at {offset:#x}: {value:#x}");
 
