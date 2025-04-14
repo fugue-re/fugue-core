@@ -219,6 +219,10 @@ impl Arch {
         }
     }
 
+    pub fn endian(&self) -> Endian {
+        self.0.endian()
+    }
+
     pub fn external_thunk_template(&self) -> FunctionThunkTemplate {
         self.0.external_thunk_template()
     }

@@ -354,3 +354,36 @@ impl Loadable for Loader<'_> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::attributes;
+
+    use super::*;
+
+    #[test]
+    fn test_loader() -> Result<(), LoaderError> {
+        let loaded = Loader::from_file_with(
+            "tests/ls.elf",
+            attributes![
+                "test" => "test",
+                "test2" => 2u32,
+                "test3" => 3u64,
+            ],
+        )?;
+
+        assert_eq!(loaded.architecture().language().id(), "x86:LE:64:default");
+        assert_eq!(
+            loaded.attributes().get_attr::<String>("test"),
+            Some("test".to_owned())
+        );
+        assert_eq!(loaded.attributes().get_attr::<u32>("test2"), Some(2));
+        assert_eq!(loaded.attributes().get_attr::<u64>("test3"), Some(3));
+
+        let (start, end) = loaded.segment_range();
+
+        println!("segment range: {start:#x} - {end:#x}");
+
+        Ok(())
+    }
+}
