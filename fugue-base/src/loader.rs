@@ -1,8 +1,6 @@
 use std::borrow::Cow;
 use std::fmt::{Debug, Display};
 
-use bitflags::bitflags;
-
 use fallible_iterator::FallibleIterator;
 
 use fugue_bytes::traits::ByteCast;
@@ -12,6 +10,7 @@ use thiserror::Error;
 
 use crate::arch::Arch;
 use crate::lifter::{Language, Lifter, LifterBuilderError};
+use crate::memory::SegmentProperties;
 use crate::types::{Address, AttributeMap, BytesOrMapping};
 
 pub mod elf;
@@ -57,57 +56,11 @@ impl LoaderError {
     }
 }
 
-bitflags! {
-    #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-    pub struct LoadableSegmentProperties: u8 {
-        const PERM_READ     = 0b0000_0001;
-        const PERM_WRITE    = 0b0000_0010;
-        const PERM_EXECUTE  = 0b0000_0100;
-
-        const PERM_ALL      = Self::PERM_READ.bits() | Self::PERM_WRITE.bits() | Self::PERM_EXECUTE.bits();
-
-        const UNINITIALISED = 0b0001_0000;
-        const LITTLE_ENDIAN = 0b0010_0000;
-
-        const EXTERNAL      = 0b0100_0000;
-    }
-}
-
-impl LoadableSegmentProperties {
-    pub fn is_readable(&self) -> bool {
-        self.contains(Self::PERM_READ)
-    }
-
-    pub fn is_writable(&self) -> bool {
-        self.contains(Self::PERM_WRITE)
-    }
-
-    pub fn is_executable(&self) -> bool {
-        self.contains(Self::PERM_EXECUTE)
-    }
-
-    pub fn is_initialised(&self) -> bool {
-        !self.is_uninitialised()
-    }
-
-    pub fn is_uninitialised(&self) -> bool {
-        self.contains(Self::UNINITIALISED)
-    }
-
-    pub fn is_little_endian(&self) -> bool {
-        self.contains(Self::LITTLE_ENDIAN)
-    }
-
-    pub fn is_external(&self) -> bool {
-        self.contains(Self::EXTERNAL)
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct LoadableSegment<'a> {
     name: Cow<'a, str>,
     address: Address,
-    properties: LoadableSegmentProperties,
+    properties: SegmentProperties,
     bytes: Cow<'a, [u8]>,
 }
 
@@ -124,7 +77,7 @@ impl LoadableSegment<'_> {
         self.name.as_ref()
     }
 
-    pub fn properties(&self) -> LoadableSegmentProperties {
+    pub fn properties(&self) -> SegmentProperties {
         self.properties
     }
 

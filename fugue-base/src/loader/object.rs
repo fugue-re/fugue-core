@@ -7,7 +7,8 @@ use fallible_iterator::FallibleIterator;
 use object::{File, Object as ObjectT, ObjectSegment};
 
 use crate::lifter::{Language, Lifter, LifterBuilder};
-use crate::loader::{Loadable, LoadableSegment, LoadableSegmentProperties, LoaderError};
+use crate::loader::{Loadable, LoadableSegment, LoaderError};
+use crate::memory::SegmentProperties;
 use crate::types::{Address, AttributeMap, BytesOrMapping};
 
 #[ouroboros::self_referencing]
@@ -139,7 +140,7 @@ impl Loadable for Object<'_> {
                     .flatten()
                     .map_or_else(|| Cow::Borrowed("LOAD"), |name| Cow::Owned(name.to_owned())),
                 address,
-                properties: LoadableSegmentProperties::all(),
+                properties: SegmentProperties::all(),
                 bytes,
             }))
         }))

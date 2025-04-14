@@ -131,6 +131,19 @@ impl LocalSymbols {
         true
     }
 
+    pub fn add_or_update_symbol_properties(
+        &mut self,
+        addr: impl Into<Address>,
+        f: impl FnOnce(SymbolProperties) -> SymbolProperties,
+    ) {
+        let entry = self
+            .addr_to_sym
+            .entry(addr.into())
+            .or_insert_with(|| (None, Cell::new(SymbolProperties::LOCAL)));
+
+        entry.1.set(f(entry.1.get()));
+    }
+
     pub fn address(&self, sym: impl AsRef<str>) -> Option<Address> {
         let sym = Ustr::from_existing(sym.as_ref())?;
         self.sym_to_addr.get(&sym).copied()

@@ -21,7 +21,8 @@ use crate::arch::Arch;
 use crate::lifter::{Language, Lifter};
 use crate::loader::object::object_lifter;
 use crate::loader::symbols::{ExternSymbols, LocalSymbols, SymbolProperties};
-use crate::loader::{Loadable, LoadableSegment, LoadableSegmentProperties, LoaderError};
+use crate::loader::{Loadable, LoadableSegment, LoaderError};
+use crate::memory::SegmentProperties;
 use crate::types::{Address, AttributeMap, BytesOrMapping};
 
 #[ouroboros::self_referencing]
@@ -257,53 +258,53 @@ pub fn elf_symbols<'a>(
     (locals, externs)
 }
 
-pub fn elf_section_properties<'a>(sect: &impl ObjectSection<'a>) -> LoadableSegmentProperties {
+pub fn elf_section_properties<'a>(sect: &impl ObjectSection<'a>) -> SegmentProperties {
     let SectionFlags::Elf { sh_flags } = sect.flags() else {
         // NOTE: we could probably panic here
-        return LoadableSegmentProperties::empty();
+        return SegmentProperties::empty();
     };
 
     let sh_flags = sh_flags as u32;
 
-    let mut props = LoadableSegmentProperties::PERM_READ;
+    let mut props = SegmentProperties::PERM_READ;
 
     if sh_flags & SHF_WRITE == SHF_WRITE {
-        props.insert(LoadableSegmentProperties::PERM_WRITE);
+        props.insert(SegmentProperties::PERM_WRITE);
     }
 
     if sh_flags & SHF_EXECINSTR == SHF_EXECINSTR {
-        props.insert(LoadableSegmentProperties::PERM_EXECUTE);
+        props.insert(SegmentProperties::PERM_EXECUTE);
     }
 
     if matches!(sect.file_range(), None | Some((_, 0))) {
-        props.insert(LoadableSegmentProperties::UNINITIALISED);
+        props.insert(SegmentProperties::UNINITIALISED);
     }
 
     props
 }
 
-pub fn elf_segment_properties<'a>(segm: &impl ObjectSegment<'a>) -> LoadableSegmentProperties {
+pub fn elf_segment_properties<'a>(segm: &impl ObjectSegment<'a>) -> SegmentProperties {
     let SegmentFlags::Elf { p_flags } = segm.flags() else {
         // NOTE: we could probably panic here
-        return LoadableSegmentProperties::empty();
+        return SegmentProperties::empty();
     };
 
-    let mut props = LoadableSegmentProperties::empty();
+    let mut props = SegmentProperties::empty();
 
     if p_flags & PF_R == PF_R {
-        props.insert(LoadableSegmentProperties::PERM_READ);
+        props.insert(SegmentProperties::PERM_READ);
     }
 
     if p_flags & PF_W == PF_W {
-        props.insert(LoadableSegmentProperties::PERM_WRITE);
+        props.insert(SegmentProperties::PERM_WRITE);
     }
 
     if p_flags & PF_X == PF_X {
-        props.insert(LoadableSegmentProperties::PERM_EXECUTE);
+        props.insert(SegmentProperties::PERM_EXECUTE);
     }
 
     if segm.file_range().1 == 0 {
-        props.insert(LoadableSegmentProperties::UNINITIALISED);
+        props.insert(SegmentProperties::UNINITIALISED);
     }
 
     props
@@ -457,9 +458,9 @@ where
         let lsegm = LoadableSegment {
             name: Cow::Borrowed("EXTERN"),
             address: externs.base(),
-            properties: LoadableSegmentProperties::EXTERNAL
-                | LoadableSegmentProperties::PERM_READ
-                | LoadableSegmentProperties::PERM_EXECUTE,
+            properties: SegmentProperties::EXTERNAL
+                | SegmentProperties::PERM_READ
+                | SegmentProperties::PERM_EXECUTE,
             bytes: Cow::Owned(bytes),
         };
 
@@ -884,18 +885,14 @@ where
     pub(crate) fn mark_function_symbol(&self, address: impl Into<Address>) {
         let address = address.into();
 
-        if self
-            .locals
-            .update_symbol_properties(address, |props| props | SymbolProperties::FUNCTION)
-        {
+        if self.externs.as_ref().map_or(false, |externs| {
+            externs.update_symbol_properties(address, |props| props | SymbolProperties::FUNCTION)
+        }) {
             return;
         }
 
-        let Some(externs) = self.externs.as_ref() else {
-            return;
-        };
-
-        externs.update_symbol_properties(address, |props| props | SymbolProperties::FUNCTION);
+        self.locals
+            .update_symbol_properties(address, |props| props | SymbolProperties::FUNCTION);
     }
 
     pub(crate) fn apply_generic_relocation(

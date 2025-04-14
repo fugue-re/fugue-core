@@ -7,7 +7,8 @@ use fallible_iterator::FallibleIterator;
 use thiserror::Error;
 
 use crate::lifter::{Language, Lifter, LifterBuilder};
-use crate::loader::{Loadable, LoadableSegment, LoadableSegmentProperties, LoaderError};
+use crate::loader::{Loadable, LoadableSegment, LoaderError};
+use crate::memory::SegmentProperties;
 use crate::types::{Address, AttributeMap, BytesOrMapping};
 
 pub struct Shellcode<'a> {
@@ -95,7 +96,7 @@ impl Loadable for Shellcode<'_> {
         fallible_iterator::once(LoadableSegment {
             name: Cow::Borrowed("LOAD"),
             address: self.address,
-            properties: LoadableSegmentProperties::PERM_ALL,
+            properties: SegmentProperties::PERM_ALL,
             bytes: Cow::Borrowed(self.bytes()),
         })
     }
