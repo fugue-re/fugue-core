@@ -89,6 +89,10 @@ impl LoadableSegment<'_> {
         self.bytes.len()
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.bytes.is_empty()
+    }
+
     pub fn read_value<T: ByteCast>(&self, offset: usize) -> Option<T> {
         let range = self.view_bytes(offset, T::SIZEOF)?;
         Some(if self.properties.is_little_endian() {
@@ -153,6 +157,15 @@ impl LoadableSegment<'_> {
             }
         } else {
             None
+        }
+    }
+
+    pub fn into_owned(self) -> LoadableSegment<'static> {
+        LoadableSegment {
+            name: self.name.into_owned().into(),
+            address: self.address,
+            properties: self.properties,
+            bytes: self.bytes.into_owned().into(),
         }
     }
 }

@@ -1,7 +1,5 @@
 use bitflags::bitflags;
 
-use crate::types::Address;
-
 bitflags! {
     #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct SegmentProperties: u8 {
@@ -46,13 +44,4 @@ impl SegmentProperties {
     pub fn is_external(&self) -> bool {
         self.contains(Self::EXTERNAL)
     }
-}
-
-pub struct Segment {
-    name: Option<String>,
-    properties: SegmentProperties,
-}
-
-pub struct Memory {
-    segments: iset::IntervalMap<Address, Segment>,
 }

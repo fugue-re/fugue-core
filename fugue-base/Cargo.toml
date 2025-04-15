@@ -18,6 +18,7 @@ fugue-specs = { version = "0.3", path = "../fugue-specs" }
 gazebo = "0.8"
 iset = "0.3"
 itertools = "0.14"
+libmdbx = "0.5"
 memmap2 = "0.9"
 object = "0.35"
 ouroboros = "0.18"
