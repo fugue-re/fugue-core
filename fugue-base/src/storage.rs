@@ -41,8 +41,8 @@ pub trait StorageProvider {
     where
         Self: Sized;
 
-    fn read_bytes(&self, addr: Address, bytes: &mut [u8]) -> Result<(), StorageError>;
-    fn write_bytes(&mut self, addr: Address, bytes: &[u8]) -> Result<(), StorageError>;
+    fn read_bytes(&self, addr: impl Into<Address>, bytes: &mut [u8]) -> Result<(), StorageError>;
+    fn write_bytes(&mut self, addr: impl Into<Address>, bytes: &[u8]) -> Result<(), StorageError>;
 
     fn insert_segment(&mut self, segm: LoadableSegment) -> Result<(), StorageError>;
 }
@@ -88,7 +88,7 @@ impl InMemoryStorage {
         Some(
             self.segments[first..]
                 .iter()
-                .take_while(move |segm| segm.last_address() >= last_addr),
+                .take_while(move |segm| segm.last_address() <= last_addr),
         )
     }
 
@@ -108,7 +108,7 @@ impl InMemoryStorage {
         Some(
             self.segments[first..]
                 .iter_mut()
-                .take_while(move |segm| segm.last_address() >= last_addr),
+                .take_while(move |segm| segm.last_address() <= last_addr),
         )
     }
 }
@@ -135,13 +135,15 @@ impl StorageProvider for InMemoryStorage {
         Ok(Self { segments })
     }
 
-    fn read_bytes(&self, addr: Address, bytes: &mut [u8]) -> Result<(), StorageError> {
+    fn read_bytes(&self, addr: impl Into<Address>, bytes: &mut [u8]) -> Result<(), StorageError> {
         let mut size = bytes.len();
         let mut offset = 0;
 
         if bytes.is_empty() {
             return Ok(());
         }
+
+        let addr = addr.into();
 
         let segms = self
             .overlapping(addr, size)
@@ -173,13 +175,15 @@ impl StorageProvider for InMemoryStorage {
         Ok(())
     }
 
-    fn write_bytes(&mut self, addr: Address, bytes: &[u8]) -> Result<(), StorageError> {
+    fn write_bytes(&mut self, addr: impl Into<Address>, bytes: &[u8]) -> Result<(), StorageError> {
         let mut size = bytes.len();
         let mut offset = 0;
 
         if bytes.is_empty() {
             return Ok(());
         }
+
+        let addr = addr.into();
 
         let segms = self
             .overlapping_mut(addr, size)

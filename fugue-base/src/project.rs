@@ -12,7 +12,7 @@ pub struct Project<P: StorageProvider = InMemoryStorage> {
     arch: Arch,
     lifter: Lifter,
     language: &'static Language,
-    memory: P,
+    storage: P,
 }
 
 #[derive(Debug, Error)]
@@ -69,12 +69,12 @@ where
         self.language
     }
 
-    pub fn memory(&self) -> &P {
-        &self.memory
+    pub fn storage(&self) -> &P {
+        &self.storage
     }
 
-    pub fn memory_mut(&mut self) -> &mut P {
-        &mut self.memory
+    pub fn storage_mut(&mut self) -> &mut P {
+        &mut self.storage
     }
 }
 
@@ -86,27 +86,26 @@ where
         let arch = loadable.architecture();
         let lifter = loadable.lifter();
         let language = loadable.language();
-
-        let memory = P::from_loadable(loadable)?;
+        let storage = P::from_loadable(loadable)?;
 
         Ok(Self {
             arch,
             lifter,
             language,
-            memory,
+            storage,
         })
     }
 
-    fn read_bytes(&self, addr: Address, bytes: &mut [u8]) -> Result<(), StorageError> {
-        self.memory.read_bytes(addr, bytes)
+    fn read_bytes(&self, addr: impl Into<Address>, bytes: &mut [u8]) -> Result<(), StorageError> {
+        self.storage.read_bytes(addr, bytes)
     }
 
-    fn write_bytes(&mut self, addr: Address, bytes: &[u8]) -> Result<(), StorageError> {
-        self.memory.write_bytes(addr, bytes)
+    fn write_bytes(&mut self, addr: impl Into<Address>, bytes: &[u8]) -> Result<(), StorageError> {
+        self.storage.write_bytes(addr, bytes)
     }
 
     fn insert_segment(&mut self, segm: LoadableSegment) -> Result<(), StorageError> {
-        self.memory.insert_segment(segm)
+        self.storage.insert_segment(segm)
     }
 }
 
@@ -124,7 +123,19 @@ mod test {
             .finish();
 
         tracing::subscriber::with_default(subscriber, || {
-            let _project = Project::<InMemoryStorage>::from_file("tests/ls.elf")?;
+            let project = Project::<InMemoryStorage>::from_file("tests/ls.elf")?;
+
+            let mut bytes = [0u8; 32];
+            project.storage().read_bytes(0x4000u32, &mut bytes)?;
+
+            assert_eq!(
+                &bytes,
+                &[
+                    0xF3, 0x0F, 0x1E, 0xFA, 0x48, 0x83, 0xEC, 0x08, 0x48, 0x8B, 0x05, 0xB9, 0xEF,
+                    0x01, 0x00, 0x48, 0x85, 0xC0, 0x74, 0x02, 0xFF, 0xD0, 0x48, 0x83, 0xC4, 0x08,
+                    0xC3, 0x00, 0x00, 0x00, 0x00, 0x00
+                ]
+            );
 
             Ok(())
         })
