@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::path::Path;
 
 use fallible_iterator::FallibleIterator;
 
@@ -21,7 +22,7 @@ use crate::arch::Arch;
 use crate::lifter::{Language, Lifter};
 use crate::loader::object::object_lifter;
 use crate::loader::symbols::{ExternSymbols, LocalSymbols, SymbolProperties};
-use crate::loader::{Loadable, LoadableSegment, LoaderError};
+use crate::loader::{Loadable, LoadableFromBytes, LoadableFromFile, LoadableSegment, LoaderError};
 use crate::memory::SegmentProperties;
 use crate::types::{Address, AttributeMap, BytesOrMapping};
 
@@ -1110,6 +1111,30 @@ where
     }
 }
 
+impl<'a> LoadableFromBytes<'a> for Elf<'a> {
+    fn from_bytes_with(
+        data: impl Into<BytesOrMapping<'a>>,
+        attributes: impl Into<AttributeMap>,
+    ) -> Result<Self, LoaderError>
+    where
+        Self: Sized,
+    {
+        Self::new_with(data, attributes)
+    }
+}
+
+impl LoadableFromFile for Elf<'_> {
+    fn from_file_with(
+        path: impl AsRef<Path>,
+        attributes: impl Into<AttributeMap>,
+    ) -> Result<Self, LoaderError>
+    where
+        Self: Sized,
+    {
+        Self::new_with(BytesOrMapping::from_file(path)?, attributes)
+    }
+}
+
 impl Loadable for Elf<'_> {
     fn entry_address(&self) -> Option<Address> {
         Some(with_elf!(
@@ -1146,9 +1171,9 @@ impl Loadable for Elf<'_> {
         Some(&self.externs)
     }
 
-    fn segments<'a>(
-        &'a self,
-    ) -> impl FallibleIterator<Item = LoadableSegment<'a>, Error = LoaderError> + 'a {
+    fn segments<'b>(
+        &'b self,
+    ) -> impl FallibleIterator<Item = LoadableSegment<'b>, Error = LoaderError> + 'b {
         let view = self.object.borrow_view();
 
         with_elf!(

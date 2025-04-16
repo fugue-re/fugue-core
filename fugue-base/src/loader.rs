@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 use std::fmt::{Debug, Display};
+use std::path::Path;
 
 use fallible_iterator::FallibleIterator;
 
@@ -67,6 +68,10 @@ pub struct LoadableSegment<'a> {
 impl LoadableSegment<'_> {
     pub fn address(&self) -> Address {
         self.address
+    }
+
+    pub fn next_address(&self) -> Address {
+        self.address + self.bytes.len()
     }
 
     pub fn last_address(&self) -> Address {
@@ -170,6 +175,38 @@ impl LoadableSegment<'_> {
     }
 }
 
+pub trait LoadableFromBytes<'a>: Loadable {
+    fn from_bytes(data: impl Into<BytesOrMapping<'a>>) -> Result<Self, LoaderError>
+    where
+        Self: Sized,
+    {
+        Self::from_bytes_with(data, AttributeMap::new())
+    }
+
+    fn from_bytes_with(
+        data: impl Into<BytesOrMapping<'a>>,
+        attributes: impl Into<AttributeMap>,
+    ) -> Result<Self, LoaderError>
+    where
+        Self: Sized;
+}
+
+pub trait LoadableFromFile: Loadable {
+    fn from_file(path: impl AsRef<std::path::Path>) -> Result<Self, LoaderError>
+    where
+        Self: Sized,
+    {
+        Self::from_file_with(path, AttributeMap::new())
+    }
+
+    fn from_file_with(
+        path: impl AsRef<std::path::Path>,
+        attributes: impl Into<AttributeMap>,
+    ) -> Result<Self, LoaderError>
+    where
+        Self: Sized;
+}
+
 pub trait Loadable {
     fn attributes(&self) -> &AttributeMap;
 
@@ -231,7 +268,7 @@ impl<'a> Loader<'a> {
     }
 
     pub fn from_file_with(
-        path: impl AsRef<std::path::Path>,
+        path: impl AsRef<Path>,
         attributes: impl Into<AttributeMap>,
     ) -> Result<Self, LoaderError> {
         let data = BytesOrMapping::from_file(path)?;
@@ -240,6 +277,27 @@ impl<'a> Loader<'a> {
 
     pub fn from_file(path: impl AsRef<std::path::Path>) -> Result<Self, LoaderError> {
         Self::from_file_with(path, AttributeMap::new())
+    }
+}
+
+impl<'a> LoadableFromBytes<'a> for Loader<'a> {
+    fn from_bytes_with(
+        data: impl Into<BytesOrMapping<'a>>,
+        attributes: impl Into<AttributeMap>,
+    ) -> Result<Self, LoaderError> {
+        Self::new_with(data, attributes)
+    }
+}
+
+impl LoadableFromFile for Loader<'_> {
+    fn from_file_with(
+        path: impl AsRef<Path>,
+        attributes: impl Into<AttributeMap>,
+    ) -> Result<Self, LoaderError>
+    where
+        Self: Sized,
+    {
+        Self::from_file_with(path, attributes)
     }
 }
 

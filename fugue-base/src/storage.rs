@@ -1,20 +1,23 @@
+use fallible_iterator::FallibleIterator;
 use thiserror::Error;
 
-use crate::loader::LoadableSegment;
+use crate::loader::{Loadable, LoadableSegment, LoaderError};
 use crate::types::Address;
 
 pub mod mdbx;
 
 #[derive(Debug, Error)]
 pub enum StorageError {
-    #[error("Storage error: {0}")]
+    #[error("storage error: {0}")]
     Backing(anyhow::Error),
-    #[error("Invalid address range")]
+    #[error("invalid address range")]
     InvalidAddressRange,
-    #[error("Invalid address")]
+    #[error("invalid address")]
     InvalidAddress,
-    #[error("Invalid size")]
+    #[error("invalid size")]
     InvalidSize,
+    #[error(transparent)]
+    Loader(#[from] LoaderError),
 }
 
 impl StorageError {
@@ -34,6 +37,10 @@ impl StorageError {
 }
 
 pub trait StorageProvider {
+    fn from_loadable(loader: &impl Loadable) -> Result<Self, StorageError>
+    where
+        Self: Sized;
+
     fn read_bytes(&self, addr: Address, bytes: &mut [u8]) -> Result<(), StorageError>;
     fn write_bytes(&mut self, addr: Address, bytes: &[u8]) -> Result<(), StorageError>;
 
@@ -106,7 +113,28 @@ impl InMemoryStorage {
     }
 }
 
+pub type BoxedStorage = Box<dyn StorageProvider>;
+
 impl StorageProvider for InMemoryStorage {
+    fn from_loadable(loader: &impl Loadable) -> Result<Self, StorageError> {
+        let mut segments = Vec::new();
+        let mut siter = loader.segments();
+
+        while let Some(segm) = siter.next()? {
+            tracing::trace!(
+                "loading segment {} ({}-{}) into in-memory storage",
+                segm.name(),
+                segm.address(),
+                segm.next_address()
+            );
+            segments.push(segm.into_owned());
+        }
+
+        segments.sort_by(|a, b| a.address().cmp(&b.address()));
+
+        Ok(Self { segments })
+    }
+
     fn read_bytes(&self, addr: Address, bytes: &mut [u8]) -> Result<(), StorageError> {
         let mut size = bytes.len();
         let mut offset = 0;

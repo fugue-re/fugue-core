@@ -7,7 +7,7 @@ use fallible_iterator::FallibleIterator;
 use object::{File, Object as ObjectT, ObjectSegment};
 
 use crate::lifter::{Language, Lifter, LifterBuilder};
-use crate::loader::{Loadable, LoadableSegment, LoaderError};
+use crate::loader::{Loadable, LoadableFromBytes, LoadableFromFile, LoadableSegment, LoaderError};
 use crate::memory::SegmentProperties;
 use crate::types::{Address, AttributeMap, BytesOrMapping};
 
@@ -82,6 +82,27 @@ impl<'a> Object<'a> {
     ) -> Result<Self, LoaderError> {
         let data = BytesOrMapping::from_file(path)?;
         Self::new_with(data, attributes)
+    }
+}
+
+impl<'a> LoadableFromBytes<'a> for Object<'a> {
+    fn from_bytes_with(
+        data: impl Into<BytesOrMapping<'a>>,
+        attributes: impl Into<AttributeMap>,
+    ) -> Result<Self, LoaderError> {
+        Self::new_with(data, attributes)
+    }
+}
+
+impl LoadableFromFile for Object<'_> {
+    fn from_file_with(
+        path: impl AsRef<std::path::Path>,
+        attributes: impl Into<AttributeMap>,
+    ) -> Result<Self, LoaderError>
+    where
+        Self: Sized,
+    {
+        Self::from_file_with(path, attributes)
     }
 }
 
