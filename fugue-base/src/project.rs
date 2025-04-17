@@ -4,15 +4,19 @@ use thiserror::Error;
 
 use crate::arch::Arch;
 use crate::lifter::{Language, Lifter};
-use crate::loader::{Loadable, LoadableFromBytes, LoadableSegment, Loader, LoaderError};
+use crate::loader::{
+    ExternSymbols, Loadable, LoadableFromBytes, LoadableSegment, Loader, LoaderError, LocalSymbols,
+};
 use crate::storage::{InMemoryStorage, StorageError, StorageProvider};
 use crate::types::{Address, AttributeMap};
 
 pub struct Project<P: StorageProvider = InMemoryStorage> {
-    arch: Arch,
-    lifter: Lifter,
-    language: &'static Language,
-    storage: P,
+    pub(crate) arch: Arch,
+    pub(crate) lifter: Lifter,
+    pub(crate) language: &'static Language,
+    pub(crate) local_symbols: Option<LocalSymbols>,
+    pub(crate) extern_symbols: Option<ExternSymbols>,
+    pub(crate) storage: P,
 }
 
 #[derive(Debug, Error)]
@@ -27,8 +31,8 @@ impl<P> Project<P>
 where
     P: StorageProvider,
 {
-    pub fn new(loader: &impl Loadable) -> Result<Self, ProjectError> {
-        Self::from_loadable(loader).map_err(ProjectError::from)
+    pub fn new(loadable: &impl Loadable) -> Result<Self, ProjectError> {
+        Self::from_loadable(loadable).map_err(ProjectError::from)
     }
 
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, ProjectError> {
@@ -69,6 +73,14 @@ where
         self.language
     }
 
+    pub fn local_symbols(&self) -> Option<&LocalSymbols> {
+        self.local_symbols.as_ref()
+    }
+
+    pub fn extern_symbols(&self) -> Option<&ExternSymbols> {
+        self.extern_symbols.as_ref()
+    }
+
     pub fn storage(&self) -> &P {
         &self.storage
     }
@@ -88,24 +100,36 @@ where
         let language = loadable.language();
         let storage = P::from_loadable(loadable)?;
 
+        // FIXME: ideally we should not clone these, since we could consume the loadable, but I
+        // can see scenarios where this isn't desirable.
+
+        let local_symbols = loadable.local_symbols().cloned();
+        let extern_symbols = loadable.extern_symbols().cloned();
+
         Ok(Self {
             arch,
             lifter,
             language,
+            local_symbols,
+            extern_symbols,
             storage,
         })
     }
 
-    fn read_bytes(&self, addr: impl Into<Address>, bytes: &mut [u8]) -> Result<(), StorageError> {
+    fn read_bytes(&self, addr: impl Into<Address>, bytes: &mut [u8]) -> Result<usize, StorageError> {
         self.storage.read_bytes(addr, bytes)
     }
 
-    fn write_bytes(&mut self, addr: impl Into<Address>, bytes: &[u8]) -> Result<(), StorageError> {
+    fn write_bytes(&mut self, addr: impl Into<Address>, bytes: &[u8]) -> Result<usize, StorageError> {
         self.storage.write_bytes(addr, bytes)
     }
 
     fn insert_segment(&mut self, segm: LoadableSegment) -> Result<(), StorageError> {
         self.storage.insert_segment(segm)
+    }
+
+    fn contains_segment(&self, at: impl Into<Address>) -> bool {
+        self.storage.contains_segment(at)
     }
 }
 

@@ -1,3 +1,4 @@
+pub mod analysis;
 pub mod arch;
 pub mod loader;
 pub mod lifter;

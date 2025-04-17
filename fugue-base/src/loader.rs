@@ -18,10 +18,13 @@ pub mod elf;
 pub use elf::Elf;
 
 // pub mod macho
+// pub use macho::Macho;
 
 pub mod object;
+pub use object::Object;
 
 // pub mod pe;
+// pub use pe::{Pe, Te};
 
 pub mod shellcode;
 pub use shellcode::Shellcode;

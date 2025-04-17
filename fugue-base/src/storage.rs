@@ -41,10 +41,24 @@ pub trait StorageProvider {
     where
         Self: Sized;
 
-    fn read_bytes(&self, addr: impl Into<Address>, bytes: &mut [u8]) -> Result<(), StorageError>;
-    fn write_bytes(&mut self, addr: impl Into<Address>, bytes: &[u8]) -> Result<(), StorageError>;
+    fn read_bytes(&self, addr: impl Into<Address>, bytes: &mut [u8]) -> Result<usize, StorageError>;
+    fn read_bytes_exact(&self, addr: impl Into<Address>, bytes: &mut [u8]) -> Result<(), StorageError> {
+        if self.read_bytes(addr, bytes)? != bytes.len() {
+            return Err(StorageError::InvalidAddressRange);
+        }
+        Ok(())
+    }
+
+    fn write_bytes(&mut self, addr: impl Into<Address>, bytes: &[u8]) -> Result<usize, StorageError>;
+    fn write_bytes_exact(&mut self, addr: impl Into<Address>, bytes: &[u8]) -> Result<(), StorageError> {
+        if self.write_bytes(addr, bytes)? != bytes.len() {
+            return Err(StorageError::InvalidAddressRange);
+        }
+        Ok(())
+    }
 
     fn insert_segment(&mut self, segm: LoadableSegment) -> Result<(), StorageError>;
+    fn contains_segment(&self, at: impl Into<Address>) -> bool;
 }
 
 pub struct InMemoryStorage {
@@ -135,12 +149,12 @@ impl StorageProvider for InMemoryStorage {
         Ok(Self { segments })
     }
 
-    fn read_bytes(&self, addr: impl Into<Address>, bytes: &mut [u8]) -> Result<(), StorageError> {
+    fn read_bytes(&self, addr: impl Into<Address>, bytes: &mut [u8]) -> Result<usize, StorageError> {
         let mut size = bytes.len();
         let mut offset = 0;
 
         if bytes.is_empty() {
-            return Ok(());
+            return Ok(offset);
         }
 
         let addr = addr.into();
@@ -172,15 +186,15 @@ impl StorageProvider for InMemoryStorage {
             }
         }
 
-        Ok(())
+        Ok(offset)
     }
 
-    fn write_bytes(&mut self, addr: impl Into<Address>, bytes: &[u8]) -> Result<(), StorageError> {
+    fn write_bytes(&mut self, addr: impl Into<Address>, bytes: &[u8]) -> Result<usize, StorageError> {
         let mut size = bytes.len();
         let mut offset = 0;
 
         if bytes.is_empty() {
-            return Ok(());
+            return Ok(offset);
         }
 
         let addr = addr.into();
@@ -212,7 +226,7 @@ impl StorageProvider for InMemoryStorage {
             }
         }
 
-        Ok(())
+        Ok(offset)
     }
 
     fn insert_segment(&mut self, segm: LoadableSegment) -> Result<(), StorageError> {
@@ -228,5 +242,9 @@ impl StorageProvider for InMemoryStorage {
         self.segments.sort_by(|a, b| a.address().cmp(&b.address()));
 
         Ok(())
+    }
+
+    fn contains_segment(&self, at: impl Into<Address>) -> bool {
+        self.position(at.into()).is_some()
     }
 }

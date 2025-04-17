@@ -58,6 +58,7 @@ bitflags::bitflags! {
     }
 }
 
+#[derive(Debug, Clone, Default)]
 pub struct LocalSymbols {
     indices: BTreeMap<usize, Address>,
     sym_to_addr: UstrMap<Address>,
@@ -211,6 +212,7 @@ impl LocalSymbols {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct ExternSymbols {
     base: Address,
     indices: BTreeMap<usize, Address>,
