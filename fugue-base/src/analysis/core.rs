@@ -104,6 +104,17 @@ pub struct AnalysisGroup<S = ()> {
     passes: Vec<Box<dyn AnalysisPass<S>>>,
 }
 
+impl<S, P> FromIterator<P> for AnalysisGroup<S>
+where
+    P: AnalysisPass<S> + 'static,
+{
+    fn from_iter<T: IntoIterator<Item = P>>(iter: T) -> Self {
+        let mut group = AnalysisGroup::new();
+        group.add_passes(iter);
+        group
+    }
+}
+
 impl<S> AnalysisGroup<S> {
     pub fn new() -> Self {
         AnalysisGroup { passes: Vec::new() }
@@ -228,11 +239,23 @@ mod test {
             "cond-hello-world",
             IteratedAnalysis::new(
                 StatefulAnalysis::new(
-                    |_project: &mut Project, state: &mut bool| {
-                        println!("Hello, world; state is {state}!");
-                        *state = !*state;
-                        Ok(())
-                    },
+                    AnalysisGroup::from_iter([
+                        |_project: &mut Project, state: &mut bool| {
+                            println!("Hello, world (step 1); state is {state}!");
+                            *state = !*state;
+                            Ok(())
+                        },
+                        |_project: &mut Project, state: &mut bool| {
+                            println!("Hello, world (step 2); state is {state}!");
+                            *state = !*state;
+                            Ok(())
+                        },
+                        |_project: &mut Project, state: &mut bool| {
+                            println!("Hello, world (step 3); state is {state}!");
+                            *state = !*state;
+                            Ok(())
+                        },
+                    ]),
                     false,
                 ),
                 5,
