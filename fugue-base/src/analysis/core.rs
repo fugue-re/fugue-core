@@ -91,8 +91,8 @@ where
 
 impl AnalysisCondition for usize {
     fn evaluate(&mut self) -> bool {
-        if *self > 0 {
-            *self -= 1;
+        if let Some(nself) = self.checked_sub(1) {
+            *self = nself;
             true
         } else {
             false
@@ -214,6 +214,31 @@ impl<S> AnalysisPass for StatefulAnalysis<S> {
     }
 }
 
+pub trait AnalysisPassExt<S> {
+    fn conditional(self, condition: impl AnalysisCondition + 'static) -> ConditionalAnalysis<S>
+    where
+        Self: AnalysisPass<S> + Sized + 'static,
+    {
+        ConditionalAnalysis::new(self, condition)
+    }
+
+    fn iterated(self, condition: impl AnalysisCondition + 'static) -> IteratedAnalysis<S>
+    where
+        Self: AnalysisPass<S> + Sized + 'static,
+    {
+        IteratedAnalysis::new(self, condition)
+    }
+
+    fn with_state(self, state: S) -> StatefulAnalysis<S>
+    where
+        Self: AnalysisPass<S> + Sized + 'static,
+    {
+        StatefulAnalysis::new(self, state)
+    }
+}
+
+impl<S, P> AnalysisPassExt<S> for P where P: AnalysisPass<S> + Sized + 'static {}
+
 pub type NoState = ();
 
 #[cfg(test)]
@@ -237,29 +262,28 @@ mod test {
 
         analyses.add_pass(
             "cond-hello-world",
-            IteratedAnalysis::new(
-                StatefulAnalysis::new(
-                    AnalysisGroup::from_iter([
-                        |_project: &mut Project, state: &mut bool| {
-                            println!("Hello, world (step 1); state is {state}!");
-                            *state = !*state;
-                            Ok(())
-                        },
-                        |_project: &mut Project, state: &mut bool| {
-                            println!("Hello, world (step 2); state is {state}!");
-                            *state = !*state;
-                            Ok(())
-                        },
-                        |_project: &mut Project, state: &mut bool| {
-                            println!("Hello, world (step 3); state is {state}!");
-                            *state = !*state;
-                            Ok(())
-                        },
-                    ]),
-                    false,
-                ),
-                5,
-            ),
+            AnalysisGroup::from_iter([
+                |_project: &mut Project, state: &mut Vec<usize>| {
+                    println!("Hello, world (step 1); state is {state:?}!");
+                    let val = state.last().copied().unwrap_or(0);
+                    state.push(val + 1);
+                    Ok(())
+                },
+                |_project: &mut Project, state: &mut Vec<usize>| {
+                    println!("Hello, world (step 2); state is {state:?}!");
+                    let val = state.last().copied().unwrap_or(0);
+                    state.push(val + 2);
+                    Ok(())
+                },
+                |_project: &mut Project, state: &mut Vec<usize>| {
+                    println!("Hello, world (step 3); state is {state:?}!");
+                    let val = state.last().copied().unwrap_or(0);
+                    state.push(val + 3);
+                    Ok(())
+                },
+            ])
+            .with_state(Vec::new())
+            .iterated(5),
         );
 
         analyses.analyse(&mut project, "hello-world")?;
