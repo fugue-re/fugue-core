@@ -1,5 +1,6 @@
 use std::collections::{BTreeSet, VecDeque};
 
+use crate::analysis::{AnalysisPass, AnalysisError};
 use crate::project::Project;
 use crate::storage::StorageProvider;
 use crate::types::Address;
@@ -45,8 +46,10 @@ impl ControlFlowRecovery {
         self.candidates
             .extend(addresses.into_iter().map(|addr| addr.into()));
     }
+}
 
-    pub fn analyse(&mut self, project: &mut Project) {
+impl AnalysisPass for ControlFlowRecovery {
+    fn analyse(&mut self, project: &mut Project) -> Result<(), AnalysisError> {
         let mut builder = FunctionBuilder::new();
 
         while let Some(address) = self.candidates.pop_front() {
@@ -58,6 +61,8 @@ impl ControlFlowRecovery {
 
             todo!()
         }
+
+        Ok(())
     }
 }
 
