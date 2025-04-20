@@ -1,7 +1,7 @@
 use std::fmt::{Debug, Display, LowerHex, UpperHex};
 use std::ops::{Add, AddAssign, Sub, SubAssign};
 
-use fugue_lifter::Language;
+use fugue_lifter::{Language, Varnode};
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(transparent)]
@@ -322,6 +322,8 @@ impl SubAssign<u32> for Address {
 }
 
 impl Address {
+    pub const MAX: Self = Self(u64::MAX);
+
     pub const fn zero() -> Self {
         Self(0u64)
     }
@@ -341,5 +343,19 @@ impl Address {
     pub fn range_in_space_bounds(&self, language: &Language, size: usize) -> bool {
         let upper = *self + size;
         *self <= upper && self.in_space_bounds(language) && upper.in_space_bounds(language)
+    }
+}
+
+pub trait ToAddress {
+    fn to_address(&self, language: &Language) -> Option<Address>;
+}
+
+impl ToAddress for Varnode {
+    fn to_address(&self, language: &Language) -> Option<Address> {
+        if language.in_default_space(self) {
+            Some(self.offset().into())
+        } else {
+            None
+        }
     }
 }

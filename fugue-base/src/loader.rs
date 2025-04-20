@@ -30,7 +30,7 @@ pub mod shellcode;
 pub use shellcode::Shellcode;
 
 pub mod symbols;
-pub use symbols::{ExternSymbols, LocalSymbols};
+pub use symbols::{ExternSymbols, LocalSymbols, SymbolEntry};
 
 #[derive(Debug, Error)]
 pub enum LoaderError {

@@ -47,6 +47,39 @@ impl FunctionThunkTemplate {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct SymbolEntry {
+    address: Address,
+    symbol: Option<Ustr>,
+    properties: SymbolProperties,
+}
+
+impl SymbolEntry {
+    pub fn new(
+        address: Address,
+        symbol: impl Into<Option<Ustr>>,
+        properties: SymbolProperties,
+    ) -> Self {
+        Self {
+            address,
+            symbol: symbol.into(),
+            properties,
+        }
+    }
+
+    pub fn address(&self) -> Address {
+        self.address
+    }
+
+    pub fn symbol(&self) -> Option<&Ustr> {
+        self.symbol.as_ref()
+    }
+
+    pub fn properties(&self) -> SymbolProperties {
+        self.properties
+    }
+}
+
 bitflags::bitflags! {
     #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct SymbolProperties: u8 {
@@ -197,10 +230,14 @@ impl LocalSymbols {
 
     pub fn iter<'a>(
         &'a self,
-    ) -> impl Iterator<Item = (Address, Option<Ustr>, SymbolProperties)> + 'a {
+    ) -> impl Iterator<Item = SymbolEntry> + 'a {
         self.addr_to_sym
             .iter()
-            .map(|(&addr, (sym, props))| (addr, *sym, props.get()))
+            .map(|(&addr, (sym, props))| SymbolEntry {
+                address: addr,
+                symbol: *sym,
+                properties: props.get(),
+            })
     }
 
     pub fn is_empty(&self) -> bool {
@@ -354,10 +391,14 @@ impl ExternSymbols {
 
     pub fn iter<'a>(
         &'a self,
-    ) -> impl Iterator<Item = (Address, Option<Ustr>, SymbolProperties)> + 'a {
+    ) -> impl Iterator<Item = SymbolEntry> + 'a {
         self.addr_to_sym
             .iter()
-            .map(|(&addr, (sym, props))| (addr, *sym, props.get()))
+            .map(|(&addr, (sym, props))| SymbolEntry {
+                address: addr,
+                symbol: *sym,
+                properties: props.get(),
+            })
     }
 
     pub fn template(&self) -> &FunctionThunkTemplate {

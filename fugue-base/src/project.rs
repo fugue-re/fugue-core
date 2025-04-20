@@ -6,6 +6,7 @@ use crate::arch::Arch;
 use crate::lifter::{Language, Lifter};
 use crate::loader::{
     ExternSymbols, Loadable, LoadableFromBytes, LoadableSegment, Loader, LoaderError, LocalSymbols,
+    SymbolEntry,
 };
 use crate::storage::{InMemoryStorage, StorageError, StorageProvider};
 use crate::types::{Address, AttributeMap};
@@ -17,6 +18,24 @@ pub struct Project<P: StorageProvider = InMemoryStorage> {
     pub(crate) local_symbols: Option<LocalSymbols>,
     pub(crate) extern_symbols: Option<ExternSymbols>,
     pub(crate) storage: P,
+}
+
+pub struct ProjectRef<'a, P: StorageProvider> {
+    pub arch: &'a Arch,
+    pub lifter: &'a Lifter,
+    pub language: &'static Language,
+    pub local_symbols: Option<&'a LocalSymbols>,
+    pub extern_symbols: Option<&'a ExternSymbols>,
+    pub storage: &'a P,
+}
+
+pub struct ProjectMut<'a, P: StorageProvider> {
+    pub arch: &'a mut Arch,
+    pub lifter: &'a mut Lifter,
+    pub language: &'static Language,
+    pub local_symbols: Option<&'a mut LocalSymbols>,
+    pub extern_symbols: Option<&'a mut ExternSymbols>,
+    pub storage: &'a mut P,
 }
 
 #[derive(Debug, Error)]
@@ -69,6 +88,10 @@ where
         &self.lifter
     }
 
+    pub fn lifter_mut(&mut self) -> &mut Lifter {
+        &mut self.lifter
+    }
+
     pub fn language(&self) -> &'static Language {
         self.language
     }
@@ -77,8 +100,22 @@ where
         self.local_symbols.as_ref()
     }
 
+    pub fn iter_local_symbols<'a>(&'a self) -> impl Iterator<Item = SymbolEntry> + 'a {
+        self.local_symbols
+            .as_ref()
+            .into_iter()
+            .flat_map(|symbols| symbols.iter())
+    }
+
     pub fn extern_symbols(&self) -> Option<&ExternSymbols> {
         self.extern_symbols.as_ref()
+    }
+
+    pub fn iter_extern_symbols<'a>(&'a self) -> impl Iterator<Item = SymbolEntry> + 'a {
+        self.extern_symbols
+            .as_ref()
+            .into_iter()
+            .flat_map(|symbols| symbols.iter())
     }
 
     pub fn storage(&self) -> &P {
@@ -87,6 +124,28 @@ where
 
     pub fn storage_mut(&mut self) -> &mut P {
         &mut self.storage
+    }
+
+    pub fn fields(&self) -> ProjectRef<P> {
+        ProjectRef {
+            arch: &self.arch,
+            lifter: &self.lifter,
+            language: self.language,
+            local_symbols: self.local_symbols.as_ref(),
+            extern_symbols: self.extern_symbols.as_ref(),
+            storage: &self.storage,
+        }
+    }
+
+    pub fn fields_mut(&mut self) -> ProjectMut<P> {
+        ProjectMut {
+            arch: &mut self.arch,
+            lifter: &mut self.lifter,
+            language: self.language,
+            local_symbols: self.local_symbols.as_mut(),
+            extern_symbols: self.extern_symbols.as_mut(),
+            storage: &mut self.storage,
+        }
     }
 }
 
@@ -116,11 +175,19 @@ where
         })
     }
 
-    fn read_bytes(&self, addr: impl Into<Address>, bytes: &mut [u8]) -> Result<usize, StorageError> {
+    fn read_bytes(
+        &self,
+        addr: impl Into<Address>,
+        bytes: &mut [u8],
+    ) -> Result<usize, StorageError> {
         self.storage.read_bytes(addr, bytes)
     }
 
-    fn write_bytes(&mut self, addr: impl Into<Address>, bytes: &[u8]) -> Result<usize, StorageError> {
+    fn write_bytes(
+        &mut self,
+        addr: impl Into<Address>,
+        bytes: &[u8],
+    ) -> Result<usize, StorageError> {
         self.storage.write_bytes(addr, bytes)
     }
 
