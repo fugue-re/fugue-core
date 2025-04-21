@@ -56,8 +56,18 @@ impl AnalysisPass for ControlFlowRecovery {
     fn analyse(&mut self, project: &mut Project) -> Result<(), AnalysisError> {
         let mut builder = FunctionBuilder::new();
 
+        if let Some(entry) = project.entry() {
+            tracing::debug!("entry point: {entry}");
+            self.add_candidate(entry);
+        }
+
         for symbol in project.iter_local_symbols() {
-            builder.add_candidate(symbol.address());
+            tracing::debug!(
+                "local function: {} (name: {:?})",
+                symbol.address(),
+                symbol.symbol()
+            );
+            self.add_candidate(symbol.address());
         }
 
         while let Some(address) = self.candidates.pop_front() {
@@ -66,8 +76,6 @@ impl AnalysisPass for ControlFlowRecovery {
             }
 
             let _f = builder.analyse(project, address);
-
-            todo!()
         }
 
         Ok(())
@@ -129,22 +137,28 @@ impl FunctionBuilder {
                 '_inner: loop {
                     let address = block + offset;
 
+                    tracing::debug!("lifting at {address}");
+
                     // If we've already disassembled this instruction select the next candidate,
                     // otherwise get the entry ready for update.
                     let Entry::Vacant(entry) = insns.entry(address) else {
                         continue 'outer;
                     };
 
-                    let Ok(size) = project.storage.read_bytes(block, &mut bytes) else {
+                    let Ok(size) = project.storage.read_bytes(address, &mut bytes) else {
                         tracing::trace!("skipping {block}: not mapped");
                         continue;
                     };
+
+                    tracing::debug!("lifting {address}: {:?} ({size})", bytes);
 
                     let bytes = &bytes[..size];
 
                     match project.lifter.lift_insn(address, bytes) {
                         Ok(insn) => {
                             let insn = entry.insert(insn);
+
+                            tracing::trace!("{address}: {:?}", insn.properties());
 
                             // Explicit control-flow
                             if insn.is_flow() {
@@ -175,9 +189,10 @@ impl FunctionBuilder {
 
                             offset += insn.len();
                         }
-                        Err(_) => {
+                        Err(e) => {
                             // flows into bad data??
                             // self.local_targets.remove(&address);
+                            tracing::debug!("skipping {address}; lifting failed: {e}");
                             continue 'outer;
                         }
                     }
@@ -216,5 +231,30 @@ impl FunctionBuilder {
             // due to jump table resolution.
             break;
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::analysis::AnalysisPass;
+
+    #[test]
+    fn test_control_flow_recovery() -> Result<(), Box<dyn std::error::Error>> {
+        let subscriber = tracing_subscriber::fmt()
+            .with_env_filter(tracing_subscriber::filter::EnvFilter::from_default_env())
+            .with_line_number(true)
+            .with_file(true)
+            .with_span_events(tracing_subscriber::fmt::format::FmtSpan::CLOSE)
+            .finish();
+
+        tracing::subscriber::with_default(subscriber, || {
+            let mut project = Project::from_file("tests/ls.elf")?;
+            let mut cfr = ControlFlowRecovery::new();
+
+            cfr.analyse(&mut project)?;
+
+            Ok(())
+        })
     }
 }

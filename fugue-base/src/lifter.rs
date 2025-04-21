@@ -178,7 +178,11 @@ impl LifterExt for Lifter {
         let targets =
             LiftedInsnTarget::from_lifted(self.language(), address, next_address, &operations);
 
-        let properties = LiftedInsnProperties::from_targets(&targets);
+        let mut properties = LiftedInsnProperties::from_targets(&targets);
+
+        if operations.is_empty() {
+            properties |= LiftedInsnProperties::NOP;
+        }
 
         Ok(LiftedInsn {
             address,
@@ -353,6 +357,11 @@ impl LiftedInsnTarget {
                 },
             ));
         };
+
+        if op_count == 0 {
+            nfall(0, nlocation(1), targets);
+            return;
+        }
 
         for (i, stmt) in opns.iter().enumerate() {
             let i = i as u16;

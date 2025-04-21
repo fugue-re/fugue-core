@@ -86,7 +86,7 @@ impl<'a> Shellcode<'a> {
 }
 
 impl Loadable for Shellcode<'_> {
-    fn entry_address(&self) -> Option<Address> {
+    fn entry(&self) -> Option<Address> {
         Some(self.address())
     }
 

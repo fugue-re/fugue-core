@@ -15,6 +15,7 @@ pub struct Project<P: StorageProvider = InMemoryStorage> {
     pub(crate) arch: Arch,
     pub(crate) lifter: Lifter,
     pub(crate) language: &'static Language,
+    pub(crate) entry: Option<Address>,
     pub(crate) local_symbols: Option<LocalSymbols>,
     pub(crate) extern_symbols: Option<ExternSymbols>,
     pub(crate) storage: P,
@@ -24,6 +25,7 @@ pub struct ProjectRef<'a, P: StorageProvider> {
     pub arch: &'a Arch,
     pub lifter: &'a Lifter,
     pub language: &'static Language,
+    pub entry: Option<Address>,
     pub local_symbols: Option<&'a LocalSymbols>,
     pub extern_symbols: Option<&'a ExternSymbols>,
     pub storage: &'a P,
@@ -33,6 +35,7 @@ pub struct ProjectMut<'a, P: StorageProvider> {
     pub arch: &'a mut Arch,
     pub lifter: &'a mut Lifter,
     pub language: &'static Language,
+    pub entry: Option<Address>,
     pub local_symbols: Option<&'a mut LocalSymbols>,
     pub extern_symbols: Option<&'a mut ExternSymbols>,
     pub storage: &'a mut P,
@@ -96,6 +99,10 @@ where
         self.language
     }
 
+    pub fn entry(&self) -> Option<Address> {
+        self.entry
+    }
+
     pub fn local_symbols(&self) -> Option<&LocalSymbols> {
         self.local_symbols.as_ref()
     }
@@ -131,6 +138,7 @@ where
             arch: &self.arch,
             lifter: &self.lifter,
             language: self.language,
+            entry: self.entry,
             local_symbols: self.local_symbols.as_ref(),
             extern_symbols: self.extern_symbols.as_ref(),
             storage: &self.storage,
@@ -142,6 +150,7 @@ where
             arch: &mut self.arch,
             lifter: &mut self.lifter,
             language: self.language,
+            entry: self.entry,
             local_symbols: self.local_symbols.as_mut(),
             extern_symbols: self.extern_symbols.as_mut(),
             storage: &mut self.storage,
@@ -169,6 +178,7 @@ where
             arch,
             lifter,
             language,
+            entry: loadable.entry(),
             local_symbols,
             extern_symbols,
             storage,

@@ -107,7 +107,7 @@ impl LoadableFromFile for Object<'_> {
 }
 
 impl Loadable for Object<'_> {
-    fn entry_address(&self) -> Option<Address> {
+    fn entry(&self) -> Option<Address> {
         Some(self.object.borrow_view().entry().into())
     }
 

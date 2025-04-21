@@ -215,7 +215,7 @@ pub trait Loadable {
 
     fn attributes_mut(&mut self) -> &mut AttributeMap;
 
-    fn entry_address(&self) -> Option<Address>;
+    fn entry(&self) -> Option<Address>;
 
     fn architecture(&self) -> Arch {
         Arch::new(self.language())
@@ -305,10 +305,10 @@ impl LoadableFromFile for Loader<'_> {
 }
 
 impl Loadable for Loader<'_> {
-    fn entry_address(&self) -> Option<Address> {
+    fn entry(&self) -> Option<Address> {
         match self {
-            Self::Elf(elf) => elf.entry_address(),
-            Self::Object(object) => object.entry_address(),
+            Self::Elf(elf) => elf.entry(),
+            Self::Object(object) => object.entry(),
         }
     }
 

@@ -41,16 +41,29 @@ pub trait StorageProvider {
     where
         Self: Sized;
 
-    fn read_bytes(&self, addr: impl Into<Address>, bytes: &mut [u8]) -> Result<usize, StorageError>;
-    fn read_bytes_exact(&self, addr: impl Into<Address>, bytes: &mut [u8]) -> Result<(), StorageError> {
+    fn read_bytes(&self, addr: impl Into<Address>, bytes: &mut [u8])
+        -> Result<usize, StorageError>;
+    fn read_bytes_exact(
+        &self,
+        addr: impl Into<Address>,
+        bytes: &mut [u8],
+    ) -> Result<(), StorageError> {
         if self.read_bytes(addr, bytes)? != bytes.len() {
             return Err(StorageError::InvalidAddressRange);
         }
         Ok(())
     }
 
-    fn write_bytes(&mut self, addr: impl Into<Address>, bytes: &[u8]) -> Result<usize, StorageError>;
-    fn write_bytes_exact(&mut self, addr: impl Into<Address>, bytes: &[u8]) -> Result<(), StorageError> {
+    fn write_bytes(
+        &mut self,
+        addr: impl Into<Address>,
+        bytes: &[u8],
+    ) -> Result<usize, StorageError>;
+    fn write_bytes_exact(
+        &mut self,
+        addr: impl Into<Address>,
+        bytes: &[u8],
+    ) -> Result<(), StorageError> {
         if self.write_bytes(addr, bytes)? != bytes.len() {
             return Err(StorageError::InvalidAddressRange);
         }
@@ -102,7 +115,7 @@ impl InMemoryStorage {
         Some(
             self.segments[first..]
                 .iter()
-                .take_while(move |segm| segm.last_address() <= last_addr),
+                .take_while(move |segm| last_addr <= segm.last_address()),
         )
     }
 
@@ -122,7 +135,7 @@ impl InMemoryStorage {
         Some(
             self.segments[first..]
                 .iter_mut()
-                .take_while(move |segm| segm.last_address() <= last_addr),
+                .take_while(move |segm| last_addr <= segm.last_address()),
         )
     }
 }
@@ -149,15 +162,21 @@ impl StorageProvider for InMemoryStorage {
         Ok(Self { segments })
     }
 
-    fn read_bytes(&self, addr: impl Into<Address>, bytes: &mut [u8]) -> Result<usize, StorageError> {
+    fn read_bytes(
+        &self,
+        addr: impl Into<Address>,
+        bytes: &mut [u8],
+    ) -> Result<usize, StorageError> {
         let mut size = bytes.len();
         let mut offset = 0;
+
+        let addr = addr.into();
+
+        tracing::trace!("reading {size} bytes from address {addr}");
 
         if bytes.is_empty() {
             return Ok(offset);
         }
-
-        let addr = addr.into();
 
         let segms = self
             .overlapping(addr, size)
@@ -170,7 +189,7 @@ impl StorageProvider for InMemoryStorage {
             let segm_last_addr = segm.last_address();
 
             let read_offset = usize::from(read_addr - segm_addr);
-            let read_size = size.min(usize::from(segm_last_addr - read_addr)) as usize + 1;
+            let read_size = size.min(usize::from(segm_last_addr - read_addr) + 1);
 
             let segm_bytes = segm
                 .view_bytes(read_offset, read_size)
@@ -189,7 +208,11 @@ impl StorageProvider for InMemoryStorage {
         Ok(offset)
     }
 
-    fn write_bytes(&mut self, addr: impl Into<Address>, bytes: &[u8]) -> Result<usize, StorageError> {
+    fn write_bytes(
+        &mut self,
+        addr: impl Into<Address>,
+        bytes: &[u8],
+    ) -> Result<usize, StorageError> {
         let mut size = bytes.len();
         let mut offset = 0;
 
@@ -210,7 +233,7 @@ impl StorageProvider for InMemoryStorage {
             let segm_last_addr = segm.last_address();
 
             let write_offset = usize::from(write_addr - segm_addr);
-            let write_size = size.min(usize::from(segm_last_addr - write_addr)) as usize + 1;
+            let write_size = size.min(usize::from(segm_last_addr - write_addr) + 1);
 
             let segm_bytes = segm
                 .view_bytes_mut(write_offset, write_size)

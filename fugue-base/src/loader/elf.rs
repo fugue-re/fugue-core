@@ -1136,7 +1136,7 @@ impl LoadableFromFile for Elf<'_> {
 }
 
 impl Loadable for Elf<'_> {
-    fn entry_address(&self) -> Option<Address> {
+    fn entry(&self) -> Option<Address> {
         Some(with_elf!(
             self.object.borrow_view(),
             elf | elf.entry().into()
@@ -1234,12 +1234,20 @@ mod test {
             }
             tracing::info!("architecture: {}", elf.architecture());
 
-            for (addr, sym, props) in elf.locals().iter() {
-                tracing::info!("local symbol {sym:?} at {addr}: {props:?}");
+            for sym in elf.locals().iter() {
+                let symbol = sym.symbol();
+                let address = sym.address();
+                let properties = sym.properties();
+
+                tracing::info!("local symbol {symbol:?} at {address}: {properties:?}");
             }
 
-            for (addr, sym, props) in elf.externs().iter() {
-                tracing::info!("external symbol {sym:?} at {addr}: {props:?}");
+            for sym in elf.externs().iter() {
+                let symbol = sym.symbol();
+                let address = sym.address();
+                let properties = sym.properties();
+
+                tracing::info!("external symbol {symbol:?} at {address}: {properties:?}");
             }
 
             Ok(())
@@ -1268,12 +1276,20 @@ mod test {
             }
             tracing::info!("architecture: {}", elf.architecture());
 
-            for (addr, sym, props) in elf.locals().iter() {
-                tracing::info!("local symbol {sym:?} at {addr}: {props:?}");
+            for sym in elf.locals().iter() {
+                let symbol = sym.symbol();
+                let address = sym.address();
+                let properties = sym.properties();
+
+                tracing::info!("local symbol {symbol:?} at {address}: {properties:?}");
             }
 
-            for (addr, sym, props) in elf.externs().iter() {
-                tracing::info!("external symbol {sym:?} at {addr}: {props:?}");
+            for sym in elf.externs().iter() {
+                let symbol = sym.symbol();
+                let address = sym.address();
+                let properties = sym.properties();
+
+                tracing::info!("external symbol {symbol:?} at {address}: {properties:?}");
             }
 
             Ok(())
