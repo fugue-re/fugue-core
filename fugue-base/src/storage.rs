@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use fallible_iterator::FallibleIterator;
 use thiserror::Error;
 
@@ -37,12 +39,18 @@ impl StorageError {
 }
 
 pub trait StorageProvider {
+    // Creates a new storage provider from the given loadable object.
     fn from_loadable(loader: &impl Loadable) -> Result<Self, StorageError>
     where
         Self: Sized;
 
+    // Reads the given bytes from the storage at the specified address; returns the number of bytes
+    // read.
     fn read_bytes(&self, addr: impl Into<Address>, bytes: &mut [u8])
         -> Result<usize, StorageError>;
+
+    // Reads the given bytes from the storage at the specified address; fails if not all bytes can
+    // be read, e.g., due to gaps or lack of segment coverage.
     fn read_bytes_exact(
         &self,
         addr: impl Into<Address>,
@@ -54,11 +62,16 @@ pub trait StorageProvider {
         Ok(())
     }
 
+    // Writes the given bytes to the storage at the specified address; returns the number of bytes
+    // written.
     fn write_bytes(
         &mut self,
         addr: impl Into<Address>,
         bytes: &[u8],
     ) -> Result<usize, StorageError>;
+
+    // Writes the given bytes to the storage at the specified address; fails if not all bytes can
+    // be written, e.g., due to gaps or lack of segment coverage.
     fn write_bytes_exact(
         &mut self,
         addr: impl Into<Address>,
@@ -70,8 +83,61 @@ pub trait StorageProvider {
         Ok(())
     }
 
-    fn insert_segment(&mut self, segm: LoadableSegment) -> Result<(), StorageError>;
+    // Returns true if the storage has a segment that contaings the given address.
     fn contains_segment(&self, at: impl Into<Address>) -> bool;
+
+    // Returns the segment that contains the given address, if any.
+    fn find_segment_containing(
+        &self,
+        addr: impl Into<Address>,
+    ) -> Result<Cow<LoadableSegment<'_>>, StorageError>;
+
+    // Returns a view of length `size` over the bytes of the segment containing the given address.
+    fn view_segment_bytes(
+        &self,
+        addr: impl Into<Address>,
+        size: usize,
+    ) -> Result<Cow<[u8]>, StorageError> {
+        let addr = addr.into();
+        let segm = self.find_segment_containing(addr)?;
+
+        let offset = usize::from(addr - segm.address());
+        let bytes = match segm {
+            Cow::Borrowed(segm) => Cow::Borrowed(
+                segm.view_bytes(offset, size)
+                    .ok_or(StorageError::InvalidSize)?,
+            ),
+            Cow::Owned(segm) => Cow::Owned(
+                segm.view_bytes(offset, size)
+                    .ok_or(StorageError::InvalidSize)?
+                    .to_owned(),
+            ),
+        };
+
+        Ok(bytes)
+    }
+
+    // Returns a view over the bytes of the segment containing the given address, starting from the
+    // given address.
+    fn view_segment_bytes_from(&self, addr: impl Into<Address>) -> Result<Cow<[u8]>, StorageError> {
+        let addr = addr.into();
+        let segm = self.find_segment_containing(addr)?;
+
+        let offset = usize::from(addr - segm.address());
+        let bytes = match segm {
+            Cow::Borrowed(segm) => Cow::Borrowed(
+                segm.view_bytes_from(offset)
+                    .ok_or(StorageError::InvalidSize)?,
+            ),
+            Cow::Owned(segm) => Cow::Owned(
+                segm.view_bytes_from(offset)
+                    .ok_or(StorageError::InvalidSize)?
+                    .to_owned(),
+            ),
+        };
+
+        Ok(bytes)
+    }
 }
 
 pub struct InMemoryStorage {
@@ -252,22 +318,17 @@ impl StorageProvider for InMemoryStorage {
         Ok(offset)
     }
 
-    fn insert_segment(&mut self, segm: LoadableSegment) -> Result<(), StorageError> {
-        if segm.len() == 0 {
-            return Err(StorageError::InvalidSize);
-        }
-
-        if self.position(segm.address()).is_some() || self.position(segm.last_address()).is_some() {
-            return Err(StorageError::InvalidAddress);
-        }
-
-        self.segments.push(segm.into_owned());
-        self.segments.sort_by(|a, b| a.address().cmp(&b.address()));
-
-        Ok(())
-    }
-
     fn contains_segment(&self, at: impl Into<Address>) -> bool {
         self.position(at.into()).is_some()
+    }
+
+    fn find_segment_containing(
+        &self,
+        addr: impl Into<Address>,
+    ) -> Result<Cow<LoadableSegment<'_>>, StorageError> {
+        let addr = addr.into();
+        self.position(addr)
+            .map(|pos| Cow::Borrowed(&self.segments[pos]))
+            .ok_or(StorageError::InvalidAddress)
     }
 }

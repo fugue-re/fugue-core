@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::path::Path;
 
 use thiserror::Error;
@@ -201,12 +202,27 @@ where
         self.storage.write_bytes(addr, bytes)
     }
 
-    fn insert_segment(&mut self, segm: LoadableSegment) -> Result<(), StorageError> {
-        self.storage.insert_segment(segm)
-    }
-
     fn contains_segment(&self, at: impl Into<Address>) -> bool {
         self.storage.contains_segment(at)
+    }
+
+    fn find_segment_containing(
+        &self,
+        addr: impl Into<Address>,
+    ) -> Result<Cow<LoadableSegment<'_>>, StorageError> {
+        self.storage.find_segment_containing(addr)
+    }
+
+    fn view_segment_bytes(
+        &self,
+        addr: impl Into<Address>,
+        size: usize,
+    ) -> Result<Cow<[u8]>, StorageError> {
+        self.storage.view_segment_bytes(addr, size)
+    }
+
+    fn view_segment_bytes_from(&self, addr: impl Into<Address>) -> Result<Cow<[u8]>, StorageError> {
+        self.storage.view_segment_bytes_from(addr)
     }
 }
 

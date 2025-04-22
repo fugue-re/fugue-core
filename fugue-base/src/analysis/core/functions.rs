@@ -76,6 +76,8 @@ impl AnalysisPass for ControlFlowRecovery {
             }
 
             let _f = builder.analyse(project, address);
+
+            self.add_candidates(builder.global_targets.iter().copied());
         }
 
         Ok(())

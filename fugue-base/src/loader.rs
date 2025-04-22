@@ -151,6 +151,15 @@ impl LoadableSegment<'_> {
         }
     }
 
+    pub fn view_bytes_from(&self, offset: usize) -> Option<&[u8]> {
+        let len = self.bytes.len();
+        if offset >= len {
+            return None;
+        }
+
+        Some(&self.bytes[offset..])
+    }
+
     pub fn view_bytes_mut(&mut self, offset: usize, count: usize) -> Option<&mut [u8]> {
         let len = self.bytes.len();
         if offset >= len {
@@ -166,6 +175,15 @@ impl LoadableSegment<'_> {
         } else {
             None
         }
+    }
+
+    pub fn view_bytes_from_mut(&mut self, offset: usize) -> Option<&mut [u8]> {
+        let len = self.bytes.len();
+        if offset >= len {
+            return None;
+        }
+
+        Some(&mut self.bytes.to_mut()[offset..])
     }
 
     pub fn into_owned(self) -> LoadableSegment<'static> {
