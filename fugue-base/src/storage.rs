@@ -7,6 +7,9 @@ use crate::loader::{Loadable, LoadableSegment, LoaderError};
 use crate::types::Address;
 
 pub mod mdbx;
+pub mod memmap;
+
+pub use memmap::{MemoryMappedStorage, MemoryMappedStorageError};
 
 #[derive(Debug, Error)]
 pub enum StorageError {
@@ -38,24 +41,21 @@ impl StorageError {
     }
 }
 
-pub trait StorageProvider {
+pub trait StorageProviderFromLoadable: StorageProvider + 'static {
     // Creates a new storage provider from the given loadable object.
     fn from_loadable(loader: &impl Loadable) -> Result<Self, StorageError>
     where
         Self: Sized;
+}
 
+pub trait StorageProvider {
     // Reads the given bytes from the storage at the specified address; returns the number of bytes
     // read.
-    fn read_bytes(&self, addr: impl Into<Address>, bytes: &mut [u8])
-        -> Result<usize, StorageError>;
+    fn read_bytes(&self, addr: Address, bytes: &mut [u8]) -> Result<usize, StorageError>;
 
     // Reads the given bytes from the storage at the specified address; fails if not all bytes can
     // be read, e.g., due to gaps or lack of segment coverage.
-    fn read_bytes_exact(
-        &self,
-        addr: impl Into<Address>,
-        bytes: &mut [u8],
-    ) -> Result<(), StorageError> {
+    fn read_bytes_exact(&self, addr: Address, bytes: &mut [u8]) -> Result<(), StorageError> {
         if self.read_bytes(addr, bytes)? != bytes.len() {
             return Err(StorageError::InvalidAddressRange);
         }
@@ -64,19 +64,11 @@ pub trait StorageProvider {
 
     // Writes the given bytes to the storage at the specified address; returns the number of bytes
     // written.
-    fn write_bytes(
-        &mut self,
-        addr: impl Into<Address>,
-        bytes: &[u8],
-    ) -> Result<usize, StorageError>;
+    fn write_bytes(&mut self, addr: Address, bytes: &[u8]) -> Result<usize, StorageError>;
 
     // Writes the given bytes to the storage at the specified address; fails if not all bytes can
     // be written, e.g., due to gaps or lack of segment coverage.
-    fn write_bytes_exact(
-        &mut self,
-        addr: impl Into<Address>,
-        bytes: &[u8],
-    ) -> Result<(), StorageError> {
+    fn write_bytes_exact(&mut self, addr: Address, bytes: &[u8]) -> Result<(), StorageError> {
         if self.write_bytes(addr, bytes)? != bytes.len() {
             return Err(StorageError::InvalidAddressRange);
         }
@@ -84,20 +76,16 @@ pub trait StorageProvider {
     }
 
     // Returns true if the storage has a segment that contaings the given address.
-    fn contains_segment(&self, at: impl Into<Address>) -> bool;
+    fn contains_segment(&self, at: Address) -> bool;
 
     // Returns the segment that contains the given address, if any.
     fn find_segment_containing(
         &self,
-        addr: impl Into<Address>,
+        addr: Address,
     ) -> Result<Cow<LoadableSegment<'_>>, StorageError>;
 
     // Returns a view of length `size` over the bytes of the segment containing the given address.
-    fn view_segment_bytes(
-        &self,
-        addr: impl Into<Address>,
-        size: usize,
-    ) -> Result<Cow<[u8]>, StorageError> {
+    fn view_segment_bytes(&self, addr: Address, size: usize) -> Result<Cow<[u8]>, StorageError> {
         let addr = addr.into();
         let segm = self.find_segment_containing(addr)?;
 
@@ -119,7 +107,7 @@ pub trait StorageProvider {
 
     // Returns a view over the bytes of the segment containing the given address, starting from the
     // given address.
-    fn view_segment_bytes_from(&self, addr: impl Into<Address>) -> Result<Cow<[u8]>, StorageError> {
+    fn view_segment_bytes_from(&self, addr: Address) -> Result<Cow<[u8]>, StorageError> {
         let addr = addr.into();
         let segm = self.find_segment_containing(addr)?;
 
@@ -140,17 +128,56 @@ pub trait StorageProvider {
     }
 }
 
+impl StorageProvider for Box<dyn StorageProvider> {
+    fn read_bytes(&self, addr: Address, bytes: &mut [u8]) -> Result<usize, StorageError> {
+        self.as_ref().read_bytes(addr, bytes)
+    }
+
+    fn read_bytes_exact(
+        &self,
+        addr: Address,
+        bytes: &mut [u8],
+    ) -> Result<(), StorageError> {
+        self.as_ref().read_bytes_exact(addr, bytes)
+    }
+
+    fn write_bytes(&mut self, addr: Address, bytes: &[u8]) -> Result<usize, StorageError> {
+        self.as_mut().write_bytes(addr, bytes)
+    }
+
+    fn write_bytes_exact(
+        &mut self,
+        addr: Address,
+        bytes: &[u8],
+    ) -> Result<(), StorageError> {
+        self.as_mut().write_bytes_exact(addr, bytes)
+    }
+
+    fn contains_segment(&self, at: Address) -> bool {
+        self.as_ref().contains_segment(at)
+    }
+
+    fn find_segment_containing(
+        &self,
+        addr: Address,
+    ) -> Result<Cow<LoadableSegment<'_>>, StorageError> {
+        self.as_ref().find_segment_containing(addr)
+    }
+
+    fn view_segment_bytes(&self, addr: Address, size: usize) -> Result<Cow<[u8]>, StorageError> {
+        self.as_ref().view_segment_bytes(addr, size)
+    }
+
+    fn view_segment_bytes_from(&self, addr: Address) -> Result<Cow<[u8]>, StorageError> {
+        self.as_ref().view_segment_bytes_from(addr)
+    }
+}
+
 pub struct InMemoryStorage {
     segments: Vec<LoadableSegment<'static>>,
 }
 
 impl InMemoryStorage {
-    pub fn new() -> Self {
-        Self {
-            segments: Vec::new(),
-        }
-    }
-
     fn position(&self, addr: Address) -> Option<usize> {
         self.segments
             .binary_search_by(|segm| {
@@ -165,50 +192,60 @@ impl InMemoryStorage {
             .ok()
     }
 
-    pub fn overlapping(
+    fn overlapping(
         &self,
         addr: Address,
         size: usize,
     ) -> Option<impl Iterator<Item = &LoadableSegment<'static>>> {
-        let last_addr = addr + size as u64;
+        let last_addr = addr + size;
 
         if last_addr < addr {
             return None;
         }
 
         let first = self.position(addr)?;
+        let last = self.position(last_addr)?;
 
-        Some(
-            self.segments[first..]
-                .iter()
-                .take_while(move |segm| last_addr <= segm.last_address()),
-        )
+        let view = &self.segments[first..last + 1];
+
+        for i in 0..view.len() - 1usize {
+            if view[i].next_address() != view[i + 1].address() {
+                return None;
+            }
+        }
+
+        Some(view.iter())
     }
 
-    pub fn overlapping_mut<'a>(
+    fn overlapping_mut<'a>(
         &'a mut self,
         addr: Address,
         size: usize,
     ) -> Option<impl Iterator<Item = &'a mut LoadableSegment<'static>> + 'a> {
-        let last_addr = addr + size as u64;
+        let last_addr = addr + size;
 
         if last_addr < addr {
             return None;
         }
 
         let first = self.position(addr)?;
+        let last = self.position(last_addr)?;
 
-        Some(
-            self.segments[first..]
-                .iter_mut()
-                .take_while(move |segm| last_addr <= segm.last_address()),
-        )
+        let view = &mut self.segments[first..last + 1];
+
+        for i in 0..view.len() - 1usize {
+            if view[i].next_address() != view[i + 1].address() {
+                return None;
+            }
+        }
+
+        Some(view.iter_mut())
     }
 }
 
 pub type BoxedStorage = Box<dyn StorageProvider>;
 
-impl StorageProvider for InMemoryStorage {
+impl StorageProviderFromLoadable for InMemoryStorage {
     fn from_loadable(loader: &impl Loadable) -> Result<Self, StorageError> {
         let mut segments = Vec::new();
         let mut siter = loader.segments();
@@ -227,12 +264,10 @@ impl StorageProvider for InMemoryStorage {
 
         Ok(Self { segments })
     }
+}
 
-    fn read_bytes(
-        &self,
-        addr: impl Into<Address>,
-        bytes: &mut [u8],
-    ) -> Result<usize, StorageError> {
+impl StorageProvider for InMemoryStorage {
+    fn read_bytes(&self, addr: Address, bytes: &mut [u8]) -> Result<usize, StorageError> {
         let mut size = bytes.len();
         let mut offset = 0;
 
@@ -274,19 +309,13 @@ impl StorageProvider for InMemoryStorage {
         Ok(offset)
     }
 
-    fn write_bytes(
-        &mut self,
-        addr: impl Into<Address>,
-        bytes: &[u8],
-    ) -> Result<usize, StorageError> {
+    fn write_bytes(&mut self, addr: Address, bytes: &[u8]) -> Result<usize, StorageError> {
         let mut size = bytes.len();
         let mut offset = 0;
 
         if bytes.is_empty() {
             return Ok(offset);
         }
-
-        let addr = addr.into();
 
         let segms = self
             .overlapping_mut(addr, size)
@@ -318,15 +347,14 @@ impl StorageProvider for InMemoryStorage {
         Ok(offset)
     }
 
-    fn contains_segment(&self, at: impl Into<Address>) -> bool {
-        self.position(at.into()).is_some()
+    fn contains_segment(&self, at: Address) -> bool {
+        self.position(at).is_some()
     }
 
     fn find_segment_containing(
         &self,
-        addr: impl Into<Address>,
+        addr: Address,
     ) -> Result<Cow<LoadableSegment<'_>>, StorageError> {
-        let addr = addr.into();
         self.position(addr)
             .map(|pos| Cow::Borrowed(&self.segments[pos]))
             .ok_or(StorageError::InvalidAddress)

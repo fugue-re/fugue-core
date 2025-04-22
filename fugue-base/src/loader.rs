@@ -68,7 +68,21 @@ pub struct LoadableSegment<'a> {
     bytes: Cow<'a, [u8]>,
 }
 
-impl LoadableSegment<'_> {
+impl<'a> LoadableSegment<'a> {
+    pub fn from_parts(
+        name: impl Into<Cow<'a, str>>,
+        address: Address,
+        properties: SegmentProperties,
+        bytes: impl Into<Cow<'a, [u8]>>,
+    ) -> LoadableSegment<'a> {
+        Self {
+            name: name.into(),
+            address,
+            properties,
+            bytes: bytes.into(),
+        }
+    }
+
     pub fn address(&self) -> Address {
         self.address
     }

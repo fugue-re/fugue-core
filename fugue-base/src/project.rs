@@ -9,37 +9,38 @@ use crate::loader::{
     ExternSymbols, Loadable, LoadableFromBytes, LoadableSegment, Loader, LoaderError, LocalSymbols,
     SymbolEntry,
 };
-use crate::storage::{InMemoryStorage, StorageError, StorageProvider};
+use crate::storage::{InMemoryStorage, StorageError, StorageProvider, StorageProviderFromLoadable};
+use crate::types::attributes::{ATTRIBUTE_FILE_PATH, ATTRIBUTE_PROJECT_PATH};
 use crate::types::{Address, AttributeMap};
 
-pub struct Project<P: StorageProvider = InMemoryStorage> {
+pub struct Project {
     pub(crate) arch: Arch,
     pub(crate) lifter: Lifter,
     pub(crate) language: &'static Language,
     pub(crate) entry: Option<Address>,
     pub(crate) local_symbols: Option<LocalSymbols>,
     pub(crate) extern_symbols: Option<ExternSymbols>,
-    pub(crate) storage: P,
+    pub(crate) storage: Box<dyn StorageProvider>,
 }
 
-pub struct ProjectRef<'a, P: StorageProvider> {
+pub struct ProjectRef<'a> {
     pub arch: &'a Arch,
     pub lifter: &'a Lifter,
     pub language: &'static Language,
     pub entry: Option<Address>,
     pub local_symbols: Option<&'a LocalSymbols>,
     pub extern_symbols: Option<&'a ExternSymbols>,
-    pub storage: &'a P,
+    pub storage: &'a Box<dyn StorageProvider>,
 }
 
-pub struct ProjectMut<'a, P: StorageProvider> {
+pub struct ProjectMut<'a> {
     pub arch: &'a mut Arch,
     pub lifter: &'a mut Lifter,
     pub language: &'static Language,
     pub entry: Option<Address>,
     pub local_symbols: Option<&'a mut LocalSymbols>,
     pub extern_symbols: Option<&'a mut ExternSymbols>,
-    pub storage: &'a mut P,
+    pub storage: &'a mut Box<dyn StorageProvider>,
 }
 
 #[derive(Debug, Error)]
@@ -50,38 +51,80 @@ pub enum ProjectError {
     Storage(#[from] StorageError),
 }
 
-impl<P> Project<P>
-where
-    P: StorageProvider,
-{
-    pub fn new(loadable: &impl Loadable) -> Result<Self, ProjectError> {
-        Self::from_loadable(loadable).map_err(ProjectError::from)
+impl Project {
+    pub fn new<P>(loadable: &impl Loadable) -> Result<Self, ProjectError>
+    where
+        P: StorageProviderFromLoadable,
+    {
+        let arch = loadable.architecture();
+        let lifter = loadable.lifter();
+        let language = loadable.language();
+        let storage = Box::new(P::from_loadable(loadable)?);
+
+        // FIXME: ideally we should not clone these, since we could consume the loadable, but I
+        // can see scenarios where this isn't desirable.
+
+        let local_symbols = loadable.local_symbols().cloned();
+        let extern_symbols = loadable.extern_symbols().cloned();
+
+        Ok(Self {
+            arch,
+            lifter,
+            language,
+            entry: loadable.entry(),
+            local_symbols,
+            extern_symbols,
+            storage,
+        })
     }
 
-    pub fn from_bytes(bytes: &[u8]) -> Result<Self, ProjectError> {
-        Self::from_bytes_with(bytes, AttributeMap::default())
+    pub fn from_bytes<P>(bytes: &[u8]) -> Result<Self, ProjectError>
+    where
+        P: StorageProviderFromLoadable,
+    {
+        Self::from_bytes_with::<P>(bytes, AttributeMap::default())
     }
 
-    pub fn from_bytes_with(
+    pub fn from_bytes_with<P>(
         bytes: &[u8],
         attributes: impl Into<AttributeMap>,
-    ) -> Result<Self, ProjectError> {
+    ) -> Result<Self, ProjectError>
+    where
+        P: StorageProviderFromLoadable,
+    {
         Loader::from_bytes_with(bytes, attributes)
             .map_err(ProjectError::from)
-            .and_then(|loader| Self::new(&loader))
+            .and_then(|loader| Self::new::<P>(&loader))
     }
 
-    pub fn from_file(path: impl AsRef<Path>) -> Result<Self, ProjectError> {
-        Self::from_file_with(path, AttributeMap::default())
+    pub fn from_file<P>(path: impl AsRef<Path>) -> Result<Self, ProjectError>
+    where
+        P: StorageProviderFromLoadable,
+    {
+        Self::from_file_with::<P>(path, AttributeMap::default())
     }
 
-    pub fn from_file_with(
+    pub fn from_file_with<P>(
         path: impl AsRef<Path>,
         attributes: impl Into<AttributeMap>,
-    ) -> Result<Self, ProjectError> {
+    ) -> Result<Self, ProjectError>
+    where
+        P: StorageProviderFromLoadable,
+    {
+        let path = path.as_ref();
+        let mut attributes = attributes.into();
+
+        if !attributes.contains(ATTRIBUTE_FILE_PATH) {
+            attributes.set_attr(ATTRIBUTE_FILE_PATH, path);
+        }
+
+        if !attributes.contains(ATTRIBUTE_PROJECT_PATH) {
+            attributes.set_attr(ATTRIBUTE_PROJECT_PATH, path.with_extension("fudb"));
+        }
+
         Loader::from_file_with(path, attributes)
             .map_err(ProjectError::from)
-            .and_then(|loader| Self::new(&loader))
+            .and_then(|loader| Self::new::<P>(&loader))
     }
 
     pub fn architecture(&self) -> &Arch {
@@ -126,15 +169,15 @@ where
             .flat_map(|symbols| symbols.iter())
     }
 
-    pub fn storage(&self) -> &P {
+    pub fn storage(&self) -> &impl StorageProvider {
         &self.storage
     }
 
-    pub fn storage_mut(&mut self) -> &mut P {
+    pub fn storage_mut(&mut self) -> &mut impl StorageProvider {
         &mut self.storage
     }
 
-    pub fn fields(&self) -> ProjectRef<P> {
+    pub fn fields(&self) -> ProjectRef {
         ProjectRef {
             arch: &self.arch,
             lifter: &self.lifter,
@@ -146,7 +189,7 @@ where
         }
     }
 
-    pub fn fields_mut(&mut self) -> ProjectMut<P> {
+    pub fn fields_mut(&mut self) -> ProjectMut {
         ProjectMut {
             arch: &mut self.arch,
             lifter: &mut self.lifter,
@@ -159,69 +202,31 @@ where
     }
 }
 
-impl<P> StorageProvider for Project<P>
-where
-    P: StorageProvider,
-{
-    fn from_loadable(loadable: &impl Loadable) -> Result<Self, StorageError> {
-        let arch = loadable.architecture();
-        let lifter = loadable.lifter();
-        let language = loadable.language();
-        let storage = P::from_loadable(loadable)?;
-
-        // FIXME: ideally we should not clone these, since we could consume the loadable, but I
-        // can see scenarios where this isn't desirable.
-
-        let local_symbols = loadable.local_symbols().cloned();
-        let extern_symbols = loadable.extern_symbols().cloned();
-
-        Ok(Self {
-            arch,
-            lifter,
-            language,
-            entry: loadable.entry(),
-            local_symbols,
-            extern_symbols,
-            storage,
-        })
-    }
-
-    fn read_bytes(
-        &self,
-        addr: impl Into<Address>,
-        bytes: &mut [u8],
-    ) -> Result<usize, StorageError> {
+impl StorageProvider for Project {
+    fn read_bytes(&self, addr: Address, bytes: &mut [u8]) -> Result<usize, StorageError> {
         self.storage.read_bytes(addr, bytes)
     }
 
-    fn write_bytes(
-        &mut self,
-        addr: impl Into<Address>,
-        bytes: &[u8],
-    ) -> Result<usize, StorageError> {
+    fn write_bytes(&mut self, addr: Address, bytes: &[u8]) -> Result<usize, StorageError> {
         self.storage.write_bytes(addr, bytes)
     }
 
-    fn contains_segment(&self, at: impl Into<Address>) -> bool {
+    fn contains_segment(&self, at: Address) -> bool {
         self.storage.contains_segment(at)
     }
 
     fn find_segment_containing(
         &self,
-        addr: impl Into<Address>,
+        addr: Address,
     ) -> Result<Cow<LoadableSegment<'_>>, StorageError> {
         self.storage.find_segment_containing(addr)
     }
 
-    fn view_segment_bytes(
-        &self,
-        addr: impl Into<Address>,
-        size: usize,
-    ) -> Result<Cow<[u8]>, StorageError> {
+    fn view_segment_bytes(&self, addr: Address, size: usize) -> Result<Cow<[u8]>, StorageError> {
         self.storage.view_segment_bytes(addr, size)
     }
 
-    fn view_segment_bytes_from(&self, addr: impl Into<Address>) -> Result<Cow<[u8]>, StorageError> {
+    fn view_segment_bytes_from(&self, addr: Address) -> Result<Cow<[u8]>, StorageError> {
         self.storage.view_segment_bytes_from(addr)
     }
 }
@@ -240,10 +245,10 @@ mod test {
             .finish();
 
         tracing::subscriber::with_default(subscriber, || {
-            let project = Project::<InMemoryStorage>::from_file("tests/ls.elf")?;
+            let project = Project::from_file::<InMemoryStorage>("tests/ls.elf")?;
 
             let mut bytes = [0u8; 32];
-            project.storage().read_bytes(0x4000u32, &mut bytes)?;
+            project.storage().read_bytes(0x4000u32.into(), &mut bytes)?;
 
             assert_eq!(
                 &bytes,

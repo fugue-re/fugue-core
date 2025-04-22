@@ -239,7 +239,11 @@ impl FunctionBuilder {
 #[cfg(test)]
 mod test {
     use super::*;
+
     use crate::analysis::AnalysisPass;
+    use crate::attributes;
+    use crate::storage::MemoryMappedStorage;
+    use crate::types::attributes::*;
 
     #[test]
     fn test_control_flow_recovery() -> Result<(), Box<dyn std::error::Error>> {
@@ -251,7 +255,12 @@ mod test {
             .finish();
 
         tracing::subscriber::with_default(subscriber, || {
-            let mut project = Project::from_file("tests/ls.elf")?;
+            let mut project = Project::from_file_with::<MemoryMappedStorage>(
+                "tests/ls.elf",
+                attributes![
+                    ATTRIBUTE_PROJECT_PATH => "/tmp/ls.fudb",
+                ],
+            )?;
             let mut cfr = ControlFlowRecovery::new();
 
             cfr.analyse(&mut project)?;

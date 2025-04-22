@@ -250,7 +250,7 @@ mod test {
     #[test]
     fn test_analysis_passes() -> Result<(), Box<dyn std::error::Error>> {
         let mut analyses = AnalysisManager::new();
-        let mut project = Project::<InMemoryStorage>::from_file("tests/ls.elf")?;
+        let mut project = Project::from_file::<InMemoryStorage>("tests/ls.elf")?;
 
         analyses.add_pass(
             "hello-world",
