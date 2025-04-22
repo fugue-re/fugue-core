@@ -1,19 +1,17 @@
 use std::marker::PhantomData;
 use std::sync::Arc;
 
+use fugue_base::types::Address;
 use fugue_bytes::{ByteCast, Order};
 
-use fugue_ir::convention::Convention;
-use fugue_ir::{Address, AddressSpace, Translator, VarnodeData};
-
+use fugue_lifter_runtime::Language;
 use thiserror::Error;
 
 use crate::paged::{self, PagedState};
 use crate::register::{self, RegisterState};
 use crate::unique::{self, UniqueState};
 
-use crate::traits::{FromStateValues, IntoStateValues};
-use crate::traits::{State, StateOps, StateValue};
+use crate::traits::{FromStateValues, IntoStateValues, State, StateOps, StateValue};
 
 pub const POINTER_8_SIZE: usize = 1;
 pub const POINTER_16_SIZE: usize = 2;
@@ -38,7 +36,6 @@ pub struct PCodeState<T: StateValue, O: Order> {
     memory: PagedState<T>,
     registers: RegisterState<T, O>,
     temporaries: UniqueState<T>,
-    convention: Convention,
     marker: PhantomData<O>,
 }
 
@@ -55,18 +52,13 @@ impl<T: StateValue, O: Order> AsMut<Self> for PCodeState<T, O> {
 }
 
 impl<T: StateValue, O: Order> PCodeState<T, O> {
-    pub fn new(memory: PagedState<T>, translator: &Translator, convention: &Convention) -> Self {
+    pub fn new(memory: PagedState<T>, language: &'static Language) -> Self {
         Self {
             memory,
-            registers: RegisterState::new(translator, convention),
-            temporaries: UniqueState::new(translator),
-            convention: convention.clone(),
+            registers: RegisterState::new(language),
+            temporaries: UniqueState::new(language),
             marker: PhantomData,
         }
-    }
-
-    pub fn convention(&self) -> &Convention {
-        &self.convention
     }
 
     pub fn memory(&self) -> &PagedState<T> {
@@ -297,7 +289,6 @@ impl<V: StateValue, O: Order> State for PCodeState<V, O> {
 
     fn fork(&self) -> Self {
         Self {
-            convention: self.convention.clone(),
             registers: self.registers.fork(),
             temporaries: self.temporaries.fork(),
             memory: self.memory.fork(),

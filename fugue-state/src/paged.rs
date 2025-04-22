@@ -2,7 +2,7 @@ use std::mem::take;
 use std::ops::Range;
 use std::sync::Arc;
 
-use fugue_ir::{Address, AddressSpace};
+use fugue_base::types::Address;
 use iset::IntervalMap;
 use thiserror::Error;
 use ustr::Ustr;
@@ -259,10 +259,9 @@ impl<T: StateValue> AsMut<Self> for PagedState<T> {
 impl<T: StateValue> PagedState<T> {
     pub fn new(
         mapping: impl IntoIterator<Item = (Range<Address>, Segment<T>)>,
-        space: Arc<AddressSpace>,
         size: usize,
     ) -> Self {
-        Self::from_parts(mapping, FlatState::new(space, size))
+        Self::from_parts(mapping, FlatState::new(size))
     }
 
     pub fn from_parts(
@@ -295,10 +294,8 @@ impl<T: StateValue> PagedState<T> {
             });
         }
 
-        self.segments.insert(
-            range,
-            Segment::static_mapping(name, FlatState::new(self.inner.address_space(), size)),
-        );
+        self.segments
+            .insert(range, Segment::static_mapping(name, FlatState::new(size)));
         Ok(())
     }
 
@@ -319,10 +316,7 @@ impl<T: StateValue> PagedState<T> {
 
         self.segments.insert(
             range,
-            Segment::mapping(
-                name,
-                ChunkState::new(self.inner.address_space(), base_address, size),
-            ),
+            Segment::mapping(name, ChunkState::new(base_address, size)),
         );
         Ok(())
     }

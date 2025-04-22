@@ -1,0 +1,18 @@
+[package]
+name = "fugue-sleigh"
+version = "0.3.0"
+authors = ["Sam Thomas <st@xv.ax>"]
+edition = "2021"
+license = "MIT"
+description = "A binary analysis framework written in Rust"
+homepage = "https://fugue.re"
+
+[features]
+language-compiler = ["fugue-sleighc"]
+language-parsers = ["fugue-sleigh-language"]
+default = []
+
+[dependencies]
+fugue-sleighc = { version = "0.3", optional = true }
+fugue-sleigh-language = { version = "0.3", path = "../fugue-sleigh-language", optional = true }
+fugue-sleigh-semantics = { version = "0.3", path = "../fugue-sleigh-semantics" }

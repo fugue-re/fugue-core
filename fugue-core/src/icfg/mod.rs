@@ -10,8 +10,7 @@ use itertools::Itertools as _;
 use thiserror::Error;
 
 use crate::language::Language;
-use crate::lifter::LiftedInsnTargetKind;
-use crate::lifter::{InsnLifter, Lifter};
+use crate::lifter::{InsnLifter, Lifter, LiftedInsnTargetKind};
 use crate::project::{
     LoadedSegment, Project, ProjectRawView, ProjectRawViewError, ProjectRawViewReader,
 };
@@ -160,7 +159,7 @@ impl<'a, 'b> FunctionBuilder<'a, 'b> {
     }
 
     pub fn explore(&mut self, candidate: Address, region: LoadedSegment) {
-        println!("exploring from {candidate}");
+        tracing::debug!("exploring from {candidate}");
 
         self.candidates.clear();
         self.local_targets.clear();
@@ -245,7 +244,7 @@ impl<'a, 'b> FunctionBuilder<'a, 'b> {
                 }
             }
 
-            println!("{:?}", self.local_targets);
+            tracing::debug!("{:?}", self.local_targets);
 
             // Structure the blocks
             let iinsns = &mut itertools::put_back(insns.iter());
@@ -267,9 +266,9 @@ impl<'a, 'b> FunctionBuilder<'a, 'b> {
             }
 
             for block in blocks {
-                println!("blk@{}", block[0].0);
+                tracing::debug!("blk@{}", block[0].0);
                 for (addr, insn) in block {
-                    println!("{addr}: {:#?}", insn.try_pcode());
+                    tracing::debug!("{addr}: {:#?}", insn.try_pcode());
                 }
             }
 

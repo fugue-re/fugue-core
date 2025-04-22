@@ -2,15 +2,21 @@
 members = [
   "fugue",
   "fugue-arch",
+  "fugue-base",
   "fugue-bytes",
   "fugue-bv",
-  "fugue-core",
-  "fugue-db",
   "fugue-fp",
-  "fugue-ir",
+  "fugue-ghidra-marshal",
   "fugue-lifter",
-  "fugue-state",
-  "fugue-state-derive",
+  "fugue-lifter-aarch64",
+  "fugue-lifter-arm",
+  "fugue-lifter-codegen",
+  "fugue-lifter-runtime",
+  "fugue-lifter-x86",
+  "fugue-specs",
+  "fugue-sleigh",
+  "fugue-sleigh-language",
+  "fugue-sleigh-semantics",
 ]
 resolver = "2"
 

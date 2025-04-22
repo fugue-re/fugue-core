@@ -1,0 +1,16 @@
+[package]
+name = "fugue-lifter-x86"
+version = "0.3.0"
+edition = "2021"
+build = "build.rs"
+
+[features]
+x86 = []
+x86-64 = []
+default = ["x86", "x86-64"]
+
+[dependencies]
+fugue-lifter-runtime = { version = "0.3", path = "../fugue-lifter-runtime" }
+
+[build-dependencies]
+fugue-lifter-codegen = { version = "0.3", path = "../fugue-lifter-codegen" }

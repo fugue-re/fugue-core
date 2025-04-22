@@ -5,8 +5,9 @@ use std::str::FromStr;
 
 use thiserror::Error;
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[derive(serde::Deserialize, serde::Serialize)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Deserialize, serde::Serialize,
+)]
 pub struct ArchitectureDef {
     processor: String,
     endian: Endian,
@@ -33,8 +34,8 @@ impl FromStr for ArchitectureDef {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let parts = s.splitn(4, ':').collect::<Vec<_>>();
-        if parts.len() != 4 {
-            return Err(ArchDefParseError::ParseFormat)
+        if !matches!(parts.len(), 3 | 4) {
+            return Err(ArchDefParseError::ParseFormat);
         }
 
         let processor = parts[0];
@@ -43,11 +44,16 @@ impl FromStr for ArchitectureDef {
             "be" | "BE" => Endian::Big,
             _ => return Err(ArchDefParseError::ParseEndian),
         };
-        let bits = parts[2].parse::<usize>()
+        let bits = parts[2]
+            .parse::<usize>()
             .map_err(|_| ArchDefParseError::ParseBits)?;
-        let variant = parts[3];
 
-        Ok(ArchitectureDef::new(processor, endian, bits, variant))
+        Ok(ArchitectureDef::new(
+            processor,
+            endian,
+            bits,
+            *parts.get(3).unwrap_or(&"default"),
+        ))
     }
 }
 
@@ -55,9 +61,9 @@ impl fmt::Display for ArchitectureDef {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "processor: {}, endian: {}, bits: {}, variant: {}",
+            "{}:{}:{}:{}",
             self.processor,
-            if self.endian.is_big() { "big" } else { "little" },
+            if self.endian.is_big() { "BE" } else { "LE" },
             self.bits,
             self.variant,
         )
@@ -66,8 +72,10 @@ impl fmt::Display for ArchitectureDef {
 
 impl ArchitectureDef {
     pub fn new<P, V>(processor: P, endian: Endian, bits: usize, variant: V) -> Self
-    where P: Into<String>,
-          V: Into<String> {
+    where
+        P: Into<String>,
+        V: Into<String>,
+    {
         Self {
             processor: processor.into(),
             endian,

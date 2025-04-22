@@ -9,11 +9,12 @@ homepage = "https://fugue.re"
 
 [dependencies]
 fugue-bv = { path = "../fugue-bv", version = "0.3" }
+fugue-base = { path = "../fugue-base", version = "0.3" }
 fugue-bytes = { path = "../fugue-bytes", version = "0.3" }
-fugue-ir = { path = "../fugue-ir", version = "0.3" }
+fugue-lifter-runtime = { path = "../fugue-lifter-runtime", version = "0.3" }
 fugue-state-derive = { path = "../fugue-state-derive", version = "0.3" }
-iset = "0.2"
-log = "0.4"
+iset = "0.3"
 paste = "1"
-thiserror = "1"
+thiserror = "2"
+tracing = "0.1"
 ustr = "1"

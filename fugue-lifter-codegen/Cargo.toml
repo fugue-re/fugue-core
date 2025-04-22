@@ -1,0 +1,20 @@
+[package]
+name = "fugue-lifter-codegen"
+version = "0.3.0"
+edition = "2021"
+
+[features]
+bundled-compiler = ["fugue-sleighc"]
+default = ["bundled-compiler"]
+
+[dependencies]
+anyhow = "1"
+fugue-sleighc = { version = "0.3", optional = true }
+fugue-sleigh-language = { path = "../fugue-sleigh-language" }
+heck = "0.5"
+itertools = "0.14"
+prettyplease = "0.2"
+proc-macro2 = "1"
+quote = "1"
+syn = { version = "2", features = ["parsing"] }
+thiserror = "2"

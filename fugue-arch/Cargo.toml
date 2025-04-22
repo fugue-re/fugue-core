@@ -10,5 +10,5 @@ homepage = "https://fugue.re"
 [dependencies]
 fugue-bytes = { path = "../fugue-bytes", version = "0.3" }
 serde = { version = "1", features = ["derive"] }
-thiserror = "1"
-unicase = "2.6"
+thiserror = "2"
+unicase = "2.8"
