@@ -31,4 +31,6 @@ pub enum Error {
     InconsistentState,
     #[error("{0}")]
     Invariant(String),
+    #[error("nested delay slot")]
+    NestedDelaySlot,
 }

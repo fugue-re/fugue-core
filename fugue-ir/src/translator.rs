@@ -609,6 +609,11 @@ impl Translator {
                 dwalker.base_state();
                 dwalker.apply_commits(db, &self.manager, &self.symbol_table)?;
 
+                if dwalker.delay_slot() != 0 {
+                    // NOTE: nested delay slots!
+                    return Err(DisassemblyError::NestedDelaySlot.into());
+                }
+
                 let length = dwalker.length();
 
                 delay_contexts.insert(address.clone() + fall_offset, dcontext);
@@ -697,6 +702,11 @@ impl Translator {
                 dwalker.base_state();
                 dwalker.apply_commits(db, &self.manager, &self.symbol_table)?;
 
+                if dwalker.delay_slot() != 0 {
+                    // NOTE: nested delay slots!
+                    return Err(DisassemblyError::NestedDelaySlot.into());
+                }
+
                 let length = dwalker.length();
 
                 delay_contexts.insert(address.clone() + fall_offset, dcontext);
@@ -784,6 +794,11 @@ impl Translator {
 
                 dwalker.base_state();
                 dwalker.apply_commits(db, &self.manager, &self.symbol_table)?;
+
+                if dwalker.delay_slot() != 0 {
+                    // NOTE: nested delay slots!
+                    return Err(DisassemblyError::NestedDelaySlot.into());
+                }
 
                 let length = dwalker.length();
 

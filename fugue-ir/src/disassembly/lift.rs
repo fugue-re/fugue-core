@@ -602,6 +602,7 @@ impl<'b, 'c, 'cz, 'z> IRBuilder<'b, 'c, 'cz, 'z> {
         let old_unique_offset = self.unique_offset;
         let base_address = self.walker.address();
         let delay_count = self.walker.delay_slot();
+
         let mut fall_offset = self.walker.length();
         let mut byte_count = 0;
 
