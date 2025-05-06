@@ -507,18 +507,25 @@ impl Translator {
         address: AddressValue,
         bytes: &[u8],
     ) -> Result<Instruction<'z>, Error> {
-        self.disassemble_aux(db, context, arena, address, bytes, |fmt, delay_slots, length| {
-            let mnemonic = fmt.mnemonic_str(builder);
-            let operands = fmt.operands_str(builder);
+        self.disassemble_aux(
+            db,
+            context,
+            arena,
+            address,
+            bytes,
+            |fmt, delay_slots, length| {
+                let mnemonic = fmt.mnemonic_str(builder);
+                let operands = fmt.operands_str(builder);
 
-            Ok(Instruction {
-                address,
-                mnemonic,
-                operands,
-                delay_slots,
-                length,
-            })
-        })
+                Ok(Instruction {
+                    address,
+                    mnemonic,
+                    operands,
+                    delay_slots,
+                    length,
+                })
+            },
+        )
     }
 
     pub fn disassemble_full<'a, 'az, 'z>(
@@ -530,20 +537,27 @@ impl Translator {
         address: AddressValue,
         bytes: &[u8],
     ) -> Result<InstructionFull<'a, 'z>, Error> {
-        self.disassemble_aux(db, context, arena, address, bytes, |fmt, delay_slots, length| {
-            let mnemonic = fmt.mnemonic_str(builder);
-            let operands = fmt.operands_str(builder);
-            let operand_data = fmt.operand_data(builder);
+        self.disassemble_aux(
+            db,
+            context,
+            arena,
+            address,
+            bytes,
+            |fmt, delay_slots, length| {
+                let mnemonic = fmt.mnemonic_str(builder);
+                let operands = fmt.operands_str(builder);
+                let operand_data = fmt.operand_data(builder);
 
-            Ok(InstructionFull {
-                address,
-                mnemonic,
-                operands,
-                operand_data,
-                delay_slots,
-                length,
-            })
-        })
+                Ok(InstructionFull {
+                    address,
+                    mnemonic,
+                    operands,
+                    operand_data,
+                    delay_slots,
+                    length,
+                })
+            },
+        )
     }
 
     pub fn lift_pcode_raw<'z>(
@@ -599,7 +613,9 @@ impl Translator {
                     arena,
                     db,
                     address.clone() + fall_offset,
-                    &bytes[fall_offset..],
+                    &bytes
+                        .get(fall_offset..)
+                        .ok_or(DisassemblyError::InvalidOffset)?,
                 );
                 let mut dwalker = ParserWalker::new(&mut dcontext);
 
@@ -908,7 +924,8 @@ impl Translator {
                 let operand = unsafe { symbol_table.unchecked_symbol(ct.operand(op)) };
                 //.ok_or_else(|| DisassemblyError::InvalidSymbol)?;
 
-                let offset = unsafe { walker.offset(operand.offset_base()) } + operand.relative_offset();
+                let offset =
+                    unsafe { walker.offset(operand.offset_base()) } + operand.relative_offset();
 
                 walker.unchecked_allocate_operand(op);
                 walker.set_offset(offset)?;
