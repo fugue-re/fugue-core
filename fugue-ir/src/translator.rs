@@ -708,7 +708,9 @@ impl Translator {
                     arena,
                     db,
                     address.clone() + fall_offset,
-                    &bytes.get(fall_offset..).ok_or(DisassemblyError::InvalidOffset)?,
+                    &bytes
+                        .get(fall_offset..)
+                        .ok_or(DisassemblyError::InvalidOffset)?,
                 );
                 let mut dwalker = ParserWalker::new(&mut dcontext);
 
@@ -801,7 +803,9 @@ impl Translator {
                     arena,
                     db,
                     address.clone() + fall_offset,
-                    &bytes.get(fall_offset..).ok_or(DisassemblyError::InvalidOffset)?,
+                    &bytes
+                        .get(fall_offset..)
+                        .ok_or(DisassemblyError::InvalidOffset)?,
                 );
                 let mut dwalker = ParserWalker::new(&mut dcontext);
 
