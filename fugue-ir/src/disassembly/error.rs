@@ -27,6 +27,8 @@ pub enum Error {
     InvalidSpace,
     #[error("handle invalid")]
     InvalidHandle,
+    #[error("offset invalid")]
+    InvalidOffset,
     #[error("inconsistent disassembly state")]
     InconsistentState,
     #[error("{0}")]
