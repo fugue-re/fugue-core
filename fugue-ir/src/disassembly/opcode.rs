@@ -75,6 +75,7 @@ pub enum Opcode {
     Insert,
     Extract,
     PopCount,
+    LzCount,
 }
 
 impl Opcode {
@@ -151,6 +152,7 @@ impl Opcode {
             "INSERT" => Self::Insert,
             "EXTRACT" => Self::Extract,
             "POPCOUNT" => Self::PopCount,
+            "LZCOUNT" => Self::LzCount,
             _ => return Err(Error::Invariant("invalid opcode name")),
         })
     }

@@ -34,7 +34,7 @@ static BUILTINS: Lazy<UstrMap<(Opcode, usize)>> = Lazy::new(|| {
             ("float2float", (Opcode::FloatOfFloat, 1)),
             ("trunc", (Opcode::FloatTruncate, 1)),
             ("popcount", (Opcode::PopCount, 1)),
-            // ("lzcount", (Opcode::LZCount, 1)),
+            ("lzcount", (Opcode::LzCount, 1)),
         ]
         .into_iter()
         .map(|(n, a)| (ustr(n), a)),
@@ -894,6 +894,7 @@ impl<'a> IRBuilder<'a> {
                 Opcode::IntZExt
                 | Opcode::IntSExt
                 | Opcode::PopCount
+                | Opcode::LzCount
                 | Opcode::FloatAbs
                 | Opcode::FloatSqrt
                 | Opcode::FloatCeiling
