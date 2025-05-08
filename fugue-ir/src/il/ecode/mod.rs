@@ -1891,7 +1891,7 @@ where
         Self::unary_op(UnOp::POPCOUNT, expr.into())
     }
 
-    pub fn count_leading_zeroes<E>(expr: E) -> Self
+    pub fn leading_zeroes<E>(expr: E) -> Self
     where
         E: Into<Self>,
     {
@@ -2518,7 +2518,7 @@ impl StmtT<Location, BitVec, Var> {
                 let output = Var::from(output.unwrap());
 
                 let size = output.bits();
-                let lzcount = ExprT::count_leading_zeroes(input);
+                let lzcount = ExprT::leading_zeroes(input);
 
                 Self::assign(output, ExprT::cast_unsigned(lzcount, size))
             }
