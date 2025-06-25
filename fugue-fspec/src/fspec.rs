@@ -29,6 +29,7 @@ bitflags! {
     #[repr(transparent)]
     pub struct FunctionProperties: u8 {
         const NON_RETURNING = 0b0000_0001;
+        const RETURN_THUNK = 0b0000_0010;
     }
 }
 
@@ -36,6 +37,7 @@ bitflags! {
 #[serde(rename_all = "kebab-case")]
 enum FunctionProperty {
     NonReturning,
+    ReturnThunk,
 }
 
 impl From<OneOrMany<FunctionProperty>> for FunctionProperties {
@@ -52,6 +54,9 @@ impl From<Vec<FunctionProperty>> for FunctionProperties {
                 FunctionProperty::NonReturning => {
                     props.insert(FunctionProperties::NON_RETURNING);
                 }
+                FunctionProperty::ReturnThunk => {
+                    props.insert(FunctionProperties::RETURN_THUNK);
+                }
             }
         }
         props
@@ -65,6 +70,9 @@ impl From<FunctionProperties> for Vec<FunctionProperty> {
             match prop {
                 FunctionProperties::NON_RETURNING => {
                     props.push(FunctionProperty::NonReturning);
+                }
+                FunctionProperties::RETURN_THUNK => {
+                    props.push(FunctionProperty::ReturnThunk);
                 }
                 _ => (),
             }
