@@ -29,7 +29,9 @@ bitflags! {
     #[repr(transparent)]
     pub struct FunctionProperties: u8 {
         const NON_RETURNING = 0b0000_0001;
-        const RETURN_THUNK = 0b0000_0010;
+
+        const TAIL = 0b0000_0010;
+        const RETURN_THUNK = Self::TAIL.bits();
     }
 }
 
@@ -38,6 +40,7 @@ bitflags! {
 enum FunctionProperty {
     NonReturning,
     ReturnThunk,
+    Tail,
 }
 
 impl From<OneOrMany<FunctionProperty>> for FunctionProperties {
@@ -54,8 +57,8 @@ impl From<Vec<FunctionProperty>> for FunctionProperties {
                 FunctionProperty::NonReturning => {
                     props.insert(FunctionProperties::NON_RETURNING);
                 }
-                FunctionProperty::ReturnThunk => {
-                    props.insert(FunctionProperties::RETURN_THUNK);
+                FunctionProperty::Tail | FunctionProperty::ReturnThunk => {
+                    props.insert(FunctionProperties::TAIL);
                 }
             }
         }
@@ -71,8 +74,8 @@ impl From<FunctionProperties> for Vec<FunctionProperty> {
                 FunctionProperties::NON_RETURNING => {
                     props.push(FunctionProperty::NonReturning);
                 }
-                FunctionProperties::RETURN_THUNK => {
-                    props.push(FunctionProperty::ReturnThunk);
+                FunctionProperties::TAIL => {
+                    props.push(FunctionProperty::Tail);
                 }
                 _ => (),
             }
@@ -502,6 +505,31 @@ patterns:
             arch: Language::new("x86", Endian::Little),
             platform: "uefi",
         }));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_tail() -> Result<(), Box<dyn std::error::Error>> {
+        let input = r#"
+name: __x86_return_thunk
+properties: return-thunk
+where:
+  all:
+  - arch: x86:LE:64
+  - platform: posix
+patterns:
+- x86:LE:64:
+    patterns:
+    - F3 0F 1E FA C3
+"#;
+
+        let fspec = serde_yaml::from_str::<FunctionSpec>(input)?;
+
+        assert_eq!(fspec.name, "__x86_return_thunk");
+        assert!(fspec.properties.contains(FunctionProperties::TAIL));
+        assert!(fspec.properties.contains(FunctionProperties::RETURN_THUNK));
+        assert_eq!(fspec.patterns.len(), 1);
 
         Ok(())
     }
