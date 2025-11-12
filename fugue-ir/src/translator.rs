@@ -18,6 +18,7 @@ use crate::address::AddressValue;
 use crate::deserialise::parse::XmlExt;
 use crate::deserialise::Error as DeserialiseError;
 
+use crate::disassembly::context::ContextBitRange;
 use crate::disassembly::lift::{FloatFormats, UserOpStr};
 use crate::disassembly::symbol::{FixedHandle, Symbol, SymbolScope, SymbolTable};
 use crate::disassembly::walker::InstructionFormatter;
@@ -42,6 +43,8 @@ use crate::convention::Convention;
 
 use crate::register::RegisterNames;
 use crate::space_manager::SpaceManager;
+
+pub const TMODE_CONTEXT: ContextBitRange = ContextBitRange::new(0, 0);
 
 // Translator is used for parsing the processor spec XML and
 // lifting instructions
@@ -465,11 +468,17 @@ impl Translator {
         F: FnMut(InstructionFormatter<'a, 'c, 'az>, usize, usize) -> Result<T, E>,
         E: From<Error>,
     {
-        if self.alignment() != 1 {
-            if address.offset() % self.alignment() as u64 != 0 {
+        let alignment = match db.try_get_variable_by_bits(&TMODE_CONTEXT, address) {
+            Some(1) => 2,
+            Some(_) => 4,
+            None => self.alignment(),
+        };
+
+        if alignment != 1 {
+            if address.offset() % alignment as u64 != 0 {
                 return Err(DisassemblyError::IncorrectAlignment {
                     address: address.offset(),
-                    alignment: self.alignment(),
+                    alignment,
                 })
                 .map_err(Error::from)?;
             }
@@ -582,11 +591,17 @@ impl Translator {
         address: AddressValue,
         bytes: &[u8],
     ) -> Result<PCodeRaw<'z>, Error> {
-        if self.alignment != 1 {
-            if address.offset() % self.alignment as u64 != 0 {
+        let alignment = match db.try_get_variable_by_bits(&TMODE_CONTEXT, address) {
+            Some(1) => 2,
+            Some(_) => 4,
+            None => self.alignment(),
+        };
+
+        if alignment != 1 {
+            if address.offset() % alignment as u64 != 0 {
                 return Err(DisassemblyError::IncorrectAlignment {
                     address: address.offset(),
-                    alignment: self.alignment,
+                    alignment,
                 })?;
             }
         }

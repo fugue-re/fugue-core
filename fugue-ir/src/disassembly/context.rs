@@ -356,6 +356,10 @@ impl ContextDatabase {
         bits.get(&self.database.get_or_default(&address).values)
     }
 
+    pub fn try_get_variable_by_bits(&self, bits: &ContextBitRange, address: AddressValue) -> Option<u32> {
+        self.database.get(&address).map(|ctx| bits.get(&ctx.values))
+    }
+
     pub fn get_variable<S: Borrow<str>>(&self, name: S, address: AddressValue) -> Option<u32> {
         self.variable(name.borrow())
             .map(|bits| self.get_variable_by_bits(bits, address))
