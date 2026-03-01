@@ -8,13 +8,16 @@ description = "A binary analysis framework written in Rust"
 homepage = "https://fugue.re"
 
 [features]
-default = ["bigint"]
+default = ["bigint-rug"]
 fixed-u64 = []
 fixed-u128 = []
-bigint = ["rug"]
+bigint = []
+bigint-malachite = ["bigint", "malachite"]
+bigint-rug = ["bigint", "rug"]
 
 [dependencies]
 fugue-bytes = { path = "../fugue-bytes", version = "0.2" }
+malachite = { version = "0.9", features = ["enable_serde"], optional = true }
 num-integer = "0.1"
 num-traits = "0.2"
 paste = "1"
@@ -22,3 +25,6 @@ rug = { version = "1", features = ["integer", "serde"], optional = true }
 serde = { version = "1", features = ["derive"] }
 static_init = "1"
 thiserror = "1"
+
+[lints.rust]
+mismatched_lifetime_syntaxes = "allow"
