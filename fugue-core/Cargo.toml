@@ -1,6 +1,6 @@
 [package]
 name = "fugue"
-version = "0.2.9"
+version = "0.2.10"
 authors = ["Sam Thomas <st@xv.ax>", "Zitai Chen <zitaichen@outlook.com>"]
 edition = "2021"
 license = "MIT"
