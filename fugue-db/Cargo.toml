@@ -22,7 +22,7 @@ fugue-ir = { path = "../fugue-ir", version = "0.2", default-features = false }
 educe = "0.4"
 flatbuffers = "24.3.25"
 fs_extra = "1.2"
-iset = { version = "0.3", features = ["serde"], package = "fugue-iset" }
+iset = { version = "0.3", package = "fugue-iset" }
 ouroboros = "0.9"
 
 serde = { version = "1", features = ["derive"] }
