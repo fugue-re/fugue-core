@@ -10,7 +10,11 @@ homepage = "https://fugue.re"
 
 [features]
 default = ["bigint"]
-bigint = ["fugue-ir/bigint"]
+
+bigint = ["bigint-rug"]
+bigint-malachite = ["fugue-ir/bigint-malachite"]
+bigint-rug = ["fugue-ir/bigint-rug"]
+
 fixed-u64 = ["fugue-ir/fixed-u64"]
 fixed-u128 = ["fugue-ir/fixed-u128"]
 
