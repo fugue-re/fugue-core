@@ -1,6 +1,6 @@
 [package]
 name = "fugue"
-version = "0.2.10"
+version = "0.2.11"
 authors = ["Sam Thomas <st@xv.ax>", "Zitai Chen <zitaichen@outlook.com>"]
 edition = "2021"
 license = "MIT"
@@ -9,11 +9,13 @@ homepage = "https://fugue.re"
 
 [features]
 default = ["bigint"]
+
 bigint = ["bigint-rug"]
-bigint-rug = ["fugue-bv/bigint-rug", "fugue-db?/bigint", "fugue-ir/bigint"]
-bigint-malachite = ["fugue-bv/bigint-malachite", "fugue-db?/bigint", "fugue-ir/bigint"]
-fixed-u64 = ["fugue-bv/fixed-u64", "fugue-db?/fixed-u64", "fugue-ir/fixed-u64"]
-fixed-u128 = ["fugue-bv/fixed-u128", "fugue-db?/fixed-u128", "fugue-ir/fixed-u128"]
+bigint-rug = ["fugue-bv/bigint-rug", "fugue-db?/bigint-malachite", "fugue-fspec/bigint-rug", "fugue-ir/bigint-rug", "fugue-sleigh/bigint-rug"]
+bigint-malachite = ["fugue-bv/bigint-malachite", "fugue-db?/bigint-malachite", "fugue-fspec/bigint-malachite", "fugue-ir/bigint-malachite", "fugue-sleigh/bigint-malachite"]
+
+fixed-u64 = ["fugue-bv/fixed-u64", "fugue-db?/fixed-u64", "fugue-fspec/fixed-u64", "fugue-ir/fixed-u64", "fugue-sleigh/fixed-u64"]
+fixed-u128 = ["fugue-bv/fixed-u128", "fugue-db?/fixed-u128", "fugue-fspec/fixed-u128", "fugue-ir/fixed-u128", "fugue-sleigh/fixed-u128"]
 
 extra-logging = ["fugue-ir/extra-logging"]
 extra-integer-types = ["fugue-bytes/extra-integer-types"]
@@ -27,6 +29,6 @@ fugue-bv = { path = "../fugue-bv", version = "0.2", default-features = false }
 fugue-bytes = { path = "../fugue-bytes", version = "0.2" }
 fugue-db = { path = "../fugue-db", version = "0.2", default-features = false, optional = true }
 fugue-fp = { path = "../fugue-fp", version = "0.2", optional = true }
-fugue-fspec = { path = "../fugue-fspec", version = "0.2" }
+fugue-fspec = { path = "../fugue-fspec", version = "0.2", default-features = false }
 fugue-ir = { path = "../fugue-ir", version = "0.2", default-features = false }
-fugue-sleigh = { path = "../fugue-sleigh", version = "0.2" }
+fugue-sleigh = { path = "../fugue-sleigh", version = "0.2", default-features = false }

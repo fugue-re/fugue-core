@@ -1,6 +1,6 @@
 [package]
 name = "fugue-bv"
-version = "0.2.36"
+version = "0.2.37"
 authors = ["Sam Thomas <st@xv.ax>"]
 edition = "2021"
 license = "MIT"
@@ -8,12 +8,12 @@ description = "A binary analysis framework written in Rust"
 homepage = "https://fugue.re"
 
 [features]
-default = ["bigint-rug"]
+default = ["bigint"]
 fixed-u64 = []
 fixed-u128 = []
-bigint = []
-bigint-malachite = ["bigint", "malachite"]
-bigint-rug = ["bigint", "rug"]
+bigint = ["bigint-rug"]
+bigint-malachite = ["malachite"]
+bigint-rug = ["rug"]
 
 [dependencies]
 fugue-bytes = { path = "../fugue-bytes", version = "0.2" }

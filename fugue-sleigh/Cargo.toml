@@ -1,15 +1,25 @@
 [package]
 name = "fugue-sleigh"
-version = "0.2.0"
+version = "0.2.1"
 authors = ["Sam Thomas <st@xv.ax>"]
 edition = "2021"
 license = "MIT"
 description = "A binary analysis framework written in Rust"
 homepage = "https://fugue.re"
 
+[features]
+default = ["bigint"]
+
+bigint = ["bigint-rug"]
+bigint-malachite = ["fugue-ir/bigint-malachite"]
+bigint-rug = ["fugue-ir/bigint-rug"]
+
+fixed-u64 = ["fugue-ir/fixed-u64"]
+fixed-u128 = ["fugue-ir/fixed-u128"]
+
 [dependencies]
 arrayvec = "0.7"
-fugue-ir = { path = "../fugue-ir", version = "0.2" }
+fugue-ir = { path = "../fugue-ir", version = "0.2", default-features = false }
 itertools = "0.13"
 once_cell = "1"
 pest = "2.6"
