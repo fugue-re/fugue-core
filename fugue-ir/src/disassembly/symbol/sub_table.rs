@@ -522,7 +522,7 @@ impl DecisionNode {
             let val = if self.context_decision {
                 walker.context_bits(self.start_bit, self.size)
             } else {
-                unsafe { walker.unchecked_instruction_bits(self.start_bit, self.size) }
+                walker.instruction_bits(self.start_bit, self.size)?
             };
 
             self.children[val as usize].resolve(walker, ctors)
@@ -741,8 +741,9 @@ impl PatternBlock {
             _ => {
                 let mut offset = self.offset;
                 for i in 0..self.values.len() {
-                    let data =
-                        unsafe { walker.unchecked_instruction_bytes(offset, size_of::<u32>()) };
+                    let Ok(data) = walker.instruction_bytes(offset, size_of::<u32>()) else {
+                        return false;
+                    };
                     if self.masks[i] & data != self.values[i] {
                         return false;
                     }
